@@ -73,9 +73,9 @@ function ChatGPTVoice({ path }) {
 
   return (
     <div className="voice">
-      <b>Try ChatGPT Voice:</b>{" "}
+      <b>Try AuraCode Voice:</b>{" "}
       <button onClick={toggle} className="btn btn-ghost">
-        {on ? "⏹ Stop" : "🎙️ ChatGPT Voice"}
+        {on ? "⏹ Stop" : "🎙️ Start Conversation"}
       </button>
       {(you || reply) && (
         <div className="voice-log">
@@ -185,7 +185,7 @@ export default function Home() {
         </p>
 
         <div className="voice-note" role="note">
-          Advanced Voice is now <strong>ChatGPT Voice</strong>, allowing
+          Advanced Voice is now <strong>AuraCode Voice</strong>, allowing
           one-to-one conversations about anything on your mind — drawing on the
           gentle wisdom of the books and traditions you choose (and more).
         </div>
