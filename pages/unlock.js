@@ -1,6 +1,6 @@
-import { MONTHLY_LINK, LIFETIME_LINK } from "../lib/stripe";
+import { MONTHLY_LINK, YEARLY_LINK } from "../lib/stripe"; // Assuming you have a YEARLY_LINK now
 
-function PricingCard({ title, price, description, link, isFeatured }) {
+function PricingCard({ title, price, billing, description, link, isFeatured }) {
   const cardClass = isFeatured
     ? "bg-slate-800 text-white border-slate-800"
     : "bg-white text-slate-800 border-slate-200";
@@ -9,10 +9,13 @@ function PricingCard({ title, price, description, link, isFeatured }) {
     : "bg-slate-800 text-white hover:bg-slate-700";
 
   return (
-    <div className={`p-8 rounded-2xl border shadow-lg w-full text-center ${cardClass}`}>
+    <div className={`p-8 rounded-2xl border shadow-lg w-full max-w-sm text-center ${cardClass}`}>
       <h3 className="text-xl font-bold">{title}</h3>
-      <p className="text-4xl font-bold my-4">{price}</p>
-      <p className="text-sm mb-6">{description}</p>
+      <div className="my-4">
+        <span className="text-4xl font-bold">{price}</span>
+        <span className="text-slate-400">{billing}</span>
+      </div>
+      <p className="text-sm mb-6 h-12">{description}</p>
       <a className={`btn block w-full ${buttonClass}`} href={link} target="_blank" rel="noreferrer">
         Choose Plan
       </a>
@@ -20,35 +23,33 @@ function PricingCard({ title, price, description, link, isFeatured }) {
   );
 }
 
-export default function Unlock(){
+export default function Unlock() {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="text-center mb-12">
         <h1 className="text-4xl font-bold text-slate-800">Support the Sanctuary</h1>
         <p className="mt-3 text-lg text-slate-500">
-          Your first session is always free. Support us to continue your journey and help us hold this space for others.
+          Your first session is free. Register to save your progress and unlock more features.
         </p>
       </div>
 
       <div className="flex flex-col md:flex-row justify-center items-center gap-8">
-        <PricingCard 
-          title="Monthly Support"
+        <PricingCard
+          title="Monthly"
           price="$1"
-          description="For unlimited candles and sacred notes. A small gesture to keep the light burning."
+          billing="/mo"
+          description="Continue your journey with unlimited sessions, notes, and candles."
           link={MONTHLY_LINK}
         />
-        <PricingCard 
-          title="Lifetime Access"
-          price="$9.99"
-          description="A one-time payment for lifetime access to daily voice reflections and all features."
-          link={LIFETIME_LINK}
+        <PricingCard
+          title="Yearly"
+          price="$10"
+          billing="/yr"
+          description="Our best value. Get a full year of unlimited access and support our mission."
+          link={YEARLY_LINK} // Changed from LIFETIME_LINK
           isFeatured={true}
         />
       </div>
-      
-      <p className="mt-12 text-center text-sm text-slate-500">
-        We don’t sell products. We don’t promise outcomes. We maintain a sanctuary.
-      </p>
     </div>
   );
 }
