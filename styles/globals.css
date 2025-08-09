@@ -1,200 +1,98 @@
-import Link from "next/link";
-import Footer from "../components/Footer";
-import PathPicker from "../components/PathPicker";
-import { useState, useMemo } from "react";
+/* FILE: /styles/globals.css */
 
-// The info cards section
-function InfoGrid() {
-  return (
-    <section className="info-grid">
-      <div className="info-card">
-        <h3 className="card-title">Wise Sources</h3>
-        <p className="card-text">Language inspired by sacred traditions—without dogma or promises.</p>
-      </div>
-      <div className="info-card">
-        <h3 className="card-title">Voice-First</h3>
-        <p className="card-text">Speak in your language. Be heard. Receive a gentle reflection.</p>
-      </div>
-      <div className="info-card">
-        <h3 className="card-title">Your Pace</h3>
-        <p className="card-text">Your first session is free. Optional support for more.</p>
-      </div>
-    </section>
-  );
+/* --- Fonts --- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700&display=swap');
+
+/* --- Reset / Base --- */
+* { box-sizing: border-box; }
+html, body {
+  padding: 0;
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: #0f172a; /* slate-900 */
+  background: #f8fafc; /* slate-50 */
+}
+a { text-decoration: none; color: inherit; }
+
+/* --- Layout --- */
+.page-container { min-height: 100dvh; display: flex; flex-direction: column; }
+.page-main { width: 100%; max-width: 1120px; margin: 0 auto; padding: 2.5rem 1rem 3rem; }
+
+/* --- Hero --- */
+.hero-section { text-align: center; padding-top: 1rem; padding-bottom: 1.25rem; }
+.brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
+.brand-logo { height: 64px; width: auto; }
+.brand-name { font-weight: 800; font-size: 2rem; letter-spacing: -0.02em; }
+.headline { font-family: 'Playfair Display', Georgia, serif; font-weight: 700; font-size: 1.75rem; margin: 0.75rem 0 0; }
+.subhead { max-width: 680px; margin: 10px auto 0; color: #475569; line-height: 1.65; }
+
+.path-picker { max-width: 860px; margin: 22px auto 0; }
+.path-label { font-weight: 600; color: #334155; margin-bottom: 8px; }
+
+/* --- Buttons --- */
+.btn {
+  display: inline-block;
+  padding: 12px 18px;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 0.94rem;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 2px 6px rgba(2, 6, 23, 0.06);
+  transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.btn:active { transform: scale(0.98); }
+.btn-accent { background: #111827; color: #fff; }
+.btn-accent:hover { background: #1f2937; }
+.btn-ghost { background: rgba(255,255,255,0.7); backdrop-filter: blur(6px); }
+.btn-ghost:hover { background: #fff; }
+
+/* CTA row */
+.cta-row { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+
+/* --- Cards --- */
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  max-width: 1000px;
+  margin: 24px auto 0;
+  padding: 0 1rem;
+}
+.card {
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+}
+.card-title { font-weight: 700; color: #0f172a; }
+.card-text { color: #475569; line-height: 1.6; font-size: 0.95rem; margin-top: 8px; }
+
+@media (min-width: 768px) {
+  .brand-logo { height: 80px; }
+  .brand-name { font-size: 2.75rem; }
+  .headline { font-size: 2.25rem; }
+  .info-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-// Main Homepage Component
-export default function Home() {
-  const [path, setPath] = useState("Universal");
-
-  const heroClass = useMemo(() => ({
-    Jewish: "theme-jewish",
-    Christian: "theme-christian",
-    Muslim: "theme-muslim",
-    Eastern: "theme-eastern",
-    Universal: "theme-universal"
-  }[path] || "theme-universal"), [path]);
-
-  return (
-    <>
-      <div className={`page-container ${heroClass}`}>
-        <main className="main-content">
-          <section className="hero-section">
-            <div className="brand-row">
-              <img src="/AuraCode_Logo.png" alt="AuraCode" className="hero-logo" />
-            </div>
-
-            <h1 className="hero-headline">Decode Your Energy. Trust Yourself.</h1>
-            <p className="hero-subheadline">Not science. Not religion. A soft mirror of soul, symbol, and story.</p>
-
-            <div className="path-picker-container">
-              <p className="path-picker-prompt">Choose your spiritual heritage (optional)</p>
-              <PathPicker value={path} onChange={setPath} />
-            </div>
-
-            <div className="action-buttons-container">
-              <Link className="btn btn-accent" href={`/get-your-aura?path=${encodeURIComponent(path)}`}>
-                Begin First Session (Free)
-              </Link>
-              <Link className="btn btn-ghost" href="/unlock">Register</Link>
-            </div>
-          </section>
-
-          <InfoGrid />
-        </main>
-        <Footer />
-      </div>
-
-      <style jsx global>{`
-        /* FONT IMPORT */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Playfair+Display:wght@700;900&display=swap');
-        
-        /* BASE & RESET */
-        html, body {
-          padding: 0; margin: 0;
-          font-family: 'Inter', sans-serif;
-          background-color: #f8fafc;
-          color: #334155;
-        }
-        * { box-sizing: border-box; }
-        a { color: inherit; text-decoration: none; }
-
-        /* PAGE LAYOUT */
-        .page-container {
-          display: flex; flex-direction: column;
-          min-height: 100vh;
-        }
-        .main-content {
-          flex-grow: 1; display: flex;
-          flex-direction: column; gap: 3rem;
-          padding-bottom: 3rem;
-        }
-
-        /* HERO SECTION - MOBILE FIRST */
-        .hero-section {
-          text-align: center;
-          padding: 2rem 1rem 3rem;
-          transition: background .5s ease;
-          background: radial-gradient(ellipse at 50% 0%, var(--accent-soft) 0%, #f8fafc 80%);
-        }
-        .brand-row { margin-bottom: 2rem; }
-        .hero-logo { height: 64px; width: auto; margin: 0 auto; }
-        .hero-headline {
-          font-family: 'Playfair Display', serif; font-weight: 700;
-          font-size: 2.25rem; line-height: 1.2;
-          color: #1e293b; margin: 0;
-        }
-        .hero-subheadline {
-          font-size: 1rem; max-width: 30rem;
-          margin: 1rem auto 0; color: #475569;
-          line-height: 1.6;
-        }
-
-        /* PATH PICKER - MOBILE FIRST */
-        .path-picker-container {
-          width: 100%; max-width: 48rem;
-          margin: 2rem auto 0;
-        }
-        .path-picker-prompt {
-          font-weight: 600; margin-bottom: 1rem;
-          color: #1e293b;
-        }
-        .action-buttons-container {
-          display: flex; flex-direction: column;
-          align-items: center; gap: 0.75rem;
-          margin-top: 2rem;
-        }
-
-        /* THEME COLORS */
-        .page-container { --accent: #64748b; --accent-soft: #f1f5f9; --accent-text: #ffffff; --accent-dark: #475569; }
-        .theme-jewish { --accent:#1f6fff; --accent-soft:#eaf0ff; --accent-text:#ffffff; --accent-dark:#1e40af; }
-        .theme-christian { --accent:#c62828; --accent-soft:#fdeaea; --accent-text:#ffffff; --accent-dark:#991b1b; }
-        .theme-muslim { --accent:#D4AF37; --accent-soft:#fff9e3; --accent-text:#3a2a00; --accent-dark:#8c6f1d; }
-        .theme-eastern { --accent:#ff8f00; --accent-soft:#fff2df; --accent-text:#ffffff; --accent-dark:#b45309; }
-
-        /* BUTTONS */
-        .btn {
-          display: inline-block; width: 100%;
-          max-width: 320px; padding: 0.8rem 1.6rem;
-          border-radius: 0.75rem; font-weight: 600;
-          font-size: 0.9rem; border: 1px solid transparent;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.05);
-          transition: all 0.2s ease; cursor: pointer;
-        }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 12px -2px rgba(0,0,0,0.1); }
-        .btn:active { transform: translateY(0px) scale(0.98); }
-        .btn-accent {
-          background-color: var(--accent); color: var(--accent-text);
-          box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--accent) 50%, transparent);
-        }
-        .btn-accent:hover { filter: brightness(1.1); }
-        .btn-ghost {
-          background-color: #ffffff99; backdrop-filter: blur(4px);
-          border-color: #e2e8f0; color: #475569;
-        }
-        .btn-ghost:hover { background-color: #ffffff; border-color: #cbd5e1; }
-
-        /* PATH TILES */
-        .path-tile {
-          border-radius: 1rem; border: 1px solid #e2e8f0;
-          background-color: #ffffffcc; backdrop-filter: blur(4px);
-          padding: 1rem; text-align: left;
-          transition: all 0.2s ease; cursor: pointer;
-        }
-        .path-tile.active { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
-        .path-title { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
-        .path-title + div { font-size: 0.75rem; color: #64748b; margin-top: 0.25rem; }
-
-        /* INFO GRID - MOBILE FIRST */
-        .info-grid {
-          display: grid; grid-template-columns: 1fr;
-          gap: 1rem; max-width: 52rem;
-          margin: 0 auto; padding: 0 1rem;
-        }
-        .info-card {
-          padding: 1.5rem; border-radius: 1rem;
-          border: 1px solid #e2e8f0; background-color: #ffffff;
-        }
-        .card-title { font-weight: 700; color: #1e293b; margin: 0; }
-        .card-text { font-size: 0.875rem; color: #475569; margin-top: 0.5rem; line-height: 1.6; }
-
-        /* DESKTOP STYLES -- Overrides for larger screens */
-        @media (min-width: 640px) {
-          .main-content { gap: 4rem; padding-bottom: 4rem; }
-          .hero-section { padding: 3rem 1.5rem 4rem; }
-          .hero-logo { height: 72px; }
-          .hero-headline { font-size: 3.5rem; }
-          .hero-subheadline { font-size: 1.125rem; }
-          .action-buttons-container {
-            flex-direction: row; justify-content: center;
-          }
-          .btn { width: auto; max-width: none; }
-          .info-grid {
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.5rem; padding: 0 1.5rem;
-          }
-        }
-      `}</style>
-    </>
-  );
+/* --- Background themes --- */
+.theme-jewish {
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(59,130,246,0.15), transparent),
+              linear-gradient(180deg, #ffffff, #f8fafc);
+}
+.theme-christian {
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(220,38,38,0.14), transparent),
+              linear-gradient(180deg, #ffffff, #f8fafc);
+}
+.theme-muslim {
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(22,163,74,0.14), transparent),
+              linear-gradient(180deg, #ffffff, #f8fafc);
+}
+.theme-eastern {
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(234,88,12,0.14), transparent),
+              linear-gradient(180deg, #ffffff, #f8fafc);
+}
+.theme-universal {
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(99,102,241,0.12), transparent),
+              linear-gradient(180deg, #ffffff, #f8fafc);
 }
