@@ -1,9 +1,13 @@
 // FILE: /pages/index.js
+import { useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
-import HeritageCards from "../components/HeritageCards";
+import HeritageSelector from "../components/HeritageSelector";
+import OracleVoice from "../components/OracleVoice";
 
 export default function Home() {
+  const [path, setPath] = useState("Universal"); // controlled by HeritageSelector
+
   return (
     <div className="page">
       {/* Top nav — Support removed */}
@@ -62,8 +66,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Heritage chips route into /guide/<slug> rooms */}
-      <HeritageCards />
+      {/* Use your existing HeritageSelector (NOT HeritageCards) */}
+      <HeritageSelector path={path} onChange={setPath} />
+
+      {/* Centerpiece voice UI — persona follows the selected path */}
+      <OracleVoice path={path} />
 
       <Footer />
 
