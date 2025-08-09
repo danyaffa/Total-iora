@@ -1,40 +1,209 @@
+/* Import Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Playfair+Display:wght@700&display=swap');
 
-/* Apply Tailwind base styles */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Base styles for a more relaxed feel */
-body {
-  background-color: #f8fafc; /* A very light gray instead of stark white */
-  color: #334155; /* A softer black */
+/* Base & Reset */
+html, body {
+  padding: 0;
+  margin: 0;
   font-family: 'Inter', sans-serif;
+  background-color: #f8fafc;
+  color: #334155;
+}
+* {
+  box-sizing: border-box;
+}
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
-/* Base button styles */
+/* Page container */
+.home-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4rem;
+  padding-bottom: 4rem;
+}
+
+/* Hero Section Styles */
+.hero-section {
+  text-align: center;
+  padding: 3rem 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+  transition: background .5s ease;
+  background: radial-gradient(ellipse at 50% -10%, var(--accent-soft) 0%, #f8fafc 70%);
+}
+.brand-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.hero-logo {
+  height: 60px;
+  width: auto;
+}
+.brand-name {
+  font-family: 'Inter', sans-serif;
+  font-weight: 800;
+  font-size: 1.5rem;
+  letter-spacing: 0.05em;
+  color: #1e293b;
+  margin: 0;
+}
+.hero-headline {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2.2rem, 5vw, 3.5rem);
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1e293b;
+  margin: 0;
+}
+.hero-subheadline {
+  font-size: 1.125rem;
+  max-width: 36rem;
+  margin: 1rem auto 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+/* Path Picker Styles */
+.path-picker-container {
+  max-width: 52rem;
+  margin: 2.5rem auto 0;
+}
+.path-picker-prompt {
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #1e293b;
+}
+
+/* Action Buttons */
+.action-buttons-container {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+/* Disclaimer Text */
+.disclaimer-text {
+  margin-top: 2rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  max-width: 28rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* --- THEME COLORS --- */
+.hero-section { --accent: #2294ff; --accent-soft: #e7f0ff; --accent-text: #fff; }
+.hero-section.jewish    {--accent:#1f6fff; --accent-soft:#eaf0ff;}
+.hero-section.christian {--accent:#c62828; --accent-soft:#fdeaea;}
+.hero-section.muslim    {--accent:#D4AF37; --accent-soft:#fff9e3;}
+.hero-section.eastern   {--accent:#ff8f00; --accent-soft:#fff2df;}
+.hero-section.universal {--accent:#64748b; --accent-soft:#f1f5f9;}
+
+/* --- COMPONENT STYLES --- */
+
+/* Buttons */
 .btn {
-  @apply inline-block px-6 py-3 rounded-full font-bold text-sm tracking-wide shadow-md transition-all duration-200;
-  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  border: 1px solid transparent;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease-in-out;
 }
 .btn:active {
-  @apply transform scale-95;
+  transform: scale(0.97);
 }
 .btn-accent {
-  @apply bg-slate-800 text-white hover:bg-slate-700 focus:ring-slate-500;
+  background-color: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+.btn-accent:hover {
+  filter: brightness(1.1);
 }
 .btn-soft {
-  @apply bg-slate-200 text-slate-700 hover:bg-slate-300 focus:ring-slate-400;
+  background-color: var(--accent-soft);
+  color: #1e293b;
 }
-.btn-small {
- @apply px-3 py-1 text-xs rounded-full shadow-sm;
+.btn-ghost {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  color: #334155;
+  box-shadow: none;
 }
-.btn.ghost {
-  @apply bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 shadow-none;
+.btn-ghost:hover {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
 }
 
-/* Input styles */
-.input {
-  @apply w-full p-3 border border-slate-300 rounded-lg bg-white shadow-sm;
-  @apply focus:outline-none focus:ring-2 focus:ring-slate-500;
+/* Path Tile from PathPicker.js */
+.path-tile {
+  border-radius: 0.875rem;
+  border: 1px solid #e2e8f0;
+  background-color: #fff;
+  padding: 1rem;
+  text-align: left;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+}
+.path-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.path-tile.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.path-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+}
+.icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Path Icon Colors */
+.path-icon-muslim { color: #D4AF37; }
+.path-icon-christian { color: #c62828; }
+.path-icon-jewish { color: #1f6fff; }
+.path-icon-eastern { color: #ff8f00; }
+.path-icon-universal { color: #94a3b8; }
+
+/* Info Grid at bottom of page */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 1.5rem;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+@media (min-width: 768px) {
+  .info-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.info-card {
+  padding: 1.5rem;
+  border-radius: 1.125rem;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+}
+.card-text {
+  font-size: 0.875rem;
+  color: #475569;
+  margin-top: 0.25rem;
 }
