@@ -1,19 +1,93 @@
-// FILE: /pages/api/auracode-chat.js  (only the idea shown)
+// FILE: /pages/api/auracode-chat.js
+// Next.js API route that shapes the Oracle's behavior.
+// Set OPENAI_API_KEY in your Vercel Project Settings > Environment Variables.
+
 export default async function handler(req, res) {
-  const { message, path, mode } = req.body || {};
-  const isSkills = mode === "skills";
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const GUIDANCE = {
-    Muslim: "Draw on adab & akhlaq, Qur’an, hadith, and Sufi practice. Offer practical steps.",
-    Christian: "Draw on the Gospels, virtues, Church Fathers, and the saints. Offer kind, specific habits.",
-    Jewish: "Draw on Rambam (Hilchot De’ot), Mussar, Psalms, and halacha where appropriate. Offer practical middot work.",
-    Eastern: "Draw on the Eightfold Path, Taoist harmony, and Vedic disciplines. Offer daily practices.",
-    Universal: "Draw on humanist ethics and contemplative practices. Offer simple, compassionate steps.",
-  };
+  try {
+    const { message, path = "Universal", mode = "general", lang = "en-US" } = req.body || {};
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Missing message" });
+    }
 
-  const system = isSkills
-    ? `You are a gentle guide for ${path} life skills. ${GUIDANCE[path] || ""} Keep it concrete, 3–6 steps max. No medical/legal claims.`
-    : `You are a gentle ${path} spiritual guide. Offer presence, clarity, and short reflections.`;
+    // Choose reply language from lang code
+    const targetLanguage =
+      String(lang || "").startsWith("ar") ? "Arabic" :
+      String(lang || "").startsWith("he") ? "Hebrew" :
+      "English";
 
-  // ...use "system" + "message" with your LLM call, then res.json({ reply })
+    // Persona-specific guidance
+    const GUIDANCE = {
+      Muslim:
+        "Draw gently from Qur’an and hadith where fitting, adab & akhlaq, and Sufi practice. Offer mercy and clarity.",
+      Christian:
+        "Draw gently from the Gospels, parables, virtues, Church Fathers, and the witness of the saints.",
+      Jewish:
+        "Draw gently from Torah, Psalms, and sages. For life-skills, lean on Rambam (Hilchot De’ot) and Mussar middot.",
+      Eastern:
+        "Draw gently from the Noble Eightfold Path, Taoist harmony, and Vedic disciplines like yamas/niyamas.",
+      Universal:
+        "Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
+    };
+
+    // Mode behavior
+    const MODE_PROMPT =
+      mode === "skills"
+        ? "Respond as a practical coach grounded in the selected tradition. Offer 3–6 concrete steps or habits. Name specific practices. Keep it kind, brief, and doable today."
+        : mode === "study"
+        ? "Respond as a gentle study companion in the selected tradition. Provide a short explanation and mention 2–4 likely sources or authors in one line (no formal citations or links). Keep it concise."
+        : "Respond as a compassionate spiritual guide in the selected tradition. Offer presence, clarity, and a short reflection.";
+
+    // Safety rails (no diagnosis/guarantees)
+    const ETHOS =
+      "Never provide medical, legal, or financial diagnosis. Encourage seeking qualified help if needed. Do not promise outcomes; offer presence, compassion, and clarity.";
+
+    // Build system prompt
+    const system = [
+      `You are a calm, humane spiritual guide (${path}).`,
+      GUIDANCE[path] || GUIDANCE["Universal"],
+      MODE_PROMPT,
+      ETHOS,
+      `Reply in ${targetLanguage}. Keep paragraphs short for easy reading.`,
+    ].join(" ");
+
+    // Compose request for OpenAI Chat Completions
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+    }
+
+    const payload = {
+      model: "gpt-4o-mini", // light + fast; use a larger model if you prefer
+      temperature: mode === "study" ? 0.7 : 0.8,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: message },
+      ],
+    };
+
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!r.ok) {
+      const text = await r.text();
+      return res.status(500).json({ error: "Upstream error", detail: text });
+    }
+
+    const data = await r.json();
+    const reply =
+      data?.choices?.[0]?.message?.content?.trim() ||
+      "I’m here with you.";
+
+    return res.status(200).json({ reply });
+  } catch (err) {
+    return res.status(500).json({ error: "Server error", detail: String(err?.message || err) });
+  }
 }
