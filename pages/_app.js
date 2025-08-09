@@ -1,5 +1,5 @@
 // FILE: /pages/_app.js
-import "@/styles/globals.css";
+import "../styles/globals.css"; // <- use relative path (no "@/")
 import AppLayout from "../components/AppLayout";
 
 export default function MyApp({ Component, pageProps }) {
@@ -9,3 +9,4 @@ export default function MyApp({ Component, pageProps }) {
     </AppLayout>
   );
 }
+
