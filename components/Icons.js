@@ -20,8 +20,11 @@ export function Om(props){ return (
     <path d="M8 12c2-3 6-3 8 0M10 15c1 1 3 1 4 0" stroke="currentColor" strokeWidth="2" fill="none"/>
   </svg>
 );}
+
+// MODIFIED: Candle is now multi-colored with a yellow/gold flame.
 export function Candle(props){ return (
   <svg viewBox="0 0 24 24" width="24" height="24" {...props}>
-    <path fill="currentColor" d="M11 2c2 2 2 3 0 5-2-2-2-3 0-5zM8 9h8v11a2 2 0 01-2 2H10a2 2 0 01-2-2V9z"/>
+    <path fill="#FFD700" d="M11 2c2 2 2 3 0 5-2-2-2-3 0-5z"/>
+    <path fill="#B0B0B0" d="M8 9h8v11a2 2 0 01-2 2H10a2 2 0 01-2-2V9z"/>
   </svg>
 );}
