@@ -1,30 +1,30 @@
-// lets users choose their spiritual heritage (affects visuals/text)
 import { StarOfDavid, Cross, Crescent, Om } from "./Icons";
 
 const OPTIONS = [
-  { key:"Jewish",    label:"Jewish",    sub:"Kabbalah, Psalms, Sages",   icon:StarOfDavid },
-  { key:"Christian", label:"Christian", sub:"Gospels, Fathers, Saints",  icon:Cross },
-  { key:"Muslim",    label:"Muslim",    sub:"Quranic light, Sufi wisdom",icon:Crescent },
-  { key:"Eastern",   label:"Eastern",   sub:"Buddhist/Tao/Veda insight", icon:Om },
-  { key:"Universal", label:"Universal", sub:"Humanist, agnostic, open",  icon:null },
+  { key:"Muslim",    label:"Muslim",    sub:"Quranic light • Sufi wisdom",  Icon:Crescent,     className:"muslim" },
+  { key:"Christian", label:"Christian", sub:"Gospels • Fathers • Saints",   Icon:Cross,        className:"christian" },
+  { key:"Eastern",   label:"Eastern",   sub:"Buddhist • Tao • Veda",        Icon:Om,           className:"eastern" },
+  { key:"Universal", label:"Universal", sub:"Humanist • Open • Gentle",     Icon:null,         className:"universal" },
+  { key:"Jewish",    label:"Jewish",    sub:"Kabbalah • Psalms • Sages",    Icon:StarOfDavid,  className:"jewish" },
 ];
 
 export default function PathPicker({ value, onChange }){
   return (
     <div className="grid sm:grid-cols-5 gap-3">
-      {OPTIONS.map(o=>{
-        const Active = value===o.key;
-        const Icon = o.icon;
+      {OPTIONS.map(({key,label,sub,Icon,className})=>{
+        const active = value===key;
         return (
           <button
-            key={o.key}
-            onClick={()=>onChange(o.key)}
-            className={`p-3 rounded-2xl border text-left hover:shadow ${Active?'border-black bg-white':'border-gray-200 bg-white/70'}`}>
-            <div className="flex items-center gap-2">
-              {Icon ? <Icon className="text-gray-700"/> : <span className="text-lg">✧</span>}
-              <div className="font-semibold">{o.label}</div>
+            key={key}
+            onClick={()=>onChange(key)}
+            className={`path-tile ${active?'active':''} ${className}`}
+            aria-pressed={active}
+            >
+            <div className="path-title">
+              {Icon ? <Icon className="icon text-gray-700"/> : <span className="badge">✧</span>}
+              <span>{label}</span>
             </div>
-            <div className="text-xs text-gray-500 mt-1">{o.sub}</div>
+            <div className="text-xs text-gray-600 mt-1">{sub}</div>
           </button>
         );
       })}
