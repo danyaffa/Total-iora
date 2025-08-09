@@ -1,16 +1,17 @@
-import { StarOfDavid, Cross, Crescent, Om } from "./Icons";
+import { StarOfDavid, Cross, Crescent, Om, Candle } from "./Icons"; // Added Candle
 
 const OPTIONS = [
   { key:"Muslim",    label:"Muslim",    sub:"Quranic light • Sufi wisdom",  Icon:Crescent,     className:"muslim" },
   { key:"Christian", label:"Christian", sub:"Gospels • Fathers • Saints",   Icon:Cross,        className:"christian" },
-  { key:"Eastern",   label:"Eastern",   sub:"Buddhist • Tao • Veda",        Icon:Om,           className:"eastern" },
-  { key:"Universal", label:"Universal", sub:"Humanist • Open • Gentle",     Icon:null,         className:"universal" },
   { key:"Jewish",    label:"Jewish",    sub:"Kabbalah • Psalms • Sages",    Icon:StarOfDavid,  className:"jewish" },
+  { key:"Eastern",   label:"Eastern",   sub:"Buddhist • Tao • Veda",        Icon:Om,           className:"eastern" },
+  // MODIFIED: Universal now uses the new Candle icon
+  { key:"Universal", label:"Universal", sub:"Humanist • Open • Gentle",     Icon:Candle,       className:"universal" },
 ];
 
 export default function PathPicker({ value, onChange }){
   return (
-    <div className="grid sm:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
       {OPTIONS.map(({key,label,sub,Icon,className})=>{
         const active = value===key;
         return (
@@ -21,7 +22,8 @@ export default function PathPicker({ value, onChange }){
             aria-pressed={active}
             >
             <div className="path-title">
-              {Icon ? <Icon className="icon text-gray-700"/> : <span className="badge">✧</span>}
+              {/* MODIFIED: Applies specific color class to each icon */}
+              {Icon ? <Icon className={`icon path-icon-${className}`}/> : <span className="badge">✧</span>}
               <span>{label}</span>
             </div>
             <div className="text-xs text-gray-600 mt-1">{sub}</div>
