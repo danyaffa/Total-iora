@@ -48,13 +48,14 @@ main { min-height: calc(100vh - 140px); }
 }
 .hero-subheadline {
   font-size: clamp(1rem, 2vw, 1.125rem);
-  max-w-2xl;
+  /* --- FIXED: Replaced invalid 'max-w-2xl' with correct CSS property --- */
+  max-width: 42rem;
   margin: 1.25rem auto 0;
   color: #334155;
   line-height: 1.6;
 }
 .path-picker-container {
-  max-width: 48rem;
+  max-w: 48rem;
   margin: 3rem auto 0;
   padding: 1.5rem;
   border-radius: 1.5rem;
@@ -66,7 +67,6 @@ main { min-height: calc(100vh - 140px); }
 
 /* --- Path palettes & Icon Colors --- */
 .hero-section { --accent: #2294ff; --accent-soft: #e7f0ff; --accent-text: #fff; }
-/* MODIFIED: Muslim theme is now Gold */
 .hero-section.jewish    {--accent:#1f6fff; --accent-soft:#eaf0ff;}
 .hero-section.christian {--accent:#c62828; --accent-soft:#fdeaea;}
 .hero-section.muslim    {--accent:#D4AF37; --accent-soft:#fff9e3;}
