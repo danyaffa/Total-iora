@@ -1,91 +1,82 @@
-import Link from "next/link";
-import Image from "next/image";
-import { Candle, StarOfDavid, Cross, Crescent, Om } from "../components/Icons";
 import PathPicker from "../components/PathPicker";
+import Link from "next/link";
 import { useState, useMemo } from "react";
 
-function SacredHint({ path }){
-  const map = {
-    // --- MODIFIED: Removed 'text-gray-700' to allow theme color via CSS ---
-    Muslim:    { place:"Mecca",            icon:<Crescent className="icon" /> },
-    Christian: { place:"a Cathedral",      icon:<Cross className="icon" /> },
-    Eastern:   { place:"a Temple",         icon:<Om className="icon" /> },
-    Jewish:    { place:"the Western Wall", icon:<StarOfDavid className="icon" /> },
-    Universal: { place:"a Sanctuary",      icon:<Candle className="icon" /> },
-  };
-  const m = map[path||"Universal"];
+// The info cards section from the original page, now as a separate component
+function InfoGrid() {
   return (
-    <p className="text-sm text-gray-700 flex items-center gap-2 mt-2">
-      {m.icon} Your session will feel like sitting quietly in {m.place}.
-    </p>
+    <section className="info-grid max-w-5xl mx-auto">
+      <div className="card">
+        <h3 className="font-bold">Wise Sources</h3>
+        <p className="text-sm text-gray-700 mt-1">
+          Language inspired by sacred traditions (Psalms, Gospels, Quranic wisdom, Eastern proverbs) — without dogma or promises.
+        </p>
+      </div>
+      <div className="card">
+        <h3 className="font-bold">Voice‑First</h3>
+        <p className="text-sm text-gray-700 mt-1">
+          Speak in your language. Be heard. Receive a gentle reflection tuned to your path.
+        </p>
+      </div>
+      <div className="card">
+        <h3 className="font-bold">Your Pace</h3>
+        <p className="text-sm text-gray-700 mt-1">
+          Free to begin. Optional support: $1/month candles & notes · $9.99 lifetime voice reflections.
+        </p>
+      </div>
+    </section>
   );
 }
 
-export default function Home(){
+export default function Home() {
   const [path, setPath] = useState("Universal");
-  const heroClass = useMemo(()=>({
-    Jewish:"jewish",
-    Christian:"christian",
-    Muslim:"muslim",
-    Eastern:"eastern",
-    Universal:"universal"
+
+  // This logic applies the background color theme based on the selected path
+  const heroClass = useMemo(() => ({
+    Jewish: "jewish",
+    Christian: "christian",
+    Muslim: "muslim",
+    Eastern: "eastern",
+    Universal: "universal"
   }[path] || "universal"), [path]);
 
   return (
-    <div className="grid gap-10">
-      <section className={`hero ${heroClass}`}>
-        {/* Brand row with correctly-proportioned logo */}
+    <div className="space-y-20">
+      <section className={`hero-section ${heroClass}`}>
         <div className="brand-row">
-          <img src="/AuraCode_Logo.png" alt="AuraCode" className="brand-logo" />
-          <span className="brand-name">Auracode</span>
-          <span className="accent-chip">Gentle • Faith‑aware • Voice‑first</span>
+          <img src="/AuraCode_Logo.png" alt="AuraCode" className="hero-logo" />
+          <span className="brand-name">AURACODE</span>
         </div>
 
-        <h1 className="text-4xl md:text-5xl font-extrabold leading-tight max-w-3xl">
-          Decode Your Energy. <span className="block">Trust Yourself.</span>
+        <h1 className="hero-headline">
+          Decode Your Energy. Trust Yourself.
         </h1>
-        <p className="mt-3 text-gray-700 max-w-2xl">
+        <p className="hero-subheadline">
           Not science. Not religion. A soft mirror of soul, symbol, and story.
           We never promise miracles — we offer presence. Leave lighter than you came.
         </p>
 
-        <div className="mt-6">
-          <div className="text-sm font-semibold mb-2">Choose your spiritual heritage (optional)</div>
-          <PathPicker value={path} onChange={setPath}/>
-          <SacredHint path={path}/>
+        <div className="path-picker-container">
+          <p className="font-semibold mb-3 text-gray-800">Choose your spiritual heritage (optional)</p>
+          <PathPicker value={path} onChange={setPath} />
         </div>
 
-        <div className="mt-8 flex flex-wrap gap-10">
-          <Link className="btn btn-accent" href={`/get-your-aura?path=${encodeURIComponent(path)}`}>Speak to a Mentor</Link>
-          <Link className="btn btn-soft" href={`/sacred-space?path=${encodeURIComponent(path)}`}>Leave a Sacred Note</Link>
+        <div className="mt-10 flex flex-wrap justify-center gap-4">
+          <Link className="btn btn-accent" href={`/get-your-aura?path=${encodeURIComponent(path)}`}>
+            Speak to a Mentor
+          </Link>
+          <Link className="btn btn-soft" href={`/sacred-space?path=${encodeURIComponent(path)}`}>
+            Leave a Sacred Note
+          </Link>
           <Link className="btn ghost" href="/unlock">Support the Sanctuary</Link>
         </div>
 
-        <p className="mt-6 text-xs text-gray-500">
+        <p className="mt-10 text-xs text-gray-500 max-w-md mx-auto">
           Disclaimer: Symbolic reflections only. For self‑reflection & comfort; not counseling, clergy, or medical advice.
         </p>
       </section>
 
-      <section className="info-grid">
-        <div className="card">
-          <h3 className="font-bold">Wise Sources</h3>
-          <p className="text-sm text-gray-700 mt-1">
-            Language inspired by sacred traditions (Psalms, Gospels, Quranic wisdom, Eastern proverbs) — without dogma or promises.
-          </p>
-        </div>
-        <div className="card">
-          <h3 className="font-bold">Voice‑First</h3>
-          <p className="text-sm text-gray-700 mt-1">
-            Speak in your language. Be heard. Receive a gentle reflection tuned to your path.
-          </p>
-        </div>
-        <div className="card">
-          <h3 className="font-bold">Your Pace</h3>
-          <p className="text-sm text-gray-700 mt-1">
-            Free to begin. Optional support: $1/month candles & notes · $9.99 lifetime voice reflections.
-          </p>
-        </div>
-      </section>
+      <InfoGrid />
     </div>
   );
 }
