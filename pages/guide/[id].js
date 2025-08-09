@@ -1,14 +1,58 @@
 // FILE: /pages/guide/[id].js
-import { useRouter } from "next/router";
 import Footer from "../../components/Footer";
 import OracleVoice from "../../components/OracleVoice";
-import { PERSONAS } from "../../data/personas";
+import * as PersonasModule from "../../data/personas";
 
-export default function GuideRoom() {
-  const { query } = useRouter();
-  const slug = Array.isArray(query.id) ? query.id[0] : query.id || "universal";
-  const persona = PERSONAS.find((p) => p.slug === slug) || PERSONAS.find((p) => p.slug === "universal");
+// Normalize PERSONAS whether it's an array or an object map
+function getPersonasList() {
+  const raw =
+    PersonasModule.PERSONAS ??
+    PersonasModule.default ??
+    PersonasModule.personas ??
+    PersonasModule.PERSONAS_LIST ??
+    PersonasModule.PATHS;
 
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") return Object.values(raw);
+
+  // Safe fallback (prevents build crashes)
+  return [
+    {
+      id: "Universal",
+      slug: "universal",
+      title: "Sage",
+      blurb: "Humanist, open, and gentle—presence over promises.",
+    },
+  ];
+}
+
+export async function getStaticPaths() {
+  const list = getPersonasList();
+  const slugs = Array.from(new Set((list || []).map((p) => p?.slug).filter(Boolean)));
+  const paths = (slugs.length ? slugs : ["universal"]).map((slug) => ({ params: { id: slug } }));
+  return { paths, fallback: false }; // required for static export builds
+}
+
+export async function getStaticProps({ params }) {
+  const slug = params?.id || "universal";
+  const list = getPersonasList();
+  const persona =
+    (list || []).find((p) => p?.slug === slug) ||
+    (list || []).find((p) => p?.slug === "universal") ||
+    list[0];
+
+  // Guard against undefined
+  const safe = persona || {
+    id: "Universal",
+    slug: "universal",
+    title: "Sage",
+    blurb: "Humanist, open, and gentle—presence over promises.",
+  };
+
+  return { props: { persona: safe } };
+}
+
+export default function GuideRoom({ persona }) {
   return (
     <div className="room">
       <nav className="topnav">
@@ -21,7 +65,6 @@ export default function GuideRoom() {
         <p className="blurb">{persona.blurb}</p>
       </header>
 
-      {/* Centerpiece voice UI */}
       <OracleVoice path={persona.id} />
 
       <Footer />
