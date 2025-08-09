@@ -1,8 +1,12 @@
 // FILE: /components/Footer.js
 export default function Footer() {
   return (
-    <footer className="w-full py-8 border-t border-slate-200 bg-white">
-      <div className="container mx-auto px-4 sm:px-6 text-center">
+    <footer
+      role="contentinfo"
+      style={{ textAlign: "center" }}
+      className="mt-auto w-full border-t border-slate-200 bg-white"
+    >
+      <div className="mx-auto px-4 sm:px-6 py-8">
         <p className="text-sm text-slate-600">
           © {new Date().getFullYear()} AuraCode · A sanctuary of reflection. No promises. Only presence.
         </p>
