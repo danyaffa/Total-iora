@@ -6,11 +6,12 @@ import { useState, useMemo } from "react";
 
 function SacredHint({ path }){
   const map = {
-    Muslim:    { place:"Mecca",            icon:<Crescent className="text-gray-700 icon" /> },
-    Christian: { place:"a Cathedral",      icon:<Cross className="text-gray-700 icon" /> },
-    Eastern:   { place:"a Temple",         icon:<Om className="text-gray-700 icon" /> },
-    Jewish:    { place:"the Western Wall", icon:<StarOfDavid className="text-gray-700 icon" /> },
-    Universal: { place:"a Sanctuary",      icon:<Candle className="text-gray-700 icon" /> },
+    // --- MODIFIED: Removed 'text-gray-700' to allow theme color via CSS ---
+    Muslim:    { place:"Mecca",            icon:<Crescent className="icon" /> },
+    Christian: { place:"a Cathedral",      icon:<Cross className="icon" /> },
+    Eastern:   { place:"a Temple",         icon:<Om className="icon" /> },
+    Jewish:    { place:"the Western Wall", icon:<StarOfDavid className="icon" /> },
+    Universal: { place:"a Sanctuary",      icon:<Candle className="icon" /> },
   };
   const m = map[path||"Universal"];
   return (
