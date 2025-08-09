@@ -4,7 +4,8 @@ export default function Header() {
   return (
     <header className="w-full py-4 px-6 flex items-center justify-between bg-white/80 backdrop-blur border-b">
       <Link href="/" className="flex items-center gap-2">
-        <img src="/logo.png" alt="AuraCode" className="h-8"/>
+        {/* MODIFIED: Logo is larger */}
+        <img src="/logo.png" alt="AuraCode" className="h-10"/>
         <span className="font-bold">AuraCode</span>
       </Link>
       <nav className="flex items-center gap-4 text-sm">
