@@ -1,70 +1,121 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
-*{box-sizing:border-box}
-html,body{padding:0;margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto;background:#fafafa;color:#0f172a}
-main{min-height:calc(100vh - 140px)}
-.container{max-width:1100px;margin:0 auto;padding:24px}
+/* Import new fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@700&display=swap');
 
-/* Cards / inputs / buttons */
-.input{padding:12px;border:1px solid #e5e7eb;border-radius:14px;background:#fff;width:100%}
-.card{padding:18px;border-radius:18px;border:1px solid #e5e7eb;background:#ffffffb3;backdrop-filter:blur(6px)}
-.btn{padding:12px 18px;border-radius:999px;font-weight:700;border:none;cursor:pointer;transition:transform .05s ease, box-shadow .2s}
-.btn:active{transform:translateY(1px)}
-.btn.ghost{background:#fff;border:1px solid #e5e7eb}
+/* Reset and base styles */
+html, body {
+  padding: 0;
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto;
+  background: #fdfdfd;
+  color: #0f172a;
+}
+* { box-sizing: border-box; }
+main { min-height: calc(100vh - 140px); }
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
 
-/* --- MODIFIED: Hero gradient & atmosphere --- */
-.hero{
-  border-radius:26px;
-  padding:32px;
-  /* Softer, theme-colored shadow and border */
-  box-shadow: 0 10px 40px color-mix(in srgb, var(--accent-soft) 80%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, #e5e7eb);
-  /* Themed radial gradient for a gentle "glow" from the top left */
-  background: radial-gradient(1400px 700px at -10% -5%, color-mix(in srgb, var(--accent-soft) 90%, #fafafa) 0%, #fafafa 50%);
-  /* Smooth transition for background and shadow colors when theme changes */
-  transition: background .5s ease, box-shadow .5s ease, border-color .5s ease;
+/* --- NEW: Homepage Hero Section --- */
+.hero-section {
+  text-align: center;
+  padding: 4rem 1.5rem 5rem;
+  border-bottom: 1px solid #e5e7eb;
+  transition: background .5s ease;
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft) 0%, #fdfdfd 60%);
+}
+.hero-logo {
+  height: 64px; /* Much bigger logo */
+  width: auto;
+  margin: 0 auto;
+  display: block;
+}
+.brand-row {
+  margin-bottom: 2rem;
+}
+.brand-name {
+  margin-top: 1rem;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: .15em;
+  color: #475569;
+}
+.hero-headline {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: #1e293b;
+  margin: 0;
+}
+.hero-subheadline {
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  max-w-2xl;
+  margin: 1.25rem auto 0;
+  color: #334155;
+  line-height: 1.6;
+}
+.path-picker-container {
+  max-width: 48rem;
+  margin: 3rem auto 0;
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
 }
 
-/* --- MODIFIED: Themed H1 and Icon color --- */
-h1{
-  letter-spacing:-.02em;
-  /* Make the heading a dark, rich shade of the accent color */
-  color: color-mix(in srgb, var(--accent) 85%, #0f172a);
+/* --- Path palettes & Icon Colors --- */
+.hero-section { --accent: #2294ff; --accent-soft: #e7f0ff; --accent-text: #fff; }
+/* MODIFIED: Muslim theme is now Gold */
+.hero-section.jewish    {--accent:#1f6fff; --accent-soft:#eaf0ff;}
+.hero-section.christian {--accent:#c62828; --accent-soft:#fdeaea;}
+.hero-section.muslim    {--accent:#D4AF37; --accent-soft:#fff9e3;}
+.hero-section.eastern   {--accent:#ff8f00; --accent-soft:#fff2df;}
+.hero-section.universal {--accent:#64748b; --accent-soft:#f1f5f9;}
+
+/* NEW: Specific icon colors for the PathPicker */
+.path-icon-muslim { color: #D4AF37; }    /* Gold */
+.path-icon-christian { color: #c62828; } /* Red */
+.path-icon-jewish { color: #1f6fff; }    /* Blue */
+.path-icon-eastern { color: #ff8f00; }   /* Orange */
+.path-icon-universal { color: #94a3b8; } /* Gray for neutral candle icon */
+
+/* --- Improved Interactive Elements --- */
+.btn {
+  padding: 12px 24px;
+  border-radius: 999px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all .2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
-/* This will color the icon in the "SacredHint" component */
-.hero .icon{
-  color: var(--accent);
+.btn:active { transform: scale(0.97); }
+.btn.ghost { background: #fff; border: 1px solid #e5e7eb; }
+.btn-accent { background: var(--accent); color: var(--accent-text); }
+.btn-accent:hover { filter: brightness(1.1); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); }
+.btn-soft { background: var(--accent-soft); color: #0f172a; }
+
+.path-tile {
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 14px;
+  text-align: left;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+.path-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+}
+.path-tile.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.path-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.icon { width: 20px; height: 20px; }
 
-/* Path palettes via CSS variables */
-.hero{--accent:#2294ff;--accent-soft:#e7f0ff;--accent-text:#fff;}
-/* --- MODIFIED: Adjusted soft accent colors for a richer glow --- */
-.hero.jewish    {--accent:#1f6fff; --accent-soft:#eaf0ff;}
-.hero.christian {--accent:#c62828; --accent-soft:#fdeaea;}
-.hero.muslim    {--accent:#1b8f3a; --accent-soft:#e7f7ec;}
-.hero.eastern   {--accent:#ff8f00; --accent-soft:#fff2df;}
-.hero.universal {--accent:#00a39a; --accent-soft:#e7faf9;}
-
-
-.accent-chip{display:inline-block;padding:6px 10px;border-radius:999px;background:var(--accent-soft);color:#0f172a;font-weight:600}
-
-/* Accent buttons */
-.btn-accent{background:var(--accent); color:var(--accent-text); box-shadow:0 4px 16px color-mix(in srgb, var(--accent) 30%, transparent);}
-.btn-accent:hover{box-shadow:0 6px 22px color-mix(in srgb, var(--accent) 45%, transparent);}
-.btn-soft{background:var(--accent-soft); color:#0f172a}
-.badge{font-size:11px;padding:4px 8px;border-radius:999px;background:#fff;border:1px solid #e5e7eb}
-
-/* PathPicker tiles */
-.path-tile{border-radius:16px;border:1px solid #e5e7eb;background:#fff; padding:14px; text-align:left}
-.path-tile.active{border-color:var(--accent); box-shadow:0 6px 18px color-mix(in srgb, var(--accent) 15%, transparent)}
-.path-title{display:flex;align-items:center;gap:8px;font-weight:700}
-/* The existing .icon style is minimal, which is fine */
-.icon{width:20px;height:20px}
-
-/* Logo */
-.brand-row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.brand-logo{height:40px;width:auto;display:block}
-.brand-name{font-weight:800;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:#334155}
-
-/* Section grid cards */
-.info-grid{display:grid;grid-template-columns:repeat(1,minmax(0,1fr));gap:16px}
-@media(min-width:840px){ .info-grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
+/* Info Grid & Cards */
+.info-grid { display:grid; grid-template-columns:repeat(1,minmax(0,1fr)); gap:16px; padding: 0 1.5rem 4rem; }
+@media(min-width:768px){ .info-grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
+.card { padding:24px; border-radius:18px; border:1px solid #e5e7eb; background:#ffffff; }
