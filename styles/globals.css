@@ -11,18 +11,39 @@ main{min-height:calc(100vh - 140px)}
 .btn:active{transform:translateY(1px)}
 .btn.ghost{background:#fff;border:1px solid #e5e7eb}
 
-/* Hero gradient – neutral base */
-.hero{border-radius:26px;padding:32px;box-shadow:0 10px 30px rgba(2,8,23,.06);border:1px solid #e5e7eb;
-background: radial-gradient(1200px 600px at 10% 0%, #ffffff 0%, #eef6ff 45%, #f7faff 100%);}
-h1{letter-spacing:-.02em}
+/* --- MODIFIED: Hero gradient & atmosphere --- */
+.hero{
+  border-radius:26px;
+  padding:32px;
+  /* Softer, theme-colored shadow and border */
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--accent-soft) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, #e5e7eb);
+  /* Themed radial gradient for a gentle "glow" from the top left */
+  background: radial-gradient(1400px 700px at -10% -5%, color-mix(in srgb, var(--accent-soft) 90%, #fafafa) 0%, #fafafa 50%);
+  /* Smooth transition for background and shadow colors when theme changes */
+  transition: background .5s ease, box-shadow .5s ease, border-color .5s ease;
+}
+
+/* --- MODIFIED: Themed H1 and Icon color --- */
+h1{
+  letter-spacing:-.02em;
+  /* Make the heading a dark, rich shade of the accent color */
+  color: color-mix(in srgb, var(--accent) 85%, #0f172a);
+}
+/* This will color the icon in the "SacredHint" component */
+.hero .icon{
+  color: var(--accent);
+}
 
 /* Path palettes via CSS variables */
 .hero{--accent:#2294ff;--accent-soft:#e7f0ff;--accent-text:#fff;}
-.hero.jewish    {--accent:#1f6fff; --accent-soft:#e7efff;}
+/* --- MODIFIED: Adjusted soft accent colors for a richer glow --- */
+.hero.jewish    {--accent:#1f6fff; --accent-soft:#eaf0ff;}
 .hero.christian {--accent:#c62828; --accent-soft:#fdeaea;}
 .hero.muslim    {--accent:#1b8f3a; --accent-soft:#e7f7ec;}
 .hero.eastern   {--accent:#ff8f00; --accent-soft:#fff2df;}
 .hero.universal {--accent:#00a39a; --accent-soft:#e7faf9;}
+
 
 .accent-chip{display:inline-block;padding:6px 10px;border-radius:999px;background:var(--accent-soft);color:#0f172a;font-weight:600}
 
@@ -36,6 +57,7 @@ h1{letter-spacing:-.02em}
 .path-tile{border-radius:16px;border:1px solid #e5e7eb;background:#fff; padding:14px; text-align:left}
 .path-tile.active{border-color:var(--accent); box-shadow:0 6px 18px color-mix(in srgb, var(--accent) 15%, transparent)}
 .path-title{display:flex;align-items:center;gap:8px;font-weight:700}
+/* The existing .icon style is minimal, which is fine */
 .icon{width:20px;height:20px}
 
 /* Logo */
