@@ -1,13 +1,11 @@
 // FILE: /pages/sacred-space.js
-import { useRouter } from "next/router";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 /* --- Inline animated candle (no external deps) --- */
 function LitCandle() {
   return (
     <div className="candle">
       <svg viewBox="0 0 120 180" className="svg" aria-label="Lit candle">
-        {/* glow */}
         <defs>
           <radialGradient id="g" cx="50%" cy="30%" r="60%">
             <stop offset="0%" stopColor="rgba(255,199,73,.7)" />
@@ -15,16 +13,12 @@ function LitCandle() {
           </radialGradient>
         </defs>
         <circle cx="60" cy="54" r="44" fill="url(#g)" className="glow" />
-        {/* flame */}
         <path
           d="M60 18 C64 28,72 36,70 48 C69 58,61 64,60 64 C59 64,51 58,50 48 C48 36,56 28,60 18 Z"
           className="flame"
         />
-        {/* wick */}
         <rect x="58" y="64" width="4" height="10" rx="2" fill="#2b2b2b" />
-        {/* wax */}
         <rect x="36" y="72" width="48" height="78" rx="8" className="wax" />
-        {/* plate */}
         <ellipse cx="60" cy="154" rx="42" ry="8" className="plate" />
       </svg>
       <style jsx>{`
@@ -56,50 +50,41 @@ const templates = [
 ];
 
 export default function SacredSpace() {
-  const router = useRouter();
-  const path = String(router.query.path || "Universal");
-
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [candleLit, setCandleLit] = useState(false);
 
-  // tidy status fade
+  // fade status
   useEffect(() => {
     if (!status) return;
     const t = setTimeout(() => setStatus(""), 6000);
     return () => clearTimeout(t);
   }, [status]);
 
-  async function save(type) {
+  // LOCAL-ONLY save (no network, nothing stored)
+  function save(type) {
     const isCandle = type === "candle";
     setSaving(true);
-    setStatus("Saving…");
 
-    // show candle instantly for feedback
-    if (isCandle) setCandleLit(true);
+    if (isCandle) setCandleLit(true); // instant visual feedback
 
-    try {
-      const res = await fetch("/api/wall", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ note, candle: isCandle, path }),
-      });
-      if (res.ok) {
-        setStatus(isCandle ? "A candle has been lit for your intention." : "Your intention rests in the sacred silence.");
-        if (!isCandle) setNote("");
-      } else {
-        setStatus("Could not save at this time. Please try again.");
-      }
-    } catch {
-      setStatus("Network error. Please try again.");
-    } finally {
-      setSaving(false);
+    // small UX delay so buttons show their loading state briefly
+    setTimeout(() => {
       if (isCandle) {
+        setStatus("A candle has been lit for your intention.");
         // keep candle visible for 12s
         setTimeout(() => setCandleLit(false), 12000);
+      } else {
+        if (note.trim()) {
+          setStatus("Your intention rests here in silence.");
+          setNote("");
+        } else {
+          setStatus("Please write your note first.");
+        }
       }
-    }
+      setSaving(false);
+    }, 350);
   }
 
   return (
@@ -135,7 +120,7 @@ export default function SacredSpace() {
           <button
             className="btn soft"
             onClick={() => save("note")}
-            disabled={!note || saving}
+            disabled={saving}
             type="button"
           >
             {saving ? "Saving…" : "Place Note"}
@@ -146,7 +131,7 @@ export default function SacredSpace() {
             disabled={saving}
             type="button"
           >
-            Light a Candle
+            {saving ? "Lighting…" : "Light a Candle"}
           </button>
         </div>
 
@@ -160,12 +145,12 @@ export default function SacredSpace() {
         )}
 
         <p className="privacy">
-          Privacy & Integrity: notes are private and may be deleted after 12 months.
+          This is your space. You can do whatever you like to do here. We have no responsibility for anything you write,
+          and <strong>nothing is kept or saved</strong>; everything stays on your device and clears when you refresh.
         </p>
       </main>
 
       <style jsx>{`
-        /* Background */
         .wrap {
           min-height: 100vh;
           padding: 40px 16px 60px;
@@ -175,12 +160,10 @@ export default function SacredSpace() {
             linear-gradient(180deg, #ffffff, #f8fafc);
         }
 
-        /* Header */
         .hero { text-align: center; margin-bottom: 16px; }
         .hero h1 { font-size: 2.2rem; margin: 0; color: #0f172a; letter-spacing: .3px; }
         .hero p { margin-top: 8px; color: #475569; }
 
-        /* Card */
         .card {
           max-width: 860px;
           margin: 0 auto;
