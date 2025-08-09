@@ -1,121 +1,40 @@
-/* Import new fonts */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Playfair+Display:wght@700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&family=Playfair+Display:wght@700&display=swap');
 
-/* Reset and base styles */
-html, body {
-  padding: 0;
-  margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto;
-  background: #fdfdfd;
-  color: #0f172a;
-}
-* { box-sizing: border-box; }
-main { min-height: calc(100vh - 140px); }
-.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+/* Apply Tailwind base styles */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-/* --- NEW: Homepage Hero Section --- */
-.hero-section {
-  text-align: center;
-  padding: 4rem 1.5rem 5rem;
-  border-bottom: 1px solid #e5e7eb;
-  transition: background .5s ease;
-  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft) 0%, #fdfdfd 60%);
-}
-.hero-logo {
-  height: 64px; /* Much bigger logo */
-  width: auto;
-  margin: 0 auto;
-  display: block;
-}
-.brand-row {
-  margin-bottom: 2rem;
-}
-.brand-name {
-  margin-top: 1rem;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: .15em;
-  color: #475569;
-}
-.hero-headline {
-  font-family: 'Playfair Display', serif;
-  font-size: clamp(2.5rem, 6vw, 4rem);
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-  color: #1e293b;
-  margin: 0;
-}
-.hero-subheadline {
-  font-size: clamp(1rem, 2vw, 1.125rem);
-  /* --- FIXED: Replaced invalid 'max-w-2xl' with correct CSS property --- */
-  max-width: 42rem;
-  margin: 1.25rem auto 0;
-  color: #334155;
-  line-height: 1.6;
-}
-.path-picker-container {
-  max-w: 48rem;
-  margin: 3rem auto 0;
-  padding: 1.5rem;
-  border-radius: 1.5rem;
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+/* Base styles for a more relaxed feel */
+body {
+  background-color: #f8fafc; /* A very light gray instead of stark white */
+  color: #334155; /* A softer black */
+  font-family: 'Inter', sans-serif;
 }
 
-/* --- Path palettes & Icon Colors --- */
-.hero-section { --accent: #2294ff; --accent-soft: #e7f0ff; --accent-text: #fff; }
-.hero-section.jewish    {--accent:#1f6fff; --accent-soft:#eaf0ff;}
-.hero-section.christian {--accent:#c62828; --accent-soft:#fdeaea;}
-.hero-section.muslim    {--accent:#D4AF37; --accent-soft:#fff9e3;}
-.hero-section.eastern   {--accent:#ff8f00; --accent-soft:#fff2df;}
-.hero-section.universal {--accent:#64748b; --accent-soft:#f1f5f9;}
-
-/* NEW: Specific icon colors for the PathPicker */
-.path-icon-muslim { color: #D4AF37; }    /* Gold */
-.path-icon-christian { color: #c62828; } /* Red */
-.path-icon-jewish { color: #1f6fff; }    /* Blue */
-.path-icon-eastern { color: #ff8f00; }   /* Orange */
-.path-icon-universal { color: #94a3b8; } /* Gray for neutral candle icon */
-
-/* --- Improved Interactive Elements --- */
+/* Base button styles */
 .btn {
-  padding: 12px 24px;
-  border-radius: 999px;
-  font-weight: 700;
-  border: none;
-  cursor: pointer;
-  transition: all .2s ease;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  @apply inline-block px-6 py-3 rounded-full font-bold text-sm tracking-wide shadow-md transition-all duration-200;
+  @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
 }
-.btn:active { transform: scale(0.97); }
-.btn.ghost { background: #fff; border: 1px solid #e5e7eb; }
-.btn-accent { background: var(--accent); color: var(--accent-text); }
-.btn-accent:hover { filter: brightness(1.1); box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 35%, transparent); }
-.btn-soft { background: var(--accent-soft); color: #0f172a; }
+.btn:active {
+  @apply transform scale-95;
+}
+.btn-accent {
+  @apply bg-slate-800 text-white hover:bg-slate-700 focus:ring-slate-500;
+}
+.btn-soft {
+  @apply bg-slate-200 text-slate-700 hover:bg-slate-300 focus:ring-slate-400;
+}
+.btn-small {
+ @apply px-3 py-1 text-xs rounded-full shadow-sm;
+}
+.btn.ghost {
+  @apply bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 shadow-none;
+}
 
-.path-tile {
-  border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  padding: 14px;
-  text-align: left;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+/* Input styles */
+.input {
+  @apply w-full p-3 border border-slate-300 rounded-lg bg-white shadow-sm;
+  @apply focus:outline-none focus:ring-2 focus:ring-slate-500;
 }
-.path-tile:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-}
-.path-tile.active {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-.path-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.icon { width: 20px; height: 20px; }
-
-/* Info Grid & Cards */
-.info-grid { display:grid; grid-template-columns:repeat(1,minmax(0,1fr)); gap:16px; padding: 0 1.5rem 4rem; }
-@media(min-width:768px){ .info-grid{grid-template-columns:repeat(3,minmax(0,1fr));} }
-.card { padding:24px; border-radius:18px; border:1px solid #e5e7eb; background:#ffffff; }
