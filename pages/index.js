@@ -1,38 +1,76 @@
 // FILE: /pages/index.js
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useState } from "react";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-// Server-side gate: static before registration/login, active after.
-// Unlocked if any cookie is present: ac_registered, ac_session, or ac_dev.
-export async function getServerSideProps({ req }) {
-  const cookie = req.headers.cookie || "";
-  const ssrUnlocked = /(ac_registered=|ac_session=|ac_dev=)/.test(cookie);
-  return { props: { ssrUnlocked } };
+// --- tiny helpers (client-only) ---
+function setCookie(name, value, maxAgeDays = 365) {
+  if (typeof document === "undefined") return;
+  const maxAge = maxAgeDays * 24 * 3600;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
-export default function Home({ ssrUnlocked }) {
+export default function Home() {
   const [path, setPath] = useState("Universal");
-  const locked = !ssrUnlocked;
+  const [unlocked, setUnlocked] = useState(false);
+
+  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
+  useEffect(() => {
+    // support ?dev=on -> sets dev cookie
+    if (typeof window !== "undefined") {
+      const usp = new URLSearchParams(window.location.search);
+      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
+    }
+
+    const update = () => {
+      const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
+      const isDevBypass =
+        (typeof window !== "undefined" &&
+          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+           has("ac_dev") ||
+           window.location.hostname === "localhost"));
+
+      // ✅ accept either registration cookie OR a real login session cookie
+      const isRegistered =
+        has("ac_registered") ||
+        has("ac_session") || // <- NEW: login session from /api/login
+        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+
+      setUnlocked(Boolean(isRegistered || isDevBypass));
+    };
+
+    update();                         // immediate
+    const t = setTimeout(update, 80); // catch any redirect race
+    window.addEventListener?.("storage", update);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
+  }, []);
+
+  const locked = !unlocked;
 
   return (
     <div className="page">
-      {/* Top nav — single CTA */}
+      {/* Top nav — Register always visible */}
       <nav className="topnav">
         <Link href="/register" className="btn cta">Register — Free Access</Link>
       </nav>
 
-      {/* Logo + tagline */}
+      {/* Logo + short line */}
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room, or start with Sacred Notes.
+          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
+          or start with Sacred Notes.
         </p>
       </section>
 
-      {/* Tiles — route to /register while locked */}
+      {/* Feature tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -45,9 +83,11 @@ export default function Home({ ssrUnlocked }) {
               </p>
             </header>
             <footer className="f">
-              {locked
-                ? <Link href="/register" className="btn accent">Register to Open</Link>
-                : <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>}
+              {locked ? (
+                <Link href="/register" className="btn accent">Register to Open</Link>
+              ) : (
+                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+              )}
               <div className="disc">
                 This is your space. Do whatever you like on this page. We have no responsibility
                 for anything you write, and nothing is saved on our servers.
@@ -65,9 +105,11 @@ export default function Home({ ssrUnlocked }) {
               </p>
             </header>
             <footer className="f">
-              {locked
-                ? <Link href="/register" className="btn accent">Register to Get Yours</Link>
-                : <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>}
+              {locked ? (
+                <Link href="/register" className="btn accent">Register to Get Yours</Link>
+              ) : (
+                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+              )}
               <div className="disc">
                 Spiritual guidance only. No promises. No medical, legal, or financial advice.
               </div>
@@ -76,8 +118,8 @@ export default function Home({ ssrUnlocked }) {
         </div>
       </section>
 
-      {/* GATED — only after registration/login */}
-      {!locked ? (
+      {/* GATED AREA — only after registration or dev bypass */}
+      {unlocked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
           <OracleVoice path={path} />
@@ -99,7 +141,7 @@ export default function Home({ ssrUnlocked }) {
 
         .topnav { display:flex; justify-content:center; padding:14px; }
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.cta, .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
+        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
 
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
@@ -108,12 +150,12 @@ export default function Home({ ssrUnlocked }) {
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
-
         .card { background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); padding:18px; }
         .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
