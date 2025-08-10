@@ -13,6 +13,14 @@ const LANG_OPTIONS = [
   { value: "he",     label: "Hebrew" },
 ];
 
+// *** ADDED THIS MISSING CONSTANT ***
+const MODE_OPTIONS = [
+  { value: "general",    label: "Gentle Guidance" },
+  { value: "practical",  label: "Practical Steps" },
+  { value: "wisdom",     label: "Ancient Wisdom" },
+  { value: "comfort",    label: "Comfort & Healing" },
+];
+
 const TOPIC_OPTIONS = [
   { value: "general",      label: "General" },
   { value: "healthy",      label: "Healthy living" },
@@ -70,7 +78,7 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
   const persona = useMemo(() => (
     path === "Jewish" ? "Rabbi" :
     path === "Christian" ? "Priest" :
-    path === "Muslim" ? "Kadhi" :
+    path === "Muslim" ? "Imam" : // Changed Kadhi to Imam for broader recognition
     path === "Eastern" ? "Monk" : "Sage"
   ), [path]);
 
