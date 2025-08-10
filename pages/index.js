@@ -42,19 +42,16 @@ export default function Home() {
 
   return (
     <div className="page">
-      {/* Single CTA while locked; hidden after unlock */}
-      {!unlocked && (
-        <nav className="topnav">
-          <Link href="/register" className="btn cta">Register — Free Access</Link>
-        </nav>
-      )}
+      {/* Top nav — Register always visible */}
+      <nav className="topnav">
+        <Link href="/register" className="btn cta">Register — Free Access</Link>
+      </nav>
 
       {/* Logo + short line */}
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
-          or start with Sacred Notes.
+          Advanced Voice is now <strong>AuraCode Voice</strong>. Choose your spiritual          heritage, or start with Sacred Notes.
         </p>
       </section>
 
@@ -145,3 +142,4 @@ export default function Home() {
     </div>
   );
 }
+
