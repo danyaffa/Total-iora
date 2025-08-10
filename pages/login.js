@@ -5,10 +5,11 @@ import Footer from "../components/Footer";
 
 function setUnlockCookie() {
   const maxAge = 365 * 24 * 3600; // 1 year
-  if (typeof document !== "undefined") {
-    document.cookie = `ac_registered=1; Max-Age=${maxAge}; Path=/; SameSite=Lax; Secure`;
-    try { localStorage.setItem("ac_registered", "1"); } catch {}
-  }
+  if (typeof document === "undefined") return;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  const secure = isHttps ? "; Secure" : "";
+  document.cookie = `ac_registered=1; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`;
+  try { localStorage.setItem("ac_registered", "1"); } catch {}
 }
 
 export default function Login() {
@@ -39,13 +40,13 @@ export default function Login() {
       if (!r.ok) {
         // If login API isn't wired yet, fall back so you can proceed
         setUnlockCookie();
-        window.location.href = "/";
+        window.location.href = "/?u=1";
         return;
       }
 
       // Success (cookie likely set by API). Ensure unlock locally too.
       setUnlockCookie();
-      window.location.href = "/";
+      window.location.href = "/?u=1";
     } catch (err) {
       setMsg(String(err?.message || err || "Login failed."));
     } finally {
