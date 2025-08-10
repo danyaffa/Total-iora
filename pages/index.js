@@ -1,56 +1,20 @@
 // FILE: /pages/index.js
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useState } from "react";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-// helper to set cookies safely on http(s)
-function setCookie(name, value, maxAgeDays = 365) {
-  if (typeof document === "undefined") return;
-  const maxAge = maxAgeDays * 24 * 3600;
-  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+// SSR decides locked/unlocked from cookies only
+export async function getServerSideProps({ req }) {
+  const cookie = req.headers.cookie || "";
+  const unlocked = /(ac_registered=|ac_session=|ac_dev=)/.test(cookie);
+  return { props: { ssrUnlocked: unlocked } };
 }
 
-export default function Home() {
+export default function Home({ ssrUnlocked }) {
   const [path, setPath] = useState("Universal");
-  const [unlocked, setUnlocked] = useState(false);
-
-  useEffect(() => {
-    // allow dev bypass via ?dev=on
-    if (typeof window !== "undefined") {
-      const usp = new URLSearchParams(window.location.search);
-      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
-    }
-
-    const update = () => {
-      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
-      const isDevBypass =
-        (typeof window !== "undefined" &&
-          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-           has("ac_dev") ||
-           window.location.hostname === "localhost"));
-
-      // ✅ unlocked if registered OR logged in (session) OR dev bypass
-      const isRegistered =
-        has("ac_registered") ||
-        has("ac_session") ||
-        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
-
-      setUnlocked(Boolean(isRegistered || isDevBypass));
-    };
-
-    update();                         // immediate
-    const t = setTimeout(update, 80); // catch redirect race
-    window.addEventListener?.("storage", update);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener?.("storage", update);
-    };
-  }, []);
-
-  const locked = !unlocked;
+  const locked = !ssrUnlocked;
 
   return (
     <div className="page">
@@ -67,28 +31,20 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Tiles — buttons route to /register while locked */}
+      {/* Tiles — route to /register while locked */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
             <header className="h">
               <div className="pill">Sacred Notes</div>
               <h3>Leave a private note • Light a candle</h3>
-              <p>
-                Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.
-                <strong> Nothing is stored or kept.</strong>
-              </p>
+              <p>Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.<strong> Nothing is stored or kept.</strong></p>
             </header>
             <footer className="f">
-              {locked ? (
-                <Link href="/register" className="btn accent">Register to Open</Link>
-              ) : (
-                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
-              )}
-              <div className="disc">
-                This is your space. Do whatever you like on this page. We have no responsibility
-                for anything you write, and nothing is saved on our servers.
-              </div>
+              {locked
+                ? <Link href="/register" className="btn accent">Register to Open</Link>
+                : <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>}
+              <div className="disc">This is your space. Do whatever you like on this page. We have no responsibility for anything you write, and nothing is saved on our servers.</div>
             </footer>
           </article>
 
@@ -96,27 +52,20 @@ export default function Home() {
             <header className="h">
               <div className="pill">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
-              <p>
-                Ask for a future outlook, horoscope-style reflections, and gentle advice woven from your tradition.
-                Download your write-up when it’s ready.
-              </p>
+              <p>Ask for a future outlook, horoscope-style reflections, and gentle advice woven from your tradition. Download your write-up when it’s ready.</p>
             </header>
             <footer className="f">
-              {locked ? (
-                <Link href="/register" className="btn accent">Register to Get Yours</Link>
-              ) : (
-                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
-              )}
-              <div className="disc">
-                Spiritual guidance only. No promises. No medical, legal, or financial advice.
-              </div>
+              {locked
+                ? <Link href="/register" className="btn accent">Register to Get Yours</Link>
+                : <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>}
+              <div className="disc">Spiritual guidance only. No promises. No medical, legal, or financial advice.</div>
             </footer>
           </article>
         </div>
       </section>
 
-      {/* GATED — appears only after registration/login */}
-      {unlocked ? (
+      {/* GATED — only after registration/login */}
+      {!locked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
           <OracleVoice path={path} />
@@ -137,7 +86,7 @@ export default function Home() {
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
         .topnav { display:flex; justify-content:center; padding:14px; }
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
+        .btn.cta, .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
@@ -149,7 +98,6 @@ export default function Home() {
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
