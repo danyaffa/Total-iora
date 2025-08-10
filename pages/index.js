@@ -63,7 +63,7 @@ export default function Home() {
 
       {/* Logo + short line */}
       <section className="hero">
-        <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
+        <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
         <p className="note">
           Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
