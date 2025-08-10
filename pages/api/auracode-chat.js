@@ -41,11 +41,6 @@ export default async function handler(req, res) {
       Universal:"Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
     };
 
-    const MODE_PROMPT =
-      mode === "skills" ? "Respond as a practical coach grounded in the selected tradition. Offer 3–6 concrete steps. Keep it kind and doable today."
-    : mode === "study"  ? "Respond as a gentle study companion. Provide a short explanation and mention 2–4 likely sources/authors (no formal citations)."
-                        : "Respond as a compassionate spiritual guide. Offer presence, clarity, and a short reflection.";
-
     const TOPIC_PROMPTS = {
       general:      "Topic focus: general guidance for the present moment.",
       healthy:      "Topic focus: healthy living—sleep, simple movement, nourishing food, self-care. Avoid medical advice.",
