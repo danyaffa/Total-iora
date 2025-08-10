@@ -26,14 +26,18 @@ export default function Home() {
     }
 
     const update = () => {
+      const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
       const isDevBypass =
         (typeof window !== "undefined" &&
           (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-           document.cookie.includes("ac_dev=") ||
+           has("ac_dev") ||
            window.location.hostname === "localhost"));
 
+      // ✅ accept either registration cookie OR a real login session cookie
       const isRegistered =
-        (typeof document !== "undefined" && document.cookie.includes("ac_registered=")) ||
+        has("ac_registered") ||
+        has("ac_session") || // <- NEW: login session from /api/login
         (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
 
       setUnlocked(Boolean(isRegistered || isDevBypass));
