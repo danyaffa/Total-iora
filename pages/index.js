@@ -10,11 +10,9 @@ export default function Home() {
 
   return (
     <div className="page">
-      {/* Top nav — Support removed */}
+      {/* Top nav — single CTA only */}
       <nav className="topnav">
-        <Link href="/get-your-aura">Begin</Link>
-        <Link href="/sacred-space">Sacred Notes</Link>
-        <Link href="/oracle-universe-dna">Oracle Universe DNA</Link>
+        <Link href="/register" className="btn cta">Register — Free Access</Link>
       </nav>
 
       {/* Logo + short line (keep your look) */}
@@ -76,7 +74,13 @@ export default function Home() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-        .topnav { display:flex; gap:14px; justify-content:center; padding:14px; flex-wrap:wrap; }
+
+        .topnav {
+          display:flex; justify-content:center; padding:14px;
+        }
+        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
+        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
+
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
@@ -89,7 +93,6 @@ export default function Home() {
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-        .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
       `}</style>
