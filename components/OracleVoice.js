@@ -1,5 +1,6 @@
 // FILE: /components/OracleVoice.js
-// Hardened start/stop, no duplicate words, visible errors when API fails.
+// Oracle voice with Subject picker, Stop Answer (TTS cancel), volume control,
+// deduped speech recognition, download & print of the guide’s reply.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,8 +15,20 @@ const LANG_OPTIONS = [
 
 const MODE_OPTIONS = [
   { value: "general", label: "General Guidance" },
-  { value: "skills",  label: "Life Skills" },
-  { value: "study",   label: "Study" },
+  { value: "skills",  label: "Life Skills (practical steps)" },
+  { value: "study",   label: "Study (short explainer)" },
+];
+
+const TOPIC_OPTIONS = [
+  { value: "general",      label: "General" },
+  { value: "healthy",      label: "Healthy living" },
+  { value: "relationships",label: "Human to human" },
+  { value: "partner",      label: "Finding a life partner" },
+  { value: "work",         label: "Work & purpose" },
+  { value: "parenting",    label: "Parenting" },
+  { value: "grief",        label: "Grief & healing" },
+  { value: "addiction",    label: "Addiction support (non-clinical)" },
+  { value: "mindfulness",  label: "Mindfulness & calm" },
 ];
 
 function autoLangFromPath(path) {
@@ -48,11 +61,13 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
   const [speaking, setSpeaking] = useState(false);
   const [mode, setMode] = useState(defaultMode);
   const [lang, setLang] = useState("auto");
+  const [topic, setTopic] = useState("general");
+  const [volume, setVolume] = useState(1); // 0..1
   const [error, setError] = useState("");
 
   const recRef = useRef(null);
-  const finalBufRef = useRef(""); // finalized transcript (deduped)
-  const interimRef = useRef("");  // last interim chunk
+  const finalBufRef = useRef("");
+  const interimRef = useRef("");
   const audioRef = useRef({ ctx: null, analyser: null, src: null, animId: null, stream: null });
   const canvasRef = useRef(null);
   const voiceRef = useRef(null);
@@ -173,6 +188,11 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
     }
   }
 
+  function stopAnswerVoice() {
+    try { window.speechSynthesis.cancel(); } catch {}
+    setSpeaking(false);
+  }
+
   async function onStop() {
     setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
@@ -187,7 +207,7 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, path, mode, lang: chosenLang }),
+        body: JSON.stringify({ message: text, path, mode, topic, lang: chosenLang }),
       });
 
       if (!r.ok) {
@@ -206,6 +226,9 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
         const v = pickVoice(chosenLang);
         if (v) u.voice = v;
         u.lang = chosenLang || "en-US";
+        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+        u.rate = 1;
+        u.pitch = 1;
         u.onstart = () => setSpeaking(true);
         u.onend = () => setSpeaking(false);
         try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
@@ -216,6 +239,46 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
     } finally {
       setReplying(false);
     }
+  }
+
+  function downloadReply() {
+    const text = [
+      `Room: ${path} | Mode: ${mode} | Topic: ${topic} | Lang: ${chosenLang}`,
+      `Date: ${new Date().toLocaleString()}`,
+      "",
+      "You:",
+      finalBufRef.current || liveText,
+      "",
+      "Guide:",
+      reply,
+    ].join("\n");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `oracle-${path}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function printReply() {
+    const w = window.open("", "_blank", "width=720,height=900");
+    if (!w) return;
+    w.document.write(`
+      <title>Oracle Guide</title>
+      <pre style="font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial; white-space:pre-wrap">
+Room: ${path} | Mode: ${mode} | Topic: ${topic} | Lang: ${chosenLang}
+Date: ${new Date().toLocaleString()}
+
+You:
+${finalBufRef.current || liveText}
+
+Guide:
+${reply}
+      </pre>`);
+    w.document.close();
+    w.focus();
+    w.print();
   }
 
   // cleanup
@@ -239,6 +302,15 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
               {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
+          <label>Subject:
+            <select value={topic} onChange={(e) => setTopic(e.target.value)}>
+              {TOPIC_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <label title="Also raise your device/system volume">
+            Voice volume:
+            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(e.target.value)} />
+          </label>
         </div>
       </header>
 
@@ -260,7 +332,9 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
           </div>
           <div className="log">
             <div className="label">Guide</div>
-            <div className="bubble guide">{error ? <span style={{color:"#b91c1c",fontWeight:700}}>{error}</span> : (reply || (replying ? "Listening to the silence…" : "—"))}</div>
+            <div className="bubble guide">
+              {error ? <span style={{color:"#b91c1c",fontWeight:700}}>{error}</span> : (reply || (replying ? "Listening to the silence…" : "—"))}
+            </div>
           </div>
         </div>
       </div>
@@ -269,6 +343,21 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
         <button onClick={listening ? onStop : onStart} className={`btn ${listening ? "stop" : "start"}`}>
           {listening ? "⏹ Stop & Answer" : "🎙️ Start Conversation"}
         </button>
+
+        {(speaking || reply) && (
+          <>
+            {speaking && (
+              <button onClick={stopAnswerVoice} className="btn ghost">Stop Answer</button>
+            )}
+            {!!reply && (
+              <>
+                <button onClick={downloadReply} className="btn ghost">Download</button>
+                <button onClick={printReply} className="btn ghost">Print</button>
+              </>
+            )}
+          </>
+        )}
+
         <div className="hint">
           {listening ? "Listening… take your time." : "Press to speak. I’ll answer when you stop."}
         </div>
@@ -286,6 +375,7 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
         .lead { color:#475569; max-width:760px; margin:0 auto 10px; }
         .bar { margin-top:8px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; color:#475569; font-size:.95rem; }
         .bar select { margin-left:6px; padding:6px 10px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; }
+        .bar input[type="range"] { vertical-align:middle; width:140px; margin-left:8px; }
         .body { display:grid; gap:18px; grid-template-columns:1fr; margin-top:12px; }
         @media (min-width:860px){ .body { grid-template-columns:1fr 1fr; } }
         .pane { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:16px; display:flex; gap:16px; align-items:center; }
@@ -307,6 +397,7 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
         .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); transition: transform .06s, box-shadow .15s, filter .2s; }
         .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
         .btn.stop { color:#fff; background:#111827; border:none; }
+        .btn.ghost { background:#fff; }
         .btn:hover { transform: translateY(-1px); box-shadow:0 10px 26px rgba(2,6,23,.10); filter:brightness(1.04); }
         .hint { color:#64748b; font-size:.95rem; }
       `}</style>
