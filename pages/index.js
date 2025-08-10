@@ -3,22 +3,17 @@ import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
-import { useMemo } from "react";
 
-export default function Home({ unlockedInitial, initialPath = "Universal" }) {
-  // SSR decides the gate; we keep it as-is to avoid client flicker.
-  const unlocked = !!unlockedInitial;
+export default function Home({ unlocked }) {
   const locked = !unlocked;
 
   return (
     <div className="page">
-      {/* Top bar — always visible */}
       <nav className="topnav">
         <Link href="/register" className="btn cta">Register — Free Access</Link>
         <Link href="/login" className="btn ghost">Log in</Link>
       </nav>
 
-      {/* Logo + line */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-Iora Logo" className="logo" />
         <p className="note">
@@ -27,7 +22,6 @@ export default function Home({ unlockedInitial, initialPath = "Universal" }) {
         </p>
       </section>
 
-      {/* Feature tiles — same as your version, but links are gated */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -40,7 +34,7 @@ export default function Home({ unlockedInitial, initialPath = "Universal" }) {
               {locked
                 ? <Link href="/register" className="btn accent">Register to Open</Link>
                 : <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>}
-              <div className="disc">This is your space. Nothing is saved on our servers.</div>
+              <div className="disc">This is your space.</div>
             </footer>
           </article>
 
@@ -48,7 +42,7 @@ export default function Home({ unlockedInitial, initialPath = "Universal" }) {
             <header className="h">
               <div className="pill">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
-              <p>Ask for a future outlook, horoscope-style reflections, and gentle advice.</p>
+              <p>Ask for a future outlook and gentle advice.</p>
             </header>
             <footer className="f">
               {locked
@@ -60,18 +54,16 @@ export default function Home({ unlockedInitial, initialPath = "Universal" }) {
         </div>
       </section>
 
-      {/* GATED AREA — shows only after registration */}
       {unlocked ? (
         <>
-          {/* Keep your selector + voice centerpiece exactly as before */}
-          <HeritageSelector path={initialPath} onChange={() => { /* handled inside components if needed */ }} />
-          <OracleVoice path={initialPath} />
+          <HeritageSelector />
+          <OracleVoice />
         </>
       ) : (
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Register (free) to start a private, one-to-one voice conversation with a guide.</p>
+            <p>Register (free) and then log in to start a one-to-one voice conversation.</p>
             <Link href="/register" className="btn accent">Register — Free Access</Link>
           </div>
         </section>
@@ -104,23 +96,13 @@ export default function Home({ unlockedInitial, initialPath = "Universal" }) {
   );
 }
 
-/** SERVER-SIDE HARD GATE (no flicker): page stays static until registered */
-export async function getServerSideProps({ req, res, query }) {
-  // Optional dev bypass: /?dev=on
-  if (query?.dev === "on") {
-    res.setHeader("Set-Cookie", `ac_dev=1; Max-Age=${30*24*3600}; Path=/; SameSite=Lax; Secure`);
-  }
+// SSR gate: only session cookie unlocks; also clears old cookies.
+export async function getServerSideProps({ req, res }) {
   const c = req.cookies || {};
-  const unlockedInitial =
-    c.ac_registered === "1" ||
-    c.ac_session === "1" ||                // if you later add real login
-    c.ac_dev === "1" ||
-    process.env.NEXT_PUBLIC_DEV_BYPASS === "1";
-
-  return {
-    props: {
-      unlockedInitial,
-      initialPath: "Universal",
-    },
-  };
+  const session = c.ac_session === "1";
+  const cookiesToClear = ["ac_registered", "ac_dev"];
+  if (c.ac_registered || c.ac_dev) {
+    res.setHeader("Set-Cookie", cookiesToClear.map(n => `${n}=; Max-Age=0; Path=/; SameSite=Lax; Secure`));
+  }
+  return { props: { unlocked: session } };
 }
