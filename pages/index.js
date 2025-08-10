@@ -51,7 +51,8 @@ export default function Home() {
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>AuraCode Voice</strong>. Choose your spiritual          heritage, or start with Sacred Notes.
+          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
+          or start with Sacred Notes.
         </p>
       </section>
 
@@ -142,4 +143,3 @@ export default function Home() {
     </div>
   );
 }
-
