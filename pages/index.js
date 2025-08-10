@@ -1,46 +1,71 @@
 // FILE: /pages/index.js
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
+/* ---------- helpers ---------- */
+function getCookie(name) {
+  if (typeof document === "undefined") return "";
+  return (document.cookie || "")
+    .split("; ")
+    .find((c) => c.startsWith(name + "="))
+    ?.split("=")[1] || "";
+}
+
 export default function Home() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
 
-  // Gate: ONLY unlock when ac_session cookie exists (set by /api/login)
-  useEffect(() => {
-    const has = (n) =>
-      typeof document !== "undefined" &&
-      document.cookie.split("; ").some((c) => c.startsWith(n + "="));
-
-    const check = () => setUnlocked(has("ac_session"));
-    check();
-    const i = setInterval(check, 800); // catch post-login updates
-    return () => clearInterval(i);
+  const checkLock = useCallback(() => {
+    // REQUIRE a real login session each visit. Registration by itself is not enough.
+    const hasSession = !!getCookie("ac_session"); // set by /api/login
+    // (Optional) developer bypass: ?dev=on once per device
+    const devBypass =
+      typeof window !== "undefined" &&
+      (getCookie("ac_dev") ||
+        process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+        window.location.hostname === "localhost");
+    setUnlocked(Boolean(hasSession || devBypass));
   }, []);
 
+  useEffect(() => {
+    // allow ?dev=on to set a bypass cookie for local testing
+    if (typeof window !== "undefined") {
+      const usp = new URLSearchParams(window.location.search);
+      if (usp.get("dev") === "on") {
+        const maxAge = 30 * 24 * 3600;
+        const secure = window.location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `ac_dev=1; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`;
+      }
+    }
+    checkLock();
+    const i = setInterval(checkLock, 1500); // catch changes after login/logout
+    return () => clearInterval(i);
+  }, [checkLock]);
+
   const locked = !unlocked;
+
+  async function doLogout(e) {
+    e?.preventDefault?.();
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch {}
+    // Clear any local hints just in case
+    try { localStorage.removeItem("ac_registered"); } catch {}
+    window.location.href = "/"; // reload cleanly without showing JSON
+  }
 
   return (
     <div className="page">
       {/* Top nav */}
       <nav className="topnav">
-        {!unlocked ? (
-          <>
-            <Link href="/register">Register — Free Access</Link>
-            <span className="dot">•</span>
-            <Link href="/login">Log in</Link>
-          </>
-        ) : (
-          <>
-            <Link href="/logout">Log out</Link>
-          </>
-        )}
+        <Link href="/register">Register — Free Access</Link>
+        {locked ? <Link href="/login">Log in</Link> : <a href="/api/logout" onClick={doLogout}>Log out</a>}
       </nav>
 
-      {/* Logo + line */}
+      {/* Logo + intro */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-Iora Logo" className="logo" />
         <p className="note">
@@ -49,7 +74,7 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Two feature tiles */}
+      {/* Tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -89,13 +114,15 @@ export default function Home() {
               ) : (
                 <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               )}
-              <div className="disc">Spiritual guidance only. No promises. No medical, legal, or financial advice.</div>
+              <div className="disc">
+                Spiritual guidance only. No promises. No medical, legal, or financial advice.
+              </div>
             </footer>
           </article>
         </div>
       </section>
 
-      {/* Gated centerpiece */}
+      {/* Gated: heritage + voice only after login */}
       {unlocked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
@@ -115,8 +142,7 @@ export default function Home() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-        .topnav { display:flex; gap:12px; justify-content:center; padding:14px; flex-wrap:wrap; }
-        .dot { opacity:.35 }
+        .topnav { display:flex; gap:16px; justify-content:center; padding:14px; }
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
@@ -129,7 +155,7 @@ export default function Home() {
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-        .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
+        .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
