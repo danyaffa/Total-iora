@@ -1,12 +1,10 @@
 // FILE: /pages/api/auracode-chat.js
-// Robust Oracle backend: clearer errors, model override, short timeout.
-// Requires OPENAI_API_KEY in env. Optional: OPENAI_MODEL (default gpt-4o-mini).
-
-export const dynamic = "force-dynamic";      // don't cache
-export const maxDuration = 30;               // Vercel function timeout budget (s)
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 function langName(lang) {
   const s = String(lang || "");
+  if (!s || s === "auto") return "English";
   if (s.startsWith("ar")) return "Arabic";
   if (s.startsWith("he")) return "Hebrew";
   if (s.startsWith("en-GB")) return "English (UK)";
@@ -16,19 +14,16 @@ function langName(lang) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { message, path = "Universal", mode = "general", lang = "en-US" } = req.body || {};
+    const { message, path = "Universal", mode = "general", topic = "general", lang = "en-US" } = req.body || {};
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Missing message" });
     }
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_API_KEY) {
-      // Tell the UI exactly what's wrong (so you can fix env quickly)
       return res.status(503).json({
         error: "Missing OPENAI_API_KEY",
         hint: "Set OPENAI_API_KEY in Vercel → Project → Settings → Environment Variables, then redeploy.",
@@ -51,11 +46,24 @@ export default async function handler(req, res) {
     : mode === "study"  ? "Respond as a gentle study companion. Provide a short explanation and mention 2–4 likely sources/authors (no formal citations)."
                         : "Respond as a compassionate spiritual guide. Offer presence, clarity, and a short reflection.";
 
+    const TOPIC_PROMPTS = {
+      general:      "Topic focus: general guidance for the present moment.",
+      healthy:      "Topic focus: healthy living—sleep, simple movement, nourishing food, self-care. Avoid medical advice.",
+      relationships:"Topic focus: human relationships—listening, boundaries, reconciliation, empathy.",
+      partner:      "Topic focus: finding a life partner—character, shared values, patience, and practical steps to meet people.",
+      work:         "Topic focus: work & purpose—meaningful contribution, integrity, and sustainable habits.",
+      parenting:    "Topic focus: parenting—patience, modeling virtues, age-appropriate guidance.",
+      grief:        "Topic focus: grief & healing—gentleness, permission to grieve, small rituals of remembrance.",
+      addiction:    "Topic focus: addiction support (non-clinical). Encourage safe supports and professional help when needed.",
+      mindfulness:  "Topic focus: mindfulness & calm—breath, presence, and simple contemplative practice.",
+    };
+
     const ETHOS = "Never provide medical, legal, or financial diagnosis. Encourage qualified help if needed. Do not promise outcomes.";
 
     const system = [
       `You are a calm, humane spiritual guide (${path}).`,
       GUIDANCE[path] || GUIDANCE.Universal,
+      TOPIC_PROMPTS[topic] || TOPIC_PROMPTS.general,
       MODE_PROMPT,
       ETHOS,
       `Reply in ${targetLanguage}. Keep paragraphs short.`,
@@ -70,7 +78,6 @@ export default async function handler(req, res) {
       ],
     };
 
-    // Short, safe timeout so UI doesn't hang forever
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 25000);
 
@@ -80,7 +87,6 @@ export default async function handler(req, res) {
       body: JSON.stringify(payload),
       signal: ac.signal,
     }).catch((e) => {
-      // Network-level failure (DNS/timeout)
       return { ok: false, status: 502, text: async () => String(e?.message || e) };
     });
 
@@ -97,7 +103,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ reply });
   } catch (err) {
-    // Final catch-all
     return res.status(500).json({ error: "Server error", detail: String(err?.message || err) });
   }
 }
