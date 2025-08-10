@@ -1,48 +1,85 @@
-// FILE: /pages/api/login.js
-import { scryptSync } from "crypto";
+// FILE: /pages/login.js
+import { useState } from "react";
+import Link from "next/link";
 
-function verify(hashString, password){
-  // format: s1$<salt>$<hash>
-  const [scheme, salt, hash] = String(hashString||"").split("$");
-  if (scheme !== "s1" || !salt || !hash) return false;
-  const calc = scryptSync(password, salt, 64).toString("hex");
-  return calc === hash;
-}
+export default function Login() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
-export default async function handler(req,res){
-  if (req.method !== "POST") return res.status(405).json({ error:"Method not allowed" });
-  const { email="", password="" } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error:"Missing email or password" });
-
-  const SECURE = req.headers["x-forwarded-proto"] === "https";
-  const cookie = `ac_session=1; Max-Age=${30*24*3600}; Path=/; SameSite=Lax${SECURE?"; Secure":""}`;
-
-  const SUPABASE_URL = process.env.SUPABASE_URL || "";
-  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
-  const SUPABASE_TABLE = process.env.SUPABASE_TABLE || "registrations";
-
-  if (SUPABASE_URL && SUPABASE_SERVICE_KEY){
-    // Check Supabase
-    try{
-      const u = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_TABLE)}?select=password_hash&email=eq.${encodeURIComponent(email.toLowerCase())}&limit=1`;
-      const r = await fetch(u,{
-        headers:{
-          apikey: SUPABASE_SERVICE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-        }
+  async function onSubmit(e) {
+    e.preventDefault();
+    setMsg("");
+    setBusy(true);
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
-      if (!r.ok) return res.status(502).json({ error:"Auth backend unavailable" });
-      const rows = await r.json();
-      const ok = rows?.[0]?.password_hash && verify(rows[0].password_hash, password);
-      if (!ok) return res.status(401).json({ error:"Invalid credentials" });
-      res.setHeader("Set-Cookie", cookie);
-      return res.status(200).json({ ok:true });
-    }catch(e){
-      return res.status(500).json({ error:"Auth error" });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data?.ok) {
+        setMsg(data?.error || "Invalid credentials");
+      } else {
+        window.location.href = "/";
+      }
+    } catch {
+      setMsg("Network error. Please try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  // Dev mode: allow any credentials so you can proceed now
-  res.setHeader("Set-Cookie", cookie);
-  return res.status(200).json({ ok:true, dev:true });
+  return (
+    <div className="wrap">
+      <main className="card">
+        <h1>Log in</h1>
+        <form onSubmit={onSubmit} className="form">
+          <label>Email
+            <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+          </label>
+
+          <label>Password
+            <input
+              type={show ? "text" : "password"}
+              value={password}
+              onChange={(e)=>setPassword(e.target.value)}
+              required
+              minLength={8}
+            />
+          </label>
+
+          <label className="row">
+            <input type="checkbox" checked={show} onChange={(e)=>setShow(e.target.checked)} />
+            <span>Show password</span>
+          </label>
+
+          <button className="btn" type="submit" disabled={busy}>
+            {busy ? "Signing in…" : "Log in"}
+          </button>
+
+          {msg && <p className="err">{msg}</p>}
+
+          <p className="note">
+            No account? <Link href="/register">Register free</Link>.
+          </p>
+        </form>
+      </main>
+
+      <style jsx>{`
+        .wrap { min-height:100vh; display:grid; place-items:center; background:linear-gradient(#fff,#f8fafc); padding:24px 12px; }
+        .card { width:100%; max-width:560px; background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; padding:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); }
+        h1 { margin:0 0 10px; font-size:2rem; }
+        .form { display:grid; gap:12px; }
+        label { display:flex; flex-direction:column; gap:6px; font-weight:700; color:#334155; }
+        .row { flex-direction:row; align-items:center; gap:8px; font-weight:600; }
+        input { border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; }
+        .btn { margin-top:6px; padding:12px 18px; border-radius:14px; font-weight:800; color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
+        .err { color:#b91c1c; font-weight:700; }
+        .note { color:#64748b; }
+      `}</style>
+    </div>
+  );
 }
