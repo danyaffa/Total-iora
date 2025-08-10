@@ -41,6 +41,14 @@ export default async function handler(req, res) {
       Universal:"Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
     };
 
+    // *** ADDED THIS LOGIC TO MATCH THE FRONTEND ***
+    const MODE_PROMPTS = {
+      general:    "Your mode is one of gentle guidance. Be wise and reflective.",
+      practical:  "Your mode is practical. Focus on providing clear, actionable steps.",
+      wisdom:     "Your mode is to share timeless wisdom. Adopt the tone of a historian or scholar.",
+      comfort:    "Your mode is comforting. Be exceptionally warm, empathetic, and reassuring.",
+    };
+
     const TOPIC_PROMPTS = {
       general:      "Topic focus: general guidance for the present moment.",
       healthy:      "Topic focus: healthy living—sleep, simple movement, nourishing food, self-care. Avoid medical advice.",
@@ -59,14 +67,15 @@ export default async function handler(req, res) {
       `You are a calm, humane spiritual guide (${path}).`,
       GUIDANCE[path] || GUIDANCE.Universal,
       TOPIC_PROMPTS[topic] || TOPIC_PROMPTS.general,
-      MODE_PROMPT,
+      // *** FIXED THIS LINE TO USE THE CORRECT VARIABLE ***
+      MODE_PROMPTS[mode] || MODE_PROMPTS.general,
       ETHOS,
       `Reply in ${targetLanguage}. Keep paragraphs short.`,
     ].join(" ");
 
     const payload = {
       model,
-      temperature: mode === "study" ? 0.7 : 0.8,
+      temperature: 0.8, // Simplified temperature
       messages: [
         { role: "system", content: system },
         { role: "user", content: message },
