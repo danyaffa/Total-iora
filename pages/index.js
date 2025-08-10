@@ -1,48 +1,23 @@
+// FILE: /pages/index.js
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-// cookie helpers
-function getCookie(name) {
-  if (typeof document === "undefined") return "";
-  const m = document.cookie.split("; ").find(c => c.startsWith(name + "="));
-  return m ? decodeURIComponent(m.split("=")[1]) : "";
-}
-function setCookie(name, value, opts = "") {
-  if (typeof document === "undefined") return;
-  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/${opts ? "; " + opts : ""}`;
-}
-function clearCookie(name) {
-  if (typeof document === "undefined") return;
-  document.cookie = `${name}=; Max-Age=0; Path=/`;
-}
-
 export default function Home() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
 
+  // Gate: ONLY unlock when ac_session cookie exists (set by /api/login)
   useEffect(() => {
-    // optional dev bypass (?dev=on writes a short cookie)
-    if (typeof window !== "undefined") {
-      const usp = new URLSearchParams(window.location.search);
-      if (usp.get("dev") === "on") setCookie("ac_dev", "1", "Max-Age=2592000; SameSite=Lax");
-    }
+    const has = (n) =>
+      typeof document !== "undefined" &&
+      document.cookie.split("; ").some((c) => c.startsWith(n + "="));
 
-    const check = () => {
-      const devBypass =
-        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1") ||
-        getCookie("ac_dev") === "1";
-
-      // ✅ HARD GATE: only a live login session cookie unlocks
-      const hasSession = !!getCookie("ac_session");
-
-      setUnlocked(Boolean(hasSession || devBypass));
-    };
-
+    const check = () => setUnlocked(has("ac_session"));
     check();
-    const i = setInterval(check, 800); // catch cookie changes from login/logout
+    const i = setInterval(check, 800); // catch post-login updates
     return () => clearInterval(i);
   }, []);
 
@@ -52,23 +27,20 @@ export default function Home() {
     <div className="page">
       {/* Top nav */}
       <nav className="topnav">
-        <Link href="/register">Register — Free Access</Link>
         {!unlocked ? (
-          <Link href="/login">Log in</Link>
+          <>
+            <Link href="/register">Register — Free Access</Link>
+            <span className="dot">•</span>
+            <Link href="/login">Log in</Link>
+          </>
         ) : (
-          <a
-            href="/api/logout"
-            onClick={(e) => {
-              // client-helpful logout to immediately re-lock UI
-              clearCookie("ac_session");
-            }}
-          >
-            Log out
-          </a>
+          <>
+            <Link href="/logout">Log out</Link>
+          </>
         )}
       </nav>
 
-      {/* Logo + headline */}
+      {/* Logo + line */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-Iora Logo" className="logo" />
         <p className="note">
@@ -77,7 +49,7 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Feature tiles */}
+      {/* Two feature tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -91,7 +63,7 @@ export default function Home() {
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/register" className="btn accent">Register to Open</Link>
+                <Link href="/login" className="btn accent">Log in to Open</Link>
               ) : (
                 <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
               )}
@@ -113,7 +85,7 @@ export default function Home() {
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/register" className="btn accent">Register to Get Yours</Link>
+                <Link href="/login" className="btn accent">Log in to Get Yours</Link>
               ) : (
                 <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               )}
@@ -123,7 +95,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* GATED AREA */}
+      {/* Gated centerpiece */}
       {unlocked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
@@ -133,11 +105,8 @@ export default function Home() {
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Register (free) and then log in to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
-            <div className="ctaRow">
-              <Link href="/register" className="btn accent">Register — Free Access</Link>
-              <Link href="/login" className="btn">Log in</Link>
-            </div>
+            <p>Log in (free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <Link href="/login" className="btn accent">Log in</Link>
           </div>
         </section>
       )}
@@ -146,8 +115,8 @@ export default function Home() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-        .topnav { display:flex; gap:16px; justify-content:center; padding:14px; flex-wrap:wrap; }
-        .topnav a { font-weight:700; color:#0f172a; text-decoration:underline; }
+        .topnav { display:flex; gap:12px; justify-content:center; padding:14px; flex-wrap:wrap; }
+        .dot { opacity:.35 }
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
@@ -163,10 +132,8 @@ export default function Home() {
         .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
-
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
-        .ctaRow { display:flex; gap:10px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
       `}</style>
     </div>
   );
