@@ -1,7 +1,11 @@
 // FILE: /pages/unlock.js
 import { useEffect } from "react";
 import { useRouter } from "next/router";
-import { isFree, PLANS } from "../lib/monetization";
+
+/** Inline, future-proof toggle (no external imports) */
+const FREE_MODE = true;              // keep free now
+const PLANS = [];                    // add plans later: [{ id, name, priceLabel, href }]
+const isFree = () => FREE_MODE || PLANS.length === 0;
 
 function PlanCard({ name, priceLabel, href }) {
   return (
@@ -23,14 +27,15 @@ function PlanCard({ name, priceLabel, href }) {
 export default function Unlock() {
   const router = useRouter();
 
-  // Today (free): just send people home. Nothing rendered.
+  // Free for now: send users to Register (or change to "/" if you prefer)
   useEffect(() => {
-    if (isFree()) router.replace("/");
+    if (isFree()) router.replace("/register");
   }, [router]);
 
+  // While redirecting in free mode, render nothing
   if (isFree()) return null;
 
-  // Future (when you flip FREE_MODE=false and add PLANS):
+  // Future (when FREE_MODE=false and PLANS has items)
   return (
     <div className="wrap">
       <header className="hero">
