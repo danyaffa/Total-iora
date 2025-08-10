@@ -13,7 +13,6 @@ const LANG_OPTIONS = [
   { value: "he",     label: "Hebrew" },
 ];
 
-// *** ADDED THIS MISSING CONSTANT ***
 const MODE_OPTIONS = [
   { value: "general",    label: "Gentle Guidance" },
   { value: "practical",  label: "Practical Steps" },
@@ -78,7 +77,7 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
   const persona = useMemo(() => (
     path === "Jewish" ? "Rabbi" :
     path === "Christian" ? "Priest" :
-    path === "Muslim" ? "Imam" : // Changed Kadhi to Imam for broader recognition
+    path === "Muslim" ? "Imam" :
     path === "Eastern" ? "Monk" : "Sage"
   ), [path]);
 
@@ -141,15 +140,15 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
     if (c) c.clearRect(0, 0, 240, 240);
   }
 
-  // speech recognition
+  // --- MODIFIED: More robust speech recognition for mobile ---
   function ensureRecognizer() {
     if (recRef.current) return recRef.current;
-    const SR = (window.SpeechRecognition || window.webkitSpeechRecognition);
-    if (!SR) { alert("Voice recognition is not supported in this browser. Try Chrome/Edge."); return null; }
+    const SR = (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
+    if (!SR) { alert("Voice recognition isn’t supported on this device."); return null; }
     const rec = new SR();
     rec.lang = chosenLang || "en-US";
     rec.interimResults = true;
-    rec.continuous = true;
+    rec.continuous = true; // iOS may still stop itself; we auto-restart.
     rec.maxAlternatives = 1;
 
     rec.onresult = (e) => {
@@ -168,19 +167,30 @@ export default function OracleVoice({ path, defaultMode = "general" }) {
       setLiveText([finalBufRef.current, latestInterim].filter(Boolean).join(" ").trim());
     };
 
-    rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
-    rec.onerror = () => { /* keep rolling on "no-speech" */ };
+    // iOS ends after ~10–15s; restart if still listening
+    rec.onend = () => {
+      if (listening) { try { rec.start(); } catch {} }
+    };
+    
+    rec.onerror = (ev) => {
+      // On iOS “network” and “no-speech” happen a lot—don’t kill the session.
+      console.debug("SR error:", ev?.error);
+    };
+
     recRef.current = rec;
     return rec;
   }
 
+  // --- MODIFIED: Safer start function for mobile/iOS ---
   async function onStart() {
     setError(""); setReply(""); setLiveText("");
     finalBufRef.current = ""; interimRef.current = "";
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert("Voice recognition unsupported. Use Chrome/Edge."); return; }
     try {
+      // user gesture => safe to open mic + resume audio
       await startMicViz();
+      if (audioRef.current?.ctx?.state === "suspended") {
+        try { await audioRef.current.ctx.resume(); } catch {}
+      }
       const rec = ensureRecognizer(); if (!rec) return;
       rec.lang = chosenLang || "en-US";
       setListening(true);
