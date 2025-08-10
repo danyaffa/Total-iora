@@ -6,37 +6,46 @@ import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
 // --- tiny helpers (client-only) ---
-function hasCookie(name) {
-  if (typeof document === "undefined") return false;
-  return document.cookie.split("; ").some((c) => c.startsWith(name + "="));
-}
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax; Secure`;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
-  const [unlocked, setUnlocked] = useState(false); // registration/dev gate
+  const [unlocked, setUnlocked] = useState(false);
 
   // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
+    // support ?dev=on -> sets dev cookie
     if (typeof window !== "undefined") {
       const usp = new URLSearchParams(window.location.search);
       if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
-    const isDevBypass =
-      typeof window !== "undefined" &&
-      (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-        hasCookie("ac_dev") ||
-        window.location.hostname === "localhost");
 
-    const isRegistered =
-      hasCookie("ac_registered") ||
-      (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+    const update = () => {
+      const isDevBypass =
+        (typeof window !== "undefined" &&
+          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+           document.cookie.includes("ac_dev=") ||
+           window.location.hostname === "localhost"));
 
-    setUnlocked(!!(isRegistered || isDevBypass));
+      const isRegistered =
+        (typeof document !== "undefined" && document.cookie.includes("ac_registered=")) ||
+        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+
+      setUnlocked(Boolean(isRegistered || isDevBypass));
+    };
+
+    update();                         // immediate
+    const t = setTimeout(update, 80); // catch any redirect race
+    window.addEventListener?.("storage", update);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
   }, []);
 
   const locked = !unlocked;
@@ -52,7 +61,7 @@ export default function Home() {
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>AuraCode Voice</strong>. Choose your spiritual heritage,
+          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
           or start with Sacred Notes.
         </p>
       </section>
