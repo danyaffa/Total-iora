@@ -65,7 +65,7 @@ export default function Home() {
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
+          Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
         </p>
       </section>
