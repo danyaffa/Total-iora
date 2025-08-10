@@ -1,58 +1,48 @@
-// FILE: /pages/login.js
-import { useState } from "react";
-import Link from "next/link";
+// FILE: /pages/api/login.js
+import { scryptSync } from "crypto";
 
-export default function Login() {
-  const [email, setEmail] = useState("");
-  const [pw, setPw] = useState("");
-  const [show, setShow] = useState(false);
-  const [msg, setMsg] = useState("");
+function verify(hashString, password){
+  // format: s1$<salt>$<hash>
+  const [scheme, salt, hash] = String(hashString||"").split("$");
+  if (scheme !== "s1" || !salt || !hash) return false;
+  const calc = scryptSync(password, salt, 64).toString("hex");
+  return calc === hash;
+}
 
-  async function onSubmit(e){
-    e.preventDefault();
-    setMsg("");
-    const r = await fetch("/api/login", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ email, password: pw }),
-    });
-    const j = await r.json().catch(()=>({}));
-    if (r.ok && j?.ok){
-      window.location.replace("/");
-    } else {
-      setMsg(j?.error || "Invalid credentials");
+export default async function handler(req,res){
+  if (req.method !== "POST") return res.status(405).json({ error:"Method not allowed" });
+  const { email="", password="" } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error:"Missing email or password" });
+
+  const SECURE = req.headers["x-forwarded-proto"] === "https";
+  const cookie = `ac_session=1; Max-Age=${30*24*3600}; Path=/; SameSite=Lax${SECURE?"; Secure":""}`;
+
+  const SUPABASE_URL = process.env.SUPABASE_URL || "";
+  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+  const SUPABASE_TABLE = process.env.SUPABASE_TABLE || "registrations";
+
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY){
+    // Check Supabase
+    try{
+      const u = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_TABLE)}?select=password_hash&email=eq.${encodeURIComponent(email.toLowerCase())}&limit=1`;
+      const r = await fetch(u,{
+        headers:{
+          apikey: SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        }
+      });
+      if (!r.ok) return res.status(502).json({ error:"Auth backend unavailable" });
+      const rows = await r.json();
+      const ok = rows?.[0]?.password_hash && verify(rows[0].password_hash, password);
+      if (!ok) return res.status(401).json({ error:"Invalid credentials" });
+      res.setHeader("Set-Cookie", cookie);
+      return res.status(200).json({ ok:true });
+    }catch(e){
+      return res.status(500).json({ error:"Auth error" });
     }
   }
 
-  return (
-    <div className="wrap">
-      <h1>Log in</h1>
-      <form onSubmit={onSubmit} className="form">
-        <label>Email
-          <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
-        </label>
-        <label>Password
-          <input type={show ? "text":"password"} value={pw} onChange={(e)=>setPw(e.target.value)} required />
-        </label>
-        <label className="row">
-          <input type="checkbox" checked={show} onChange={(e)=>setShow(e.target.checked)} /> Show password
-        </label>
-        <button className="btn accent" type="submit">Log in</button>
-        {msg && <p className="err">{msg}</p>}
-        <p className="small">No account? <Link href="/register">Register free</Link>.</p>
-      </form>
-      <style jsx>{`
-        .wrap { max-width:720px; margin:32px auto; padding:0 16px; }
-        h1 { font-size:2.2rem; font-weight:800; color:#0f172a; }
-        .form { display:grid; gap:12px; margin-top:12px; }
-        label { font-weight:700; color:#334155; display:flex; flex-direction:column; gap:6px; }
-        input[type="email"], input[type="password"], input[type="text"]{ border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; }
-        .row { flex-direction:row; align-items:center; gap:8px; font-weight:600; color:#475569; }
-        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
-        .err { color:#b91c1c; font-weight:700; }
-        .small{ color:#94a3b8; }
-      `}</style>
-    </div>
-  );
+  // Dev mode: allow any credentials so you can proceed now
+  res.setHeader("Set-Cookie", cookie);
+  return res.status(200).json({ ok:true, dev:true });
 }
