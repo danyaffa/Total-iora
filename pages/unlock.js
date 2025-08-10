@@ -1,50 +1,55 @@
 // FILE: /pages/unlock.js
-import { MONTHLY_LINK, YEARLY_LINK } from "../lib/stripe";
+import { useEffect } from "react";
+import { useRouter } from "next/router";
+import { isFree, PLANS } from "../lib/monetization";
 
-function PricingCard({ title, price, billing, description, link, isFeatured }) {
-  const cardClass = isFeatured ? "pricing-card featured" : "pricing-card";
-  const buttonClass = isFeatured ? "btn btn-accent" : "btn btn-ghost";
-
+function PlanCard({ name, priceLabel, href }) {
   return (
-    <div className={cardClass}>
-      <h3 className="text-xl font-bold">{title}</h3>
-      <div className="my-4">
-        <span className="text-4xl font-bold">{price}</span>
-        <span className="text-slate-400">{billing}</span>
-      </div>
-      <p className="text-sm opacity-80 leading-relaxed">{description}</p>
-      <a href={link || "#"} target="_blank" rel="noreferrer" className={buttonClass} style={{marginTop: 16}}>
-        Continue
-      </a>
+    <div className="card">
+      <h3>{name}</h3>
+      <div className="price">{priceLabel}</div>
+      <a className="btn" href={href} target="_blank" rel="noreferrer">Continue</a>
+      <style jsx>{`
+        .card { background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:16px; padding:16px;
+                box-shadow:0 10px 30px rgba(2,6,23,.08); text-align:center; }
+        .price { font-size:1.6rem; font-weight:800; margin:6px 0 10px; color:#0f172a; }
+        .btn { display:inline-block; padding:10px 14px; border-radius:12px; font-weight:800; color:#fff;
+               background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
+      `}</style>
     </div>
   );
 }
 
 export default function Unlock() {
-  return (
-    <div className="page-main" style={{paddingTop: 32}}>
-      <h1 className="brand-name" style={{textAlign: "center"}}>Upgrade</h1>
-      <p className="subhead" style={{textAlign: "center"}}>
-        Choose a plan that fits. You can change or cancel anytime.
-      </p>
+  const router = useRouter();
 
-      <div className="info-grid" style={{marginTop: 24}}>
-        <PricingCard
-          title="Monthly"
-          price="$1"
-          billing="/mo"
-          description="Full access. Billed monthly."
-          link={MONTHLY_LINK}
-        />
-        <PricingCard
-          title="Yearly"
-          price="$10"
-          billing="/yr"
-          description="Best value for regular use."
-          link={YEARLY_LINK}
-          isFeatured={true}
-        />
-      </div>
+  // Today (free): just send people home. Nothing rendered.
+  useEffect(() => {
+    if (isFree()) router.replace("/");
+  }, [router]);
+
+  if (isFree()) return null;
+
+  // Future (when you flip FREE_MODE=false and add PLANS):
+  return (
+    <div className="wrap">
+      <header className="hero">
+        <h1>Choose a Plan</h1>
+        <p>Upgrade when you're ready.</p>
+      </header>
+
+      <main className="grid">
+        {PLANS.map((p) => (
+          <PlanCard key={p.id} name={p.name} priceLabel={p.priceLabel} href={p.href} />
+        ))}
+      </main>
+
+      <style jsx>{`
+        .wrap { min-height:100vh; background:linear-gradient(#fff,#f8fafc); padding:28px 16px 40px; }
+        .hero { text-align:center; }
+        .grid { display:grid; gap:14px; grid-template-columns:1fr; max-width:900px; margin:16px auto 0; }
+        @media (min-width:860px){ .grid { grid-template-columns:repeat(2,1fr); } }
+      `}</style>
     </div>
   );
 }
