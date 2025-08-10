@@ -1,9 +1,17 @@
 // FILE: /pages/api/logout.js
 export default function handler(req, res) {
+  // expire any auth/registration/dev cookies
+  const base = "Path=/; SameSite=Lax";
+  const expired = (name) => `${name}=; Max-Age=0; ${base}`;
+
   res.setHeader("Set-Cookie", [
-    "ac_session=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly; Secure",
-    "ac_registered=; Max-Age=0; Path=/; SameSite=Lax; Secure",
-    "ac_dev=; Max-Age=0; Path=/; SameSite=Lax; Secure",
+    expired("ac_session"),
+    expired("ac_registered"),
+    expired("ac_dev"),
   ]);
-  res.status(200).json({ ok: true });
+
+  // If called from <a href="/api/logout">, send the browser home.
+  // Use 307 so method is preserved if someone POSTs.
+  res.writeHead(307, { Location: "/?logged_out=1" });
+  res.end();
 }
