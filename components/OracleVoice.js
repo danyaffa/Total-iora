@@ -1,18 +1,61 @@
 // FILE: /components/OracleVoice.js
+// Hardened start/stop, no duplicate words, visible errors when API fails.
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export default function OracleVoice({ path }) {
+const LANG_OPTIONS = [
+  { value: "auto",   label: "Auto (by room)" },
+  { value: "en-US",  label: "English (US)" },
+  { value: "en-GB",  label: "English (UK)" },
+  { value: "en-IN",  label: "English (India)" },
+  { value: "ar",     label: "Arabic" },
+  { value: "he",     label: "Hebrew" },
+];
+
+const MODE_OPTIONS = [
+  { value: "general", label: "General Guidance" },
+  { value: "skills",  label: "Life Skills" },
+  { value: "study",   label: "Study" },
+];
+
+function autoLangFromPath(path) {
+  switch (path) {
+    case "Muslim":    return "ar";
+    case "Jewish":    return "he";
+    case "Eastern":   return "en-IN";
+    case "Christian": return "en-GB";
+    default:          return "en-US";
+  }
+}
+
+function pickVoice(lang) {
+  try {
+    const voices = window.speechSynthesis?.getVoices?.() || [];
+    if (!voices.length) return null;
+    let v = voices.find((x) => x.lang === lang);
+    if (v) return v;
+    const base = (lang || "").split("-")[0];
+    v = voices.find((x) => (x.lang || "").startsWith(base));
+    return v || voices[0];
+  } catch { return null; }
+}
+
+export default function OracleVoice({ path, defaultMode = "general" }) {
   const [listening, setListening] = useState(false);
   const [liveText, setLiveText] = useState("");
   const [reply, setReply] = useState("");
   const [replying, setReplying] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [mode, setMode] = useState(defaultMode);
+  const [lang, setLang] = useState("auto");
+  const [error, setError] = useState("");
 
   const recRef = useRef(null);
-  const finalRef = useRef("");      // accumulate final transcript (deduped)
-  const interimRef = useRef("");    // current interim
+  const finalBufRef = useRef(""); // finalized transcript (deduped)
+  const interimRef = useRef("");  // last interim chunk
   const audioRef = useRef({ ctx: null, analyser: null, src: null, animId: null, stream: null });
   const canvasRef = useRef(null);
+  const voiceRef = useRef(null);
 
   const persona = useMemo(() => (
     path === "Jewish" ? "Rabbi" :
@@ -21,23 +64,30 @@ export default function OracleVoice({ path }) {
     path === "Eastern" ? "Monk" : "Sage"
   ), [path]);
 
-  // crisp canvas on HiDPI
+  const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
+
+  // prepare TTS voice
+  useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    const assign = () => (voiceRef.current = pickVoice(chosenLang));
+    window.speechSynthesis.onvoiceschanged = assign;
+    setTimeout(assign, 120);
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, [chosenLang]);
+
+  // HiDPI canvas
   useEffect(() => {
     const cnv = canvasRef.current;
     if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const w = 240, h = 240;
-    cnv.width = w * dpr;
-    cnv.height = h * dpr;
-    cnv.style.width = `${w}px`;
-    cnv.style.height = `${h}px`;
-    const c = cnv.getContext("2d");
-    c.scale(dpr, dpr);
+    cnv.width = w * dpr; cnv.height = h * dpr;
+    cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
+    const c = cnv.getContext("2d"); c.scale(dpr, dpr);
   }, []);
 
   // mic visualization
   async function startMicViz() {
-    if (typeof window === "undefined" || !navigator.mediaDevices) return;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = ctx.createAnalyser();
@@ -46,20 +96,18 @@ export default function OracleVoice({ path }) {
     src.connect(analyser);
 
     const data = new Uint8Array(analyser.frequencyBinCount);
-    const cnv = canvasRef.current;
-    const c = cnv.getContext("2d");
+    const c = canvasRef.current.getContext("2d");
 
     const draw = () => {
       analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
       const radius = 36 + (avg / 255) * 44;
-      const w = 240, h = 240;
-      c.clearRect(0, 0, w, h);
-      const g = c.createRadialGradient(w/2, h/2, radius*0.25, w/2, h/2, radius);
+      c.clearRect(0, 0, 240, 240);
+      const g = c.createRadialGradient(120, 120, radius * 0.25, 120, 120, radius);
       g.addColorStop(0, "rgba(124,58,237,.95)");
       g.addColorStop(1, "rgba(124,58,237,0)");
       c.fillStyle = g;
-      c.beginPath(); c.arc(w/2, h/2, radius, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(120, 120, radius, 0, Math.PI * 2); c.fill();
       audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
@@ -75,64 +123,52 @@ export default function OracleVoice({ path }) {
     if (c) c.clearRect(0, 0, 240, 240);
   }
 
-  // recognizer
+  // speech recognition
   function ensureRecognizer() {
     if (recRef.current) return recRef.current;
-    const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-    if (!SR) { alert("Voice recognition is not supported on this browser. Try Chrome/Edge."); return null; }
+    const SR = (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (!SR) { alert("Voice recognition is not supported in this browser. Try Chrome/Edge."); return null; }
     const rec = new SR();
-    rec.lang = "en-US";
+    rec.lang = chosenLang || "en-US";
     rec.interimResults = true;
     rec.continuous = true;
     rec.maxAlternatives = 1;
 
     rec.onresult = (e) => {
-      let newFinal = "";
-      let newInterim = "";
+      let latestInterim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
-        const t = r[0]?.transcript || "";
+        const t = (r[0]?.transcript || "").trim();
+        if (!t) continue;
         if (r.isFinal) {
-          newFinal += (t.endsWith(" ") ? t : t + " ");
+          finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
         } else {
-          newInterim += t;
+          latestInterim = (latestInterim + " " + t).replace(/\s+/g, " ").trim();
         }
       }
-      if (newFinal) {
-        // append only the new final once
-        finalRef.current = (finalRef.current + " " + newFinal).replace(/\s+/g, " ").trim() + " ";
-      }
-      interimRef.current = newInterim;
-      const combined = (finalRef.current + (newInterim ? " " + newInterim : "")).replace(/\s+/g, " ").trim();
-      setLiveText(combined);
+      interimRef.current = latestInterim;
+      setLiveText([finalBufRef.current, latestInterim].filter(Boolean).join(" ").trim());
     };
 
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
-    rec.onerror = (ev) => {
-      // recover from "no-speech" / "audio-capture" errors
-      if (listening) { try { rec.stop(); rec.start(); } catch {} }
-      // optional: console.warn("SR error:", ev?.error);
-    };
-
+    rec.onerror = () => { /* keep rolling on "no-speech" */ };
     recRef.current = rec;
     return rec;
   }
 
   async function onStart() {
-    setReply("");
-    setLiveText("");
-    finalRef.current = "";
-    interimRef.current = "";
-
-    const rec = ensureRecognizer();
-    if (!rec) return;
+    setError(""); setReply(""); setLiveText("");
+    finalBufRef.current = ""; interimRef.current = "";
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Voice recognition unsupported. Use Chrome/Edge."); return; }
     try {
       await startMicViz();
+      const rec = ensureRecognizer(); if (!rec) return;
+      rec.lang = chosenLang || "en-US";
       setListening(true);
       try { rec.start(); } catch {}
     } catch {
-      setListening(false);
-      stopMicViz();
+      setListening(false); stopMicViz();
       alert("Microphone permission denied or unavailable.");
     }
   }
@@ -141,40 +177,49 @@ export default function OracleVoice({ path }) {
     setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
-    const text = (finalRef.current + " " + interimRef.current).replace(/\s+/g, " ").trim();
+
+    const text = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
     if (!text) return;
+
     setReplying(true);
+    setError("");
     try {
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, path }),
+        body: JSON.stringify({ message: text, path, mode, lang: chosenLang }),
       });
+
+      if (!r.ok) {
+        const detail = await r.json().catch(async () => ({ error: "Unknown error", detail: await r.text() }));
+        setReply("");
+        setError(detail?.error ? `${detail.error}${detail.detail ? ` — ${detail.detail}` : ""}` : "Service error.");
+        return;
+      }
+
       const data = await r.json().catch(() => ({}));
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
+
       if ("speechSynthesis" in window) {
         const u = new SpeechSynthesisUtterance(msg);
+        const v = pickVoice(chosenLang);
+        if (v) u.voice = v;
+        u.lang = chosenLang || "en-US";
         u.onstart = () => setSpeaking(true);
         u.onend = () => setSpeaking(false);
-        try { window.speechSynthesis.cancel(); } catch {}
-        window.speechSynthesis.speak(u);
+        try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
       }
-    } catch {
-      setReply("Connection issue. Please try again.");
+    } catch (e) {
+      setReply("");
+      setError(String(e?.message || e || "Network error"));
     } finally {
       setReplying(false);
     }
   }
 
-  // cleanup on unmount
-  useEffect(() => {
-    return () => {
-      try { recRef.current && recRef.current.stop(); } catch {}
-      stopMicViz();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // cleanup
+  useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
 
   return (
     <section className="oracle">
@@ -182,6 +227,19 @@ export default function OracleVoice({ path }) {
         <div className="persona">{persona}</div>
         <h2>Speak to the Oracle</h2>
         <p className="lead">Share what’s on your heart. I’ll listen as long as you need, and answer when you press <b>Stop</b>.</p>
+
+        <div className="bar">
+          <label>Language:
+            <select value={lang} onChange={(e) => setLang(e.target.value)}>
+              {LANG_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <label>Mode:
+            <select value={mode} onChange={(e) => setMode(e.target.value)}>
+              {MODE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+        </div>
       </header>
 
       <div className="body">
@@ -202,7 +260,7 @@ export default function OracleVoice({ path }) {
           </div>
           <div className="log">
             <div className="label">Guide</div>
-            <div className="bubble guide">{reply || (replying ? "Listening to the silence…" : "—")}</div>
+            <div className="bubble guide">{error ? <span style={{color:"#b91c1c",fontWeight:700}}>{error}</span> : (reply || (replying ? "Listening to the silence…" : "—"))}</div>
           </div>
         </div>
       </div>
@@ -226,6 +284,8 @@ export default function OracleVoice({ path }) {
         .persona { display:inline-block; padding:6px 10px; font-weight:700; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; margin-bottom:6px; font-size:.9rem; }
         .head h2 { margin:4px 0 6px; font-size:1.9rem; font-weight:800; color:#0f172a; }
         .lead { color:#475569; max-width:760px; margin:0 auto 10px; }
+        .bar { margin-top:8px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; color:#475569; font-size:.95rem; }
+        .bar select { margin-left:6px; padding:6px 10px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; }
         .body { display:grid; gap:18px; grid-template-columns:1fr; margin-top:12px; }
         @media (min-width:860px){ .body { grid-template-columns:1fr 1fr; } }
         .pane { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:16px; display:flex; gap:16px; align-items:center; }
@@ -236,9 +296,7 @@ export default function OracleVoice({ path }) {
         .orb.on { box-shadow:0 0 0 10px rgba(124,58,237,.08), 0 0 50px rgba(124,58,237,.22) inset; }
         .orb.spirit { background: radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0)); border-color: rgba(14,165,233,.25); }
         .orb.spirit.on { box-shadow:0 0 0 10px rgba(14,165,233,.08), 0 0 50px rgba(14,165,233,.22) inset; }
-        .orb.spirit .halo { position:absolute; inset:-18%; border-radius:999px;
-                            background: conic-gradient(from 0deg, rgba(14,165,233,.25), rgba(124,58,237,.15), rgba(14,165,233,.25));
-                            filter: blur(12px); animation: spin 3.6s linear infinite; }
+        .orb.spirit .halo { position:absolute; inset:-18%; border-radius:999px; background: conic-gradient(from 0deg, rgba(14,165,233,.25), rgba(124,58,237,.15), rgba(14,165,233,.25)); filter: blur(12px); animation: spin 3.6s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
