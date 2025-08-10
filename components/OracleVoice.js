@@ -13,16 +13,11 @@ const LANG_OPTIONS = [
   { value: "he",     label: "Hebrew" },
 ];
 
-const MODE_OPTIONS = [
-  { value: "general", label: "General Guidance" },
-  { value: "skills",  label: "Life Skills (practical steps)" },
-  { value: "study",   label: "Study (short explainer)" },
-];
-
 const TOPIC_OPTIONS = [
   { value: "general",      label: "General" },
   { value: "healthy",      label: "Healthy living" },
   { value: "relationships",label: "Human to human" },
+  { value: "skills",  label: "Life Skills (practical steps)" },
   { value: "partner",      label: "Finding a life partner" },
   { value: "work",         label: "Work & purpose" },
   { value: "parenting",    label: "Parenting" },
