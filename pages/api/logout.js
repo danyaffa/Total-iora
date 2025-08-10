@@ -4,3 +4,4 @@ export default function handler(req,res){
   res.setHeader("Set-Cookie", `ac_session=; Max-Age=0; Path=/; SameSite=Lax${SECURE?"; Secure":""}`);
   return res.status(200).json({ ok:true });
 }
+
