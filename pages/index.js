@@ -5,7 +5,7 @@ import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-// --- tiny helpers (client-only) ---
+// helper to set cookies safely on http(s)
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
@@ -17,16 +17,14 @@ export default function Home() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
 
-  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    // support ?dev=on -> sets dev cookie
+    // allow dev bypass via ?dev=on
     if (typeof window !== "undefined") {
       const usp = new URLSearchParams(window.location.search);
       if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
 
     const update = () => {
-      const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
       const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
       const isDevBypass =
         (typeof window !== "undefined" &&
@@ -34,17 +32,17 @@ export default function Home() {
            has("ac_dev") ||
            window.location.hostname === "localhost"));
 
-      // ✅ accept either registration cookie OR a real login session cookie
+      // ✅ unlocked if registered OR logged in (session) OR dev bypass
       const isRegistered =
         has("ac_registered") ||
-        has("ac_session") || // <- NEW: login session from /api/login
+        has("ac_session") ||
         (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
 
       setUnlocked(Boolean(isRegistered || isDevBypass));
     };
 
     update();                         // immediate
-    const t = setTimeout(update, 80); // catch any redirect race
+    const t = setTimeout(update, 80); // catch redirect race
     window.addEventListener?.("storage", update);
     return () => {
       clearTimeout(t);
@@ -56,21 +54,20 @@ export default function Home() {
 
   return (
     <div className="page">
-      {/* Top nav — Register always visible */}
+      {/* Register CTA always visible */}
       <nav className="topnav">
         <Link href="/register" className="btn cta">Register — Free Access</Link>
       </nav>
 
-      {/* Logo + short line */}
+      {/* Logo + tagline */}
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
-          or start with Sacred Notes.
+          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room, or start with Sacred Notes.
         </p>
       </section>
 
-      {/* Feature tiles */}
+      {/* Tiles — buttons route to /register while locked */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -118,7 +115,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* GATED AREA — only after registration or dev bypass */}
+      {/* GATED — appears only after registration/login */}
       {unlocked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
@@ -138,15 +135,12 @@ export default function Home() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-
         .topnav { display:flex; justify-content:center; padding:14px; }
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
-
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
-
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
@@ -157,7 +151,6 @@ export default function Home() {
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
-
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
       `}</style>
