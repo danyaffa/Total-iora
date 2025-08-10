@@ -1,69 +1,76 @@
-// FILE: /pages/index.js
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-// --- tiny helpers (client-only) ---
-function setCookie(name, value, maxAgeDays = 365) {
+// cookie helpers
+function getCookie(name) {
+  if (typeof document === "undefined") return "";
+  const m = document.cookie.split("; ").find(c => c.startsWith(name + "="));
+  return m ? decodeURIComponent(m.split("=")[1]) : "";
+}
+function setCookie(name, value, opts = "") {
   if (typeof document === "undefined") return;
-  const maxAge = maxAgeDays * 24 * 3600;
-  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/${opts ? "; " + opts : ""}`;
+}
+function clearCookie(name) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Max-Age=0; Path=/`;
 }
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
 
-  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    // support ?dev=on -> sets dev cookie
+    // optional dev bypass (?dev=on writes a short cookie)
     if (typeof window !== "undefined") {
       const usp = new URLSearchParams(window.location.search);
-      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
+      if (usp.get("dev") === "on") setCookie("ac_dev", "1", "Max-Age=2592000; SameSite=Lax");
     }
 
-    const update = () => {
-      const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
-      const isDevBypass =
-        (typeof window !== "undefined" &&
-          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-           has("ac_dev") ||
-           window.location.hostname === "localhost"));
+    const check = () => {
+      const devBypass =
+        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1") ||
+        getCookie("ac_dev") === "1";
 
-      // ✅ accept either registration cookie OR a real login session cookie
-      const isRegistered =
-        has("ac_registered") ||
-        has("ac_session") || // <- NEW: login session from /api/login
-        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+      // ✅ HARD GATE: only a live login session cookie unlocks
+      const hasSession = !!getCookie("ac_session");
 
-      setUnlocked(Boolean(isRegistered || isDevBypass));
+      setUnlocked(Boolean(hasSession || devBypass));
     };
 
-    update();                         // immediate
-    const t = setTimeout(update, 80); // catch any redirect race
-    window.addEventListener?.("storage", update);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener?.("storage", update);
-    };
+    check();
+    const i = setInterval(check, 800); // catch cookie changes from login/logout
+    return () => clearInterval(i);
   }, []);
 
   const locked = !unlocked;
 
   return (
     <div className="page">
-      {/* Top nav — Register always visible */}
+      {/* Top nav */}
       <nav className="topnav">
-        <Link href="/register" className="btn cta">Register — Free Access</Link>
+        <Link href="/register">Register — Free Access</Link>
+        {!unlocked ? (
+          <Link href="/login">Log in</Link>
+        ) : (
+          <a
+            href="/api/logout"
+            onClick={(e) => {
+              // client-helpful logout to immediately re-lock UI
+              clearCookie("ac_session");
+            }}
+          >
+            Log out
+          </a>
+        )}
       </nav>
 
-      {/* Logo + short line */}
+      {/* Logo + headline */}
       <section className="hero">
-        <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
+        <img src="/TotalIora_Logo.png" alt="Total-Iora Logo" className="logo" />
         <p className="note">
           Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
@@ -110,15 +117,13 @@ export default function Home() {
               ) : (
                 <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               )}
-              <div className="disc">
-                Spiritual guidance only. No promises. No medical, legal, or financial advice.
-              </div>
+              <div className="disc">Spiritual guidance only. No promises. No medical, legal, or financial advice.</div>
             </footer>
           </article>
         </div>
       </section>
 
-      {/* GATED AREA — only after registration or dev bypass */}
+      {/* GATED AREA */}
       {unlocked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
@@ -128,8 +133,11 @@ export default function Home() {
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Register (free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
-            <Link href="/register" className="btn accent">Register — Free Access</Link>
+            <p>Register (free) and then log in to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <div className="ctaRow">
+              <Link href="/register" className="btn accent">Register — Free Access</Link>
+              <Link href="/login" className="btn">Log in</Link>
+            </div>
           </div>
         </section>
       )}
@@ -138,11 +146,8 @@ export default function Home() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-
-        .topnav { display:flex; justify-content:center; padding:14px; }
-        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
-
+        .topnav { display:flex; gap:16px; justify-content:center; padding:14px; flex-wrap:wrap; }
+        .topnav a { font-weight:700; color:#0f172a; text-decoration:underline; }
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
@@ -155,11 +160,13 @@ export default function Home() {
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+        .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
+        .ctaRow { display:flex; gap:10px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
       `}</style>
     </div>
   );
