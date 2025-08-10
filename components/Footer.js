@@ -8,7 +8,7 @@ export default function Footer() {
     >
       <div className="mx-auto px-4 sm:px-6 py-8">
         <p className="text-sm text-slate-600">
-          © {new Date().getFullYear()} AuraCode · A sanctuary of reflection. No promises. Only presence.
+          © {new Date().getFullYear()} Total-iora · A sanctuary of reflection. No promises. Only presence.
         </p>
         <p className="mt-2 text-xs text-slate-500">
           Use of this site constitutes acceptance of our{" "}
