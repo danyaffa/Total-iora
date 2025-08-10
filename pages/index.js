@@ -22,7 +22,6 @@ export default function Home() {
 
   // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    // allow developer bypass by query: ?dev=on  (persists a cookie)
     if (typeof window !== "undefined") {
       const usp = new URLSearchParams(window.location.search);
       if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
@@ -40,6 +39,8 @@ export default function Home() {
     setUnlocked(!!(isRegistered || isDevBypass));
   }, []);
 
+  const locked = !unlocked;
+
   return (
     <div className="page">
       {/* Top nav — Register always visible */}
@@ -51,12 +52,12 @@ export default function Home() {
       <section className="hero">
         <img src="/AuraCode_Logo.png" alt="AuraCode Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>ChatGPT Voice</strong>. Choose your room,
+          Advanced Voice is now <strong>AuraCode Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
         </p>
       </section>
 
-      {/* Feature tiles (static marketing; available to everyone) */}
+      {/* Feature tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -69,7 +70,11 @@ export default function Home() {
               </p>
             </header>
             <footer className="f">
-              <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+              {locked ? (
+                <Link href="/register" className="btn accent">Register to Open</Link>
+              ) : (
+                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+              )}
               <div className="disc">
                 This is your space. Do whatever you like on this page. We have no responsibility
                 for anything you write, and nothing is saved on our servers.
@@ -87,7 +92,11 @@ export default function Home() {
               </p>
             </header>
             <footer className="f">
-              <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+              {locked ? (
+                <Link href="/register" className="btn accent">Register to Get Yours</Link>
+              ) : (
+                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+              )}
               <div className="disc">
                 Spiritual guidance only. No promises. No medical, legal, or financial advice.
               </div>
@@ -103,7 +112,6 @@ export default function Home() {
           <OracleVoice path={path} />
         </>
       ) : (
-        // Teaser card shown before unlock
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
