@@ -1,53 +1,138 @@
-// FILE: /pages/api/register.js
-// Stores registrations (optional Supabase). Also sets "ac_registered=1" cookie to unlock the index.
+// FILE: /pages/register.js
+import { useState } from "react";
+import Link from "next/link";
+import Footer from "../components/Footer";
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  const { name = "", email = "", phone = "", marketing = false, usage = false } = req.body || {};
-  if (!name.trim() || !email.trim() || !phone.trim()) {
-    return res.status(400).json({ error: "Missing required fields" });
+function setUnlockCookie() {
+  const maxAge = 365 * 24 * 3600; // 1 year
+  if (typeof document !== "undefined") {
+    document.cookie = `ac_registered=1; Max-Age=${maxAge}; Path=/; SameSite=Lax; Secure`;
+    try { localStorage.setItem("ac_registered", "1"); } catch {}
   }
+}
 
-  // Set unlock cookie for 1 year
-  res.setHeader("Set-Cookie", `ac_registered=1; Max-Age=${365 * 24 * 3600}; Path=/; SameSite=Lax; Secure`);
+export default function Register() {
+  const [form, setForm] = useState({ username: "", email: "", phone: "", password: "" });
+  const [showPw, setShowPw] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
-  const SUPABASE_URL = process.env.SUPABASE_URL || "";
-  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
-  const SUPABASE_TABLE = process.env.SUPABASE_TABLE || "registrations";
+  const upd = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+  const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || ""));
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setMsg("");
+
+    const { username, email, phone, password } = form;
+    if (!username.trim() || !validEmail(email) || !String(phone).trim() || String(password).length < 8) {
+      setMsg("Please enter username, valid email, mobile, and an 8+ character password.");
+      return;
+    }
+
+    setBusy(true);
     try {
-      const row = {
-        name,
-        email: email.toLowerCase(),
-        phone,
-        marketing: !!marketing,
-        usage: !!usage,
-        created_at: new Date().toISOString(),
-      };
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_TABLE)}`, {
+      // Send to your API (stores + sets cookie server-side if configured)
+      await fetch("/api/register", {
         method: "POST",
-        headers: {
-          apikey: SUPABASE_SERVICE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify(row),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        return res.status(502).json({ error: "Failed to store signup", detail: t });
-      }
-      const data = await r.json();
-      return res.status(200).json({ ok: true, message: "Registered. Welcome!", id: data?.[0]?.id });
-    } catch (e) {
-      return res.status(500).json({ error: "Unexpected error", detail: String(e?.message || e) });
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          name: username,  // compatibility with backends expecting "name"
+          email,
+          phone,
+          password,
+        }),
+      }).catch(() => {});
+
+      // Always unlock locally so the gated index opens
+      setUnlockCookie();
+      window.location.href = "/";
+    } catch (err) {
+      setMsg(String(err?.message || err || "Could not register."));
+    } finally {
+      setBusy(false);
     }
   }
 
-  // Dev/no-DB fallback
-  console.log("[register] dev-mode signup:", { name, email, phone, marketing, usage });
-  return res.status(200).json({ ok: true, message: "Registered. Welcome!", devMode: true });
+  return (
+    <div className="wrap">
+      <header className="hero">
+        <div className="pill">Free Access</div>
+        <h1>Create your private sanctuary</h1>
+        <p>Register to enter. You’ll be the only one who can access your space.</p>
+      </header>
+
+      <main className="card">
+        <form onSubmit={onSubmit} className="form">
+          <label> Username
+            <input value={form.username} onChange={upd("username")} placeholder="Your username" required />
+          </label>
+
+          <label> Email
+            <input type="email" value={form.email} onChange={upd("email")} placeholder="you@example.com" required />
+          </label>
+
+          <label> Mobile
+            <input inputMode="tel" value={form.phone} onChange={upd("phone")} placeholder="+61 4XX XXX XXX" required />
+          </label>
+
+          <label className="pw"> Password (min 8)
+            <input
+              id="reg-password"
+              type={showPw ? "text" : "password"}
+              value={form.password}
+              onChange={upd("password")}
+              placeholder="********"
+              minLength={8}
+              required
+            />
+          </label>
+
+          {/* NEW: tick box to show/hide password */}
+          <label className="ck" htmlFor="showpw">
+            <input
+              id="showpw"
+              type="checkbox"
+              checked={showPw}
+              onChange={(e) => setShowPw(e.target.checked)}
+              aria-controls="reg-password"
+            />
+            <span>Show password</span>
+          </label>
+
+          <button className="btn accent" type="submit" disabled={busy}>
+            {busy ? "Creating…" : "Register — Free"}
+          </button>
+
+          {msg && <p className="err">{msg}</p>}
+
+          <p className="small">
+            Already registered? <Link href="/login">Log in</Link>.
+          </p>
+        </form>
+      </main>
+
+      <Footer />
+
+      <style jsx>{`
+        .wrap { min-height:100vh; background:linear-gradient(#fff,#f8fafc); padding: 22px 12px 40px; }
+        .hero { text-align:center; }
+        .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
+        h1 { margin:8px 0 6px; font-size:1.9rem; font-weight:800; color:#0f172a; }
+        .card { max-width:800px; margin:12px auto 0; background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; padding:16px; box-shadow:0 10px 30px rgba(2,6,23,.08); }
+        .form { display:grid; gap:12px; }
+        label { color:#334155; font-weight:700; font-size:.95rem; display:flex; flex-direction:column; gap:6px; }
+        input[type="text"], input[type="email"], input[type="tel"], input[type="password"] {
+          border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; width:100%;
+        }
+        .ck { flex-direction:row; align-items:center; gap:8px; font-weight:600; color:#475569; margin-top:-4px; }
+        .btn { margin-top:8px; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
+        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
+        .err { color:#b91c1c; font-weight:700; margin-top:8px; }
+        .small { color:#94a3b8; margin-top:10px; }
+      `}</style>
+    </div>
+  );
 }
