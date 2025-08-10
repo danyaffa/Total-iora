@@ -65,7 +65,7 @@ export default function Home() {
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
         <p className="note">
-          Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
+          Advanced Voice is now <strong>Total-iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
         </p>
       </section>
