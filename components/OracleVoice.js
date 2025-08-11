@@ -1,10 +1,14 @@
 // FILE: /components/OracleVoice.js
-// Original look & feel kept. Clean slate on mount. No localStorage persistence.
-// Auto-answer on typing pause or when dictation stops. Mic pauses while editing.
+// Original layout preserved.
+// Changes:
+//  - Removed auto-send while typing (manual submit only).
+//  - Mic answers only when you press Stop.
+//  - Recognition restarts to keep listening on Android; no early answers.
+//  - No localStorage persistence (clean each mount).
+//  - Stricter min length to enable "Get Answer".
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-/* ---------- options ---------- */
 const LANG_OPTIONS = [
   { value: "auto", label: "Auto (by room)" },
   { value: "en-US", label: "English (US)" },
@@ -73,7 +77,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const [speaking, setSpeaking] = useState(false);
   const [replying, setReplying] = useState(false);
 
-  const [liveText, setLiveText] = useState("");   // clean on mount
+  const [liveText, setLiveText] = useState("");   // clean each mount
   const [reply, setReply] = useState("");
   const [lang, setLang] = useState("auto");
   const [subject, setSubject] = useState("topic:general");
@@ -82,14 +86,15 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const speakState = useRef({ parts:[], idx:0 });
   const wasCancelledRef = useRef(false);
+
   const recRef = useRef(null);
+  const keepAliveRef = useRef(false);             // restart SR on Android
   const finalBufRef = useRef("");
   const interimRef = useRef("");
+
   const voiceRef = useRef(null);
   const canvasRef = useRef(null);
   const audioRef = useRef({ ctx: null, analyser: null, src: null, animId: null, stream: null });
-  const autoSendTimerRef = useRef(0);
-  const manualEditingRef = useRef(false);
 
   const [sources, setSources] = useState([]);
   const [showSources, setShowSources] = useState(false);
@@ -153,14 +158,6 @@ export default function OracleVoice({ path = "Universal" }) {
     const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0, 0, 220, 220);
   }
 
-  function scheduleAutoSend() {
-    clearTimeout(autoSendTimerRef.current);
-    autoSendTimerRef.current = window.setTimeout(() => {
-      const t = String(liveText || "").trim();
-      if (t) sendForAnswer(t);
-    }, 1400);
-  }
-
   function ensureRecognizer() {
     if (recRef.current) return recRef.current;
     const SR = (window.webkitSpeechRecognition || window.SpeechRecognition);
@@ -170,7 +167,6 @@ export default function OracleVoice({ path = "Universal" }) {
     rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
 
     rec.onresult = (e) => {
-      if (manualEditingRef.current) return;
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -180,13 +176,17 @@ export default function OracleVoice({ path = "Universal" }) {
         else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
       }
       interimRef.current = interim;
-      setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
-      scheduleAutoSend();
+      const combined = [finalBufRef.current, interim].filter(Boolean).join(" ").trim();
+      setLiveText(combined);
+      // IMPORTANT: no auto-send here anymore
     };
+
     rec.onend = () => {
-      if (listening) setListening(false);
-      const t = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
-      if (t) sendForAnswer(t);
+      if (keepAliveRef.current) {
+        try { rec.start(); } catch {}
+      } else {
+        setListening(false);
+      }
     };
     rec.onerror = () => {};
     recRef.current = rec; return rec;
@@ -195,6 +195,7 @@ export default function OracleVoice({ path = "Universal" }) {
   async function onStart() {
     finalBufRef.current = ""; interimRef.current = ""; setReply("");
     setSources([]); setShowSources(false);
+    keepAliveRef.current = true;
     try {
       await startMicViz();
       const rec = ensureRecognizer(); if (!rec) return;
@@ -207,13 +208,11 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
   function onStop() {
-    setListening(false);
+    keepAliveRef.current = false;
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
-    const typed = String(liveText || "").trim();
-    const captured = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
-    const text = (typed || captured).trim();
-    if (text) sendForAnswer(text);
+    const text = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
+    if (text) sendForAnswer(text);        // answer only when user presses Stop
   }
 
   function stopAnswerVoice() {
@@ -237,34 +236,28 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   async function sendForAnswer(text) {
-    clearTimeout(autoSendTimerRef.current);
-    if (!text) return;
-
     setReplying(true);
-
     const isStyle = subject.startsWith("style:");
     const isTopic = subject.startsWith("topic:");
     const mode = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
 
-    const strictRambam = /\b(rambam|maimonides|mishneh\s*torah|guide\s*for\s*the\s*perplexed)\b/i.test(text);
+    // basic length guard (prevents 1-word triggers)
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length < 3 && !/[?.!]/.test(text)) { setReplying(false); return; }
 
     try {
       const quotes = await fetchGroundSources(text, path, chosenLang, 8);
       const contextBlock = quotes.length
         ? "\n\nSourced quotes:\n" + quotes.map((s, i) =>
-            `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`
+            `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}\n${s.text}`
           ).join("\n\n")
         : "";
 
       const guard = "IMPORTANT: Do not instruct the user to ask or write anything. Answer directly.";
-      const extraGuard = strictRambam
-        ? "\n\nIMPORTANT: The user asked specifically for Rambam (Maimonides). Only provide quotations from Maimonides. Do NOT substitute any other author. If you cannot find a Maimonides quote, say so briefly."
-        : "";
-
       const message = (polish
         ? `Please restate the user's input in clear English (fix grammar, keep meaning). Then answer directly.\n${guard}\nUser input: """${text}"""`
-        : `${guard}\n${text}`) + (contextBlock ? `\n\n---\n${contextBlock}` : "") + extraGuard;
+        : `${guard}\n${text}`) + (contextBlock ? `\n\n---\n${contextBlock}` : "");
 
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
@@ -272,7 +265,7 @@ export default function OracleVoice({ path = "Universal" }) {
         body: JSON.stringify({ message, path, mode, topic, lang: chosenLang }),
       });
       const data = await r.json().catch(() => ({}));
-      const msg = data?.reply || "I’m here with you.";
+      const msg = data?.reply || "";
       setReply(msg);
 
       const srv = Array.isArray(data?.sources) ? data.sources : [];
@@ -282,11 +275,11 @@ export default function OracleVoice({ path = "Universal" }) {
       ];
       setSources(merged);
 
-      speakState.current = { parts: splitIntoSentences(msg), idx: 0 };
-      stopAnswerVoice();
-      speakFrom(0);
-    } catch {
-      // silent fail
+      if (msg) {
+        speakState.current = { parts: splitIntoSentences(msg), idx: 0 };
+        stopAnswerVoice();
+        speakFrom(0);
+      }
     } finally {
       setReplying(false);
     }
@@ -304,19 +297,8 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   function onUserTyping(e) {
-    // Pause mic while editing to prevent SR from re-adding removed words
-    manualEditingRef.current = true;
-    if (listening) {
-      try { recRef.current && recRef.current.stop(); } catch {}
-      setListening(false);
-      stopMicViz();
-    }
     setLiveText(e.target.value);
-    clearTimeout(autoSendTimerRef.current);
-    autoSendTimerRef.current = window.setTimeout(() => {
-      manualEditingRef.current = false;
-      scheduleAutoSend();
-    }, 700);
+    // IMPORTANT: no auto-send on typing
   }
 
   useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
@@ -338,7 +320,7 @@ export default function OracleVoice({ path = "Universal" }) {
               {SUBJECT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <label title="Browser speech volume (0–100%). For louder audio, raise your device/system volume.">
+          <label>
             Guide voice volume:
             <input type="range" min="0" max="1" step="0.05" value={volume} onChange={onVolumeChange} />
           </label>
@@ -370,7 +352,7 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              <button className="btn ghost" onClick={onStop}>Get Answer ⟶</button>
+              <button className="btn ghost" onClick={() => sendForAnswer(liveText)}>Get Answer ⟶</button>
               {speaking && <button className="btn danger" onClick={stopAnswerVoice}>🔇 Stop Answer</button>}
             </div>
           </div>
