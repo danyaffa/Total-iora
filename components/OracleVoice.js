@@ -200,6 +200,7 @@ export default function OracleVoice({ path = "Universal" }) {
     setError(""); setReply(""); setSources([]); setShowSources(false);
     finalBufRef.current = ""; interimRef.current = "";
     setEditedInSession(false);
+    lastSentSigRef.current = ""; // *** THE FIX IS HERE ***
     try {
       await startMicViz();
       const rec = ensureRecognizer(); if (!rec) return;
