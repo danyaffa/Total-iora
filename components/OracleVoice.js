@@ -1,9 +1,7 @@
 // FILE: /components/OracleVoice.js
 // One "Subject" picker (merged), Start/Stop & Answer, Stop Answer (TTS),
 // volume control, download & print, and mobile/iOS speech fixes.
-
 import { useEffect, useMemo, useRef, useState } from "react";
-
 /* --- Select options --- */
 const LANG_OPTIONS = [
   { value: "auto",   label: "Auto (by room)" },
@@ -13,7 +11,6 @@ const LANG_OPTIONS = [
   { value: "ar",     label: "Arabic" },
   { value: "he",     label: "Hebrew" },
 ];
-
 // Merge of “General Guidance” styles + topical subjects, per your request
 const SUBJECT_OPTIONS = [
   // guidance styles
@@ -33,7 +30,6 @@ const SUBJECT_OPTIONS = [
   { value: "topic:addiction",     label: "Addiction support (non-clinical)" },
   { value: "topic:mindfulness",   label: "Mindfulness & calm" },
 ];
-
 function autoLangFromPath(path) {
   switch (path) {
     case "Muslim":    return "ar";
@@ -43,7 +39,6 @@ function autoLangFromPath(path) {
     default:          return "en-US";
   }
 }
-
 function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
@@ -55,35 +50,31 @@ function pickVoice(lang) {
     return v || voices[0];
   } catch { return null; }
 }
-
 /* --- Component --- */
 export default function OracleVoice({ path }) {
   const [listening, setListening] = useState(false);
   const [liveText, setLiveText]   = useState("");
   const [reply, setReply]         = useState("");
+  const [sources, setSources]     = useState([]); // To hold sources for display
   const [replying, setReplying]   = useState(false);
   const [speaking, setSpeaking]   = useState(false);
   const [lang, setLang]           = useState("auto");
   const [subject, setSubject]     = useState("topic:general");
   const [volume, setVolume]       = useState(1);
   const [error, setError]         = useState("");
-
   const recRef        = useRef(null);
   const finalBufRef   = useRef("");
   const interimRef    = useRef("");
   const canvasRef     = useRef(null);
   const audioRef      = useRef({ ctx:null, analyser:null, src:null, animId:null, stream:null });
   const voiceRef      = useRef(null);
-
   const persona = useMemo(() => (
     path === "Jewish" ? "Rabbi" :
     path === "Christian" ? "Priest" :
     path === "Muslim" ? "Imam" :
     path === "Eastern" ? "Monk" : "Sage"
   ), [path]);
-
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
-
   /* --- TTS voice prepared --- */
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
@@ -92,7 +83,6 @@ export default function OracleVoice({ path }) {
     setTimeout(assign, 120);
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [chosenLang]);
-
   /* --- HiDPI canvas sizing --- */
   useEffect(() => {
     const cnv = canvasRef.current;
@@ -103,7 +93,6 @@ export default function OracleVoice({ path }) {
     cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
     const c = cnv.getContext("2d"); c.scale(dpr, dpr);
   }, []);
-
   /* --- Mic visualization --- */
   async function startMicViz() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
@@ -112,10 +101,8 @@ export default function OracleVoice({ path }) {
     analyser.fftSize = 512;
     const src = ctx.createMediaStreamSource(stream);
     src.connect(analyser);
-
     const data = new Uint8Array(analyser.frequencyBinCount);
     const c = canvasRef.current.getContext("2d");
-
     const draw = () => {
       analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
@@ -129,7 +116,6 @@ export default function OracleVoice({ path }) {
       audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
-
     audioRef.current = { ctx, analyser, src, animId: audioRef.current.animId, stream };
   }
   function stopMicViz() {
@@ -140,7 +126,6 @@ export default function OracleVoice({ path }) {
     const c = canvasRef.current?.getContext?.("2d");
     if (c) c.clearRect(0, 0, 240, 240);
   }
-
   /* --- Speech recognition (mobile safe) --- */
   function ensureRecognizer() {
     if (recRef.current) return recRef.current;
@@ -151,7 +136,6 @@ export default function OracleVoice({ path }) {
     rec.interimResults = true;
     rec.continuous = true; // iOS may end; we'll auto-restart onend
     rec.maxAlternatives = 1;
-
     rec.onresult = (e) => {
       let interim = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -167,16 +151,13 @@ export default function OracleVoice({ path }) {
       interimRef.current = interim;
       setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
     };
-
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
     rec.onerror = () => {}; // do not kill session on iOS “network/no-speech”
-
     recRef.current = rec;
     return rec;
   }
-
   async function onStart() {
-    setError(""); setReply(""); setLiveText("");
+    setError(""); setReply(""); setLiveText(""); setSources([]);
     finalBufRef.current = ""; interimRef.current = "";
     try {
       await startMicViz();
@@ -192,19 +173,20 @@ export default function OracleVoice({ path }) {
       alert("Microphone permission denied or unavailable.");
     }
   }
-
   function stopAnswerVoice() {
     try { window.speechSynthesis.cancel(); } catch {}
     setSpeaking(false);
   }
-
   async function onStop() {
     setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
-
     const text = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
     if (!text) return;
+    
+    setReplying(true);
+    setError("");
+    setSources([]);
 
     // Split merged "subject" into old fields for API compatibility
     const isStyle  = subject.startsWith("style:");
@@ -212,26 +194,38 @@ export default function OracleVoice({ path }) {
     const mode  = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
 
-    setReplying(true);
-    setError("");
+    // 1. Get free sources from the new public domain RAG endpoint
+    let remoteSources = [];
+    try {
+      const rr = await fetch("/api/free-rag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: text, path, topK: 6 })
+      });
+      if (rr.ok) {
+        const rd = await rr.json();
+        remoteSources = rd.sources || [];
+      }
+    } catch { /* ignore network/parse errors */ }
+
+    // 2. Call the main chat API, now with the retrieved sources
     try {
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, path, mode, topic, lang: chosenLang }),
+        body: JSON.stringify({ message: text, path, mode, topic, lang: chosenLang, remoteSources }),
       });
-
       if (!r.ok) {
         const detail = await r.json().catch(async () => ({ error:"Unknown error", detail: await r.text() }));
         setReply("");
         setError(detail?.error ? `${detail.error}${detail.detail ? ` — ${detail.detail}` : ""}` : "Service error.");
         return;
       }
-
       const data = await r.json().catch(() => ({}));
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
-
+      setSources(data?.sources || []); // Save sources for display/download
+      
       if ("speechSynthesis" in window) {
         const u = new SpeechSynthesisUtterance(msg);
         const v = pickVoice(chosenLang);
@@ -250,8 +244,11 @@ export default function OracleVoice({ path }) {
       setReplying(false);
     }
   }
-
   function downloadReply() {
+    const sourcesText = sources.length > 0 
+      ? `\n\nSources:\n${sources.map(s => `[#${s.i}] ${s.work} by ${s.author || 'Unknown'}`).join('\n')}`
+      : "";
+
     const text = [
       `Room: ${path} | Subject: ${subject} | Lang: ${chosenLang}`,
       `Date: ${new Date().toLocaleString()}`,
@@ -261,6 +258,7 @@ export default function OracleVoice({ path }) {
       "",
       "Guide:",
       reply,
+      sourcesText,
     ].join("\n");
     const blob = new Blob([text], { type:"text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -268,27 +266,28 @@ export default function OracleVoice({ path }) {
     a.href = url; a.download = `oracle-${path}-${Date.now()}.txt`; a.click();
     URL.revokeObjectURL(url);
   }
-
   function printReply() {
     const w = window.open("", "_blank", "width=720,height=900");
     if (!w) return;
+    const sourcesHtml = sources.length > 0
+      ? `<hr><p><b>Sources:</b></p><ul>${sources.map(s => `<li>[#${s.i}] <i>${s.work}</i> by ${s.author || 'Unknown'}</li>`).join('')}</ul>`
+      : "";
+
     w.document.write(`
       <title>Oracle Guide</title>
-      <pre style="font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial; white-space:pre-wrap">
-Room: ${path} | Subject: ${subject} | Lang: ${chosenLang}
-Date: ${new Date().toLocaleString()}
-
-You:
-${finalBufRef.current || liveText}
-
-Guide:
-${reply}
-      </pre>`);
+      <div style="font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial; white-space:pre-wrap">
+        <p><b>Room:</b> ${path} | <b>Subject:</b> ${subject} | <b>Lang:</b> ${chosenLang}</p>
+        <p><b>Date:</b> ${new Date().toLocaleString()}</p>
+        <hr>
+        <p><b>You:</b></p>
+        <p>${finalBufRef.current || liveText}</p>
+        <p><b>Guide:</b></p>
+        <p>${reply}</p>
+        ${sourcesHtml}
+      </div>`);
     w.document.close(); w.focus(); w.print();
   }
-
   useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
-
   return (
     <section className="oracle">
       <header className="head">
@@ -297,7 +296,6 @@ ${reply}
         <p className="lead">
           Share what’s on your heart. I’ll listen as long as you need, and answer when you press <b>Stop</b>.
         </p>
-
         <div className="bar">
           <label>Language:
             <select value={lang} onChange={(e) => setLang(e.target.value)}>
@@ -315,7 +313,6 @@ ${reply}
           </label>
         </div>
       </header>
-
       <div className="body">
         <div className="pane">
           <div className={`orb ${listening ? "on" : ""}`}>
@@ -327,7 +324,6 @@ ${reply}
             <div className="bubble you">{liveText || (listening ? "…" : "—")}</div>
           </div>
         </div>
-
         <div className="pane">
           <div className={`orb spirit ${replying || speaking ? "on" : ""}`}>
             <div className="halo" />
@@ -340,12 +336,10 @@ ${reply}
           </div>
         </div>
       </div>
-
       <div className="controls">
         <button onClick={listening ? onStop : onStart} className={`btn ${listening ? "stop" : "start"}`}>
           {listening ? "⏹ Stop & Answer" : "🎙️ Start Conversation"}
         </button>
-
         {(speaking || reply) && (
           <>
             {speaking && <button onClick={stopAnswerVoice} className="btn ghost">Stop Answer</button>}
@@ -357,12 +351,10 @@ ${reply}
             )}
           </>
         )}
-
         <div className="hint">
           {listening ? "Listening… take your time." : "Press to speak. I’ll answer when you stop."}
         </div>
       </div>
-
       <style jsx>{`
         .oracle { position:relative; max-width:1100px; margin:20px auto; padding:24px 18px; border-radius:24px;
                   background: radial-gradient(1200px 600px at 5% -10%, #eef2ff 0%, transparent 60%),
