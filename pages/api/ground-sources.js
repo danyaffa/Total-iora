@@ -1,14 +1,11 @@
 // FILE: /pages/api/ground-sources.js
-// Grounded snippets for all rooms (Jewish/Christian/Muslim/Eastern/Universal) + general libraries.
-
+// Dedicated quotes endpoint — exact book/author matching + wide libraries (Fix #4 & #5)
 export const dynamic = "force-dynamic";
 export const maxDuration = 28;
 
 const ok = (s) => !!(s && String(s).trim());
 const trim = (s, n=800) => String(s||"").trim().slice(0,n);
-const uniq = (arr, key=(x)=>JSON.stringify(x)) => {
-  const seen = new Set(); const out=[]; for (const x of arr){ const k=key(x); if(seen.has(k)) continue; seen.add(k); out.push(x); } return out;
-};
+const uniq = (arr, key=(x)=>JSON.stringify(x)) => { const seen=new Set(); const out=[]; for (const x of arr){ const k=key(x); if(seen.has(k)) continue; seen.add(k); out.push(x);} return out; };
 
 function parseIntent(q) {
   const s = String(q||"");
@@ -26,8 +23,10 @@ function parseIntent(q) {
   return { exact, hints };
 }
 
-/* ---------------- Jewish: Sefaria ---------------- */
-async function fetchSefaria(query, max=4) {
+function pickPlainText(formats){ const k = Object.keys(formats||{}); const t = k.find(x=>x.startsWith("text/plain")) || k.find(x=>x.startsWith("text/html")); return t ? formats[t] : null; }
+
+/* Jewish */
+async function fetchSefaria(query, max=6) {
   try {
     const sr = await fetch(`https://www.sefaria.org/api/search-wrap?q=${encodeURIComponent(query)}&size=${max}&type=Text`);
     if (!sr.ok) return [];
@@ -47,7 +46,7 @@ async function fetchSefaria(query, max=4) {
   } catch { return []; }
 }
 
-/* ---------------- Muslim: Qur'an (alquran.cloud) ---------------- */
+/* Muslim */
 async function fetchQuran(query, max=6) {
   try {
     const r = await fetch(`https://api.alquran.cloud/v1/search/${encodeURIComponent(query)}/all/en`);
@@ -63,24 +62,7 @@ async function fetchQuran(query, max=6) {
   } catch { return []; }
 }
 
-/* ---------------- Christian: Bible (Gutenberg/Wikisource-ish) ---------------- */
-function pickPlainText(formats){ const k = Object.keys(formats||{}); const t = k.find(x=>x.startsWith("text/plain")) || k.find(x=>x.startsWith("text/html")); return t ? formats[t] : null; }
-async function fetchBibleFallback(max=4){
-  // Grab King James Bible front matter/paragraphs (Project Gutenberg)
-  try {
-    const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent("King James Bible")}`);
-    if (!r.ok) return [];
-    const js = await r.json().catch(()=>({}));
-    const b = (js?.results || [])[0]; if (!b) return [];
-    const url = pickPlainText(b.formats||{}); if (!url) return [];
-    const tr = await fetch(url); if (!tr.ok) return [];
-    const raw = await tr.text();
-    const paras = String(raw||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).slice(0, max);
-    return paras.map((p,i)=>({ work: "Holy Bible (KJV, Gutenberg)", author: "Bible", text: trim(p,700), url }));
-  } catch { return []; }
-}
-
-/* ---------------- Eastern: Tao / Gita / Dhammapada via Gutenberg ---------------- */
+/* Christian + Eastern via Gutenberg */
 async function fetchGutenbergTitle(title, max=4){
   try {
     const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(title)}`);
@@ -91,11 +73,11 @@ async function fetchGutenbergTitle(title, max=4){
     const tr = await fetch(url); if (!tr.ok) return [];
     const raw = await tr.text();
     const paras = String(raw||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).slice(0, max);
-    return paras.map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, text: trim(p,700), url }));
+    return paras.map((p)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, text: trim(p,700), url }));
   } catch { return []; }
 }
 
-/* ---------------- General libraries ---------------- */
+/* General libraries */
 async function fetchWikiquote(q, max=3){
   try {
     const endpoint = `https://en.wikiquote.org/w/api.php?action=query&origin=*&format=json&list=search&srsearch=${encodeURIComponent(q)}&srlimit=${max}`;
@@ -114,7 +96,7 @@ async function fetchWikiquote(q, max=3){
     return out;
   } catch { return []; }
 }
-async function fetchGutenbergSearch(q, max=4){
+async function fetchGutenbergSearch(q, max=3){
   try {
     const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}`);
     if (!r.ok) return [];
@@ -160,12 +142,12 @@ async function fetchOpenLibrary(q, max=3){
   } catch { return []; }
 }
 
-/* ---------------- Handler ---------------- */
+/* handler */
 export default async function handler(req, res){
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { query, path = "Universal", lang = "en-US", max = 6 } = req.body || {};
+    const { query, path = "Universal", max = 6 } = req.body || {};
     if (!ok(query)) return res.status(200).json({ quotes: [] });
 
     const { exact, hints } = parseIntent(query);
@@ -175,34 +157,21 @@ export default async function handler(req, res){
     qList.push(query);
 
     const tasks = [];
-
-    // Priority by room
-    if (path === "Jewish" || /rambam|pirkei|psalms|talmud|mishna|tehillim/i.test(query)) {
-      for (const q of qList.slice(0,2)) tasks.push(fetchSefaria(q, 6));
-    }
-    if (path === "Muslim" || /\b(qur'?an|koran)\b/i.test(query)) {
-      for (const q of qList.slice(0,2)) tasks.push(fetchQuran(q, 6));
-    }
-    if (path === "Christian" || /\bbible\b/i.test(query)) {
-      tasks.push(fetchBibleFallback(6));
-    }
+    if (path === "Jewish" || /rambam|pirkei|psalms|talmud|mishna|tehillim/i.test(query)) for (const q of qList.slice(0,2)) tasks.push(fetchSefaria(q, 6));
+    if (path === "Muslim" || /\b(qur'?an|koran)\b/i.test(query)) for (const q of qList.slice(0,2)) tasks.push(fetchQuran(q, 6));
+    if (path === "Christian" || /\bbible\b/i.test(query)) tasks.push(fetchGutenbergTitle("King James Bible", 6));
     if (path === "Eastern" || /tao\s*te\s*ching|bhagavad\s*gita|dhammapada/i.test(query)) {
       tasks.push(fetchGutenbergTitle("Tao Te Ching", 4));
       tasks.push(fetchGutenbergTitle("Bhagavad Gita", 4));
       tasks.push(fetchGutenbergTitle("Dhammapada", 4));
     }
-
-    // General libraries
-    for (const q of qList.slice(0,2)) tasks.push(fetchWikiquote(q, 3));
-    for (const q of qList.slice(0,2)) tasks.push(fetchGutenbergSearch(q, 3));
-    for (const q of qList.slice(0,2)) tasks.push(fetchInternetArchive(q, 3));
-    for (const q of qList.slice(0,2)) tasks.push(fetchOpenLibrary(q, 3));
+    for (const q of qList.slice(0,2)) tasks.push(fetchWikiquote(q, 3), fetchGutenbergSearch(q, 3), fetchInternetArchive(q, 3), fetchOpenLibrary(q, 3));
 
     const results = await Promise.allSettled(tasks);
     let merged = [];
     for (const r of results) if (r.status === "fulfilled" && Array.isArray(r.value)) merged = merged.concat(r.value);
 
-    // Strict filter if "quote from X"
+    // Strict if "quote from X" (Fix #4)
     if (exact) {
       const ex = exact.toLowerCase();
       const strict = merged.filter(s =>
@@ -212,14 +181,11 @@ export default async function handler(req, res){
       if (strict.length) merged = strict;
     }
 
-    // Remove the repetitive "meditation book" spam unless explicitly asked
+    // Kill repetitive “meditation book” spam unless explicitly asked (Fix #4)
     const wantMeditation = /meditation/i.test(query) || (exact && /meditation/i.test(exact));
-    if (!wantMeditation) {
-      merged = merged.filter(s => !/meditation\s+book|daily\s+meditations?/i.test(`${s.work} ${s.author} ${s.text}`));
-    }
+    if (!wantMeditation) merged = merged.filter(s => !/meditation\s+book|daily\s+meditations?/i.test(`${s.work} ${s.author} ${s.text}`));
 
-    merged = uniq(merged, s => `${(s.work||"").toLowerCase()}|${(s.author||"").toLowerCase()}|${trim(s.text,120)}`);
-    merged = merged.slice(0, Math.max(1, Number(max)||6));
+    merged = uniq(merged, s => `${(s.work||"").toLowerCase()}|${(s.author||"").toLowerCase()}|${trim(s.text,120)}`).slice(0, Math.max(1, Number(max)||6));
     return res.status(200).json({ quotes: merged });
   } catch {
     return res.status(200).json({ quotes: [] });
