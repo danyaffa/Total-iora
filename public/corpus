@@ -1,0 +1,7 @@
+[
+  { "id": "maimonides-guide", "path": "Jewish",   "title": "Guide for the Perplexed (1904)", "author": "Moses Maimonides", "file": "/corpus/maimonides_guide_1904.txt" },
+  { "id": "quran-pickthall",  "path": "Muslim",   "title": "Qur'an (Pickthall)",            "author": "",                 "file": "/corpus/quran_pickthall.txt"      },
+  { "id": "bible-kjv",        "path": "Christian","title": "Bible (KJV)",                    "author": "",                 "file": "/corpus/kjv.txt"                  },
+  { "id": "tao-legge",        "path": "Eastern",  "title": "Tao Te Ching (Legge)",           "author": "Laozi",            "file": "/corpus/tao_legge.txt"            },
+  { "id": "meditations",      "path": "Universal","title": "Meditations",                    "author": "Marcus Aurelius",  "file": "/corpus/meditations.txt"          }
+]
