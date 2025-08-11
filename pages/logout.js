@@ -1,4 +1,6 @@
 // FILE: /pages/logout.js
+// Clear cookies, ping API, and return to static index
+
 import { useEffect } from "react";
 
 export default function Logout(){
@@ -9,7 +11,7 @@ export default function Logout(){
         document.cookie = "ac_session=; Max-Age=0; Path=/; SameSite=Lax;";
         document.cookie = "ac_registered=; Max-Age=0; Path=/; SameSite=Lax;";
       } catch {}
-      window.location.replace("/"); // back to photo-only index
+      window.location.replace("/"); // back to preview-only index
     })();
   },[]);
   return null;
