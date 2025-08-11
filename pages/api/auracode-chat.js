@@ -1,6 +1,6 @@
 // FILE: /pages/api/auracode-chat.js
-// STRICT SOURCE WHITELIST — removes CIA/FOIA/government/etc.
-// Keeps only: Sefaria (Jewish), alquran.cloud (Qur’an), Gutenberg (KJV, Tao Te Ching, Bhagavad Gita, Dhammapada).
+// Sacred-text whitelist only (no CIA/.gov/etc). Answers only; no instructions.
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -22,27 +22,25 @@ const GUIDANCE = {
   Universal: "Draw gently from humanist ethics and contemplative practice."
 };
 const ETHOS = [
-  "Never give instructions like 'write another question' — always answer directly.",
+  "Never tell the user to write another question — always answer directly.",
   "No medical, legal, or financial diagnosis.",
   "Short paragraphs."
 ].join(" ");
 
-const splitParas = (txt, maxChars = 900) => String(txt||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).slice(0,50);
-const pickPlainText = (formats) => {
-  const keys = Object.keys(formats || {});
-  const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
-  return k ? formats[k] : null;
+const pickPlainText = (fmts) => {
+  const k = Object.keys(fmts || {});
+  return k.find(x=>x.startsWith("text/plain")) ? fmts[k.find(x=>x.startsWith("text/plain"))]
+       : k.find(x=>x.startsWith("text/html")) ? fmts[k.find(x=>x.startsWith("text/html"))]
+       : null;
 };
 
-/* ---------- WHITELIST FILTER ---------- */
 function allowSource(s) {
   const all = `${s.work||""} ${s.author||""} ${s.url||""}`.toLowerCase();
   const banned = /(central intelligence agency|cia|foia|world factbook|\.gov\b|whitehouse|nsa|fbi)/i;
   return !banned.test(all);
 }
 
-/* ---------- PROVIDERS (ONLY APPROVED) ---------- */
-async function fetchSefariaSnippets(query, topK=6) {
+async function fetchSefaria(query, topK=6) {
   try {
     const sr = await fetch(`https://www.sefaria.org/api/search-wrap?q=${encodeURIComponent(query)}&size=${topK}&type=Text`);
     if (!sr.ok) return [];
@@ -62,7 +60,7 @@ async function fetchSefariaSnippets(query, topK=6) {
     return out.filter(allowSource);
   } catch { return []; }
 }
-async function fetchQuranSnippets(query, topK=6){
+async function fetchQuran(query, topK=6){
   try {
     const r = await fetch(`https://api.alquran.cloud/v1/search/${encodeURIComponent(query)}/all/en`);
     if (!r.ok) return [];
@@ -78,7 +76,7 @@ async function fetchQuranSnippets(query, topK=6){
     })).filter(allowSource);
   } catch { return []; }
 }
-async function fetchGutenbergTitleSnippets(title, topK=4){
+async function fetchGutenbergTitle(title, topK=6){
   try {
     const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(title)}`);
     if (!r.ok) return [];
@@ -87,12 +85,11 @@ async function fetchGutenbergTitleSnippets(title, topK=4){
     const url = pickPlainText(book.formats || {}); if (!url) return [];
     const tr = await fetch(url); if (!tr.ok) return [];
     const raw = await tr.text();
-    const paras = splitParas(raw);
-    return paras.slice(0, topK).map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, pos:i, quote: p.slice(0,900), url, source:"gutenberg" })).filter(allowSource);
+    const paras = String(raw||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).slice(0, topK);
+    return paras.map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, pos:i, quote: p.slice(0,900), url, source:"gutenberg" })).filter(allowSource);
   } catch { return []; }
 }
 
-/* ---------- handler ---------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -103,38 +100,34 @@ export default async function handler(req, res) {
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_API_KEY) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
 
-    const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    const model = process.env.NEXT_PUBLIC_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    // ONLY approved sources
-    const roomPromises = [];
-    if (path === "Jewish") roomPromises.push(fetchSefariaSnippets(message, 6));
-    if (path === "Muslim") roomPromises.push(fetchQuranSnippets(message, 6));
-    if (path === "Christian") roomPromises.push(fetchGutenbergTitleSnippets("King James Bible", 6));
+    const tasks = [];
+    if (path === "Jewish") tasks.push(fetchSefaria(message, 6));
+    if (path === "Muslim") tasks.push(fetchQuran(message, 6));
+    if (path === "Christian") tasks.push(fetchGutenbergTitle("King James Bible", 6));
     if (path === "Eastern") {
-      roomPromises.push(fetchGutenbergTitleSnippets("Tao Te Ching", 4));
-      roomPromises.push(fetchGutenbergTitleSnippets("Bhagavad Gita", 4));
-      roomPromises.push(fetchGutenbergTitleSnippets("Dhammapada", 4));
+      tasks.push(fetchGutenbergTitle("Tao Te Ching", 4));
+      tasks.push(fetchGutenbergTitle("Bhagavad Gita", 4));
+      tasks.push(fetchGutenbergTitle("Dhammapada", 4));
     }
     if (path === "Universal") {
-      roomPromises.push(fetchGutenbergTitleSnippets("Tao Te Ching", 2));
-      roomPromises.push(fetchGutenbergTitleSnippets("Bhagavad Gita", 2));
-      roomPromises.push(fetchGutenbergTitleSnippets("Dhammapada", 2));
-      roomPromises.push(fetchSefariaSnippets(message, 2));
+      tasks.push(fetchGutenbergTitle("Tao Te Ching", 2));
+      tasks.push(fetchGutenbergTitle("Bhagavad Gita", 2));
+      tasks.push(fetchGutenbergTitle("Dhammapada", 2));
+      tasks.push(fetchSefaria(message, 2));
     }
 
-    const results = await Promise.allSettled(roomPromises);
+    const results = await Promise.allSettled(tasks);
     let sources = [];
-    for (const r of results) if (r.status === "fulfilled" && Array.isArray(r.value)) sources.push(...r.value);
+    for (const r of results) if (r.status === "fulfilled" && Array.isArray(r.value)) sources = sources.concat(r.value);
 
-    // dedupe & cap
+    // dedupe
     const seen = new Set();
     sources = sources.filter((s) => {
-      if (!s || !s.work) return false;
       const key = `${s.source||"x"}|${s.work}|${s.pos||0}|${s.author||""}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
+      if (seen.has(key)) return false; seen.add(key); return true;
     }).slice(0, 8);
 
     const system = [
@@ -144,7 +137,7 @@ export default async function handler(req, res) {
       `Reply in ${targetLanguage}.`,
       sources.length
         ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]."
-        : "Answer directly (no citations available right now).",
+        : "Answer directly (no citations available).",
     ].join(" ");
 
     const contextBlock = sources.length
@@ -163,14 +156,14 @@ export default async function handler(req, res) {
     };
 
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 25000);
+    const kill = setTimeout(() => ac.abort(), 25000);
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       signal: ac.signal,
     }).catch((e) => ({ ok: false, status: 502, text: async () => String(e?.message || e) }));
-    clearTimeout(t);
+    clearTimeout(kill);
 
     if (!r.ok) {
       const detail = await (r.text?.() || Promise.resolve("Unknown upstream error"));
