@@ -9,21 +9,23 @@ function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
   const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
   const [locked, setLocked] = useState(true);
 
-  // Trusts ONLY the server's response. 200 OK means unlocked.
+  // Trusts ONLY the server's response to unlock the page.
   useEffect(() => {
     async function check() {
       try {
+        // This API route should return 200 OK if the user has a valid session
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!r.ok); // 200 => unlocked, otherwise locked
+        setLocked(!r.ok);
       } catch {
-        setLocked(true);  // network error => stay locked
+        // If the API call fails, the page remains locked
+        setLocked(true);
       }
     }
     check();
@@ -47,7 +49,7 @@ export default function Home() {
         </p>
       </section>
 
-      {/* NEW: Read-only banner when not logged in */}
+      {/* Read-only banner shown when not logged in */}
       {locked && (
         <div className="previewBanner" role="status">
           You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
@@ -157,4 +159,3 @@ export default function Home() {
     </div>
   );
 }
-
