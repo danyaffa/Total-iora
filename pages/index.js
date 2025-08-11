@@ -32,7 +32,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className={`page${locked ? " locked" : ""}`} aria-hidden={locked ? "true" : "false"}>
+    <div className="page">
       {/* Top nav — Register always visible */}
       <nav className="topnav">
         <Link href="/register" className="btn cta">Register — Free Access</Link>
@@ -46,6 +46,14 @@ export default function Home() {
           or start with Sacred Notes.
         </p>
       </section>
+
+      {/* NEW: Read-only banner when not logged in */}
+      {locked && (
+        <div className="previewBanner" role="status">
+          You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
+          <Link href="/register">Register</Link> to use the interactive features.
+        </div>
+      )}
 
       {/* Feature tiles */}
       <section className="tiles">
@@ -88,26 +96,16 @@ export default function Home() {
       </section>
 
       {/* The 'inert' attribute blocks keyboard focus and interaction */}
-      <div className="main" inert={locked ? "" : undefined}>
+      <div
+        className={`main${locked ? " preview-locked" : ""}`}
+        inert={locked ? "" : undefined}
+        aria-disabled={locked ? "true" : "false"}
+      >
         <HeritageSelector path={path} onChange={setPath} />
         <OracleVoice path={path} />
       </div>
 
       <Footer />
-      
-      {/* Gating logic is now a non-destructive overlay */}
-      {locked && (
-        <div className="guard" role="dialog" aria-modal="true">
-          <div className="guardCard">
-            <h3>Log in to activate</h3>
-            <p>This page is view-only until you sign in.</p>
-            <div className="row">
-              <Link className="btn accent" href="/register">Register</Link>
-              <Link className="btn" href="/login">Log in</Link>
-            </div>
-          </div>
-        </div>
-      )}
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
@@ -131,16 +129,24 @@ export default function Home() {
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
-        .guard { position:fixed; inset:0; z-index:60; background:rgba(15,23,42,.55);
-          backdrop-filter:saturate(120%) blur(2px); display:flex; align-items:center; justify-content:center; }
-        .guardCard { max-width:520px; width:92%; background:#fff; padding:18px; border-radius:18px;
-          box-shadow:0 20px 60px rgba(2,6,23,.25); text-align:center; }
-        .guard .row { display:flex; gap:10px; justify-content:center; margin-top:8px; }
-        
-        /* New rules to truly freeze the page */
-        .page.locked { pointer-events: none; user-select: none; }
-        .page.locked .guard, .page.locked .guard * { pointer-events: auto; user-select: auto; }
-        .page.locked :focus { outline: none !important; }
+        /* NEW STYLES */
+        .previewBanner {
+          margin: 8px auto 0; max-width: 1100px; padding: 10px 14px;
+          background: #fffbe6; border: 1px solid #facc15; border-radius: 10px;
+          color: #713f12; text-align: center; font-weight: 600;
+        }
+        .previewBanner a { color: #1d4ed8; text-decoration: underline; }
+
+        /* Read-only, but fully visible */
+        .main.preview-locked a,
+        .main.preview-locked button,
+        .main.preview-locked [role="button"],
+        .main.preview-locked input,
+        .main.preview-locked select,
+        .main.preview-locked textarea {
+          pointer-events: none !important;
+          opacity: .85;
+        }
       `}</style>
     </div>
   );
