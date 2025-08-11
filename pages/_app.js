@@ -1,14 +1,8 @@
 // FILE: /pages/_app.js
 import "@/styles/globals.css";
-import AccessGate from "@/components/AccessGate";
 
-// NOTE: This wraps your entire app with the gate overlay.
-// Your /pages/index.js stays EXACTLY as you wrote it.
+// REMOVE the AccessGate import and wrapper.
+// Keep your app exactly as-is so visitors can read everything pre-login.
 export default function App({ Component, pageProps }) {
-  return (
-    <>
-      <AccessGate />
-      <Component {...pageProps} />
-    </>
-  );
+  return <Component {...pageProps} />;
 }
