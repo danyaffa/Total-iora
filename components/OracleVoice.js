@@ -1,7 +1,7 @@
 // FILE: /components/OracleVoice.js
-// One "Subject" picker (merged), Start/Stop & Answer, Stop Answer (TTS),
-// volume control, download & print, mobile/iOS SR fixes,
-// and FREE web-grounding via Project Gutenberg (no DB, no keys).
+// Write OR Speak. Typing corrections allowed before sending.
+// Mobile-safe SR, Stop Answer, Volume control, Download/Print.
+// Shows quoted sources. Pulls free public-domain snippets (no DB, no keys).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -15,14 +15,12 @@ const LANG_OPTIONS = [
   { value: "he",     label: "Hebrew" },
 ];
 
-// Merge of “General Guidance” styles + topical subjects (called Subject)
+// One “Subject” menu (styles + topics)
 const SUBJECT_OPTIONS = [
-  // guidance styles
   { value: "style:gentle",    label: "Gentle Guidance" },
   { value: "style:practical", label: "Practical Steps" },
   { value: "style:wisdom",    label: "Ancient Wisdom" },
   { value: "style:comfort",   label: "Comfort & Healing" },
-  // topics
   { value: "topic:general",       label: "General" },
   { value: "topic:healthy",       label: "Healthy living" },
   { value: "topic:relationships", label: "Human to human" },
@@ -57,73 +55,19 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-/* ------- FREE web snippets (Project Gutenberg via Gutendex) ------- */
-function pickPlainText(formats) {
-  const keys = Object.keys(formats || {});
-  const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
-  return k ? formats[k] : null;
-}
-function splitParas(txt, maxChars = 900) {
-  const ps = txt.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-  const out = [];
-  for (const p of ps) {
-    if (p.length <= maxChars) out.push(p);
-    else for (let i=0;i<p.length;i+=maxChars) out.push(p.slice(i,i+maxChars));
-    if (out.length >= 40) break;
-  }
-  return out;
-}
-function scorePara(p, terms) {
-  const s = p.toLowerCase();
-  let sc = 0;
-  for (const t of terms) if (s.includes(t)) sc += t.length;
-  const L = p.length; if (L > 200 && L < 800) sc += 50;
-  return sc;
-}
-async function fetchFreeSources(query, path, topK = 6) {
-  try {
-    const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(query)}`, { redirect: "follow" });
-    if (!r.ok) return [];
-    const data = await r.json().catch(() => ({}));
-    const books = (data?.results || []).slice(0, 3);
-    const terms = String(query || "").toLowerCase().split(/\W+/).filter(Boolean);
-    const all = [];
-    for (const b of books) {
-      const url = pickPlainText(b.formats || {});
-      if (!url) continue;
-      const tr = await fetch(url, { redirect: "follow" });
-      if (!tr.ok) continue;
-      const raw = await tr.text();
-      const paras = splitParas(raw);
-      const scored = paras
-        .map((p, i) => ({ p, i, score: scorePara(p, terms) }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))));
-      for (const s of scored) {
-        all.push({
-          work: b.title || "Project Gutenberg",
-          author: (b.authors?.[0]?.name) || null,
-          pos: s.i,
-          text: s.p.slice(0, 900),
-          url,
-        });
-      }
-    }
-    return all.slice(0, topK);
-  } catch { return []; }
-}
-
 /* --- Component --- */
 export default function OracleVoice({ path }) {
-  const [listening, setListening] = useState(false);
-  const [liveText, setLiveText]   = useState("");
-  const [reply, setReply]         = useState("");
-  const [replying, setReplying]   = useState(false);
-  const [speaking, setSpeaking]   = useState(false);
-  const [lang, setLang]           = useState("auto");
-  const [subject, setSubject]     = useState("topic:general");
-  const [volume, setVolume]       = useState(1);
-  const [error, setError]         = useState("");
+  const [listening, setListening]   = useState(false);
+  const [liveText, setLiveText]     = useState("");   // editable (typing or SR)
+  const [reply, setReply]           = useState("");
+  const [replying, setReplying]     = useState(false);
+  const [speaking, setSpeaking]     = useState(false);
+  const [lang, setLang]             = useState("auto");
+  const [subject, setSubject]       = useState("topic:general");
+  const [volume, setVolume]         = useState(1);
+  const [error, setError]           = useState("");
+  const [sources, setSources]       = useState([]);   // [{i,work,author,pos,url,quote}]
+  const [showSources, setShowSrcs]  = useState(false);
 
   const recRef        = useRef(null);
   const finalBufRef   = useRef("");
@@ -150,12 +94,12 @@ export default function OracleVoice({ path }) {
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [chosenLang]);
 
-  /* --- HiDPI canvas sizing --- */
+  /* --- HiDPI canvas --- */
   useEffect(() => {
     const cnv = canvasRef.current;
     if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = 240, h = 240;
+    const w = 220, h = 220;
     cnv.width = w * dpr; cnv.height = h * dpr;
     cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
     const c = cnv.getContext("2d"); c.scale(dpr, dpr);
@@ -176,13 +120,13 @@ export default function OracleVoice({ path }) {
     const draw = () => {
       analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      const radius = 36 + (avg / 255) * 44;
-      c.clearRect(0, 0, 240, 240);
-      const g = c.createRadialGradient(120, 120, radius * 0.25, 120, 120, radius);
+      const radius = 32 + (avg / 255) * 40;
+      c.clearRect(0, 0, 220, 220);
+      const g = c.createRadialGradient(110, 110, radius * 0.25, 110, 110, radius);
       g.addColorStop(0, "rgba(124,58,237,.95)");
       g.addColorStop(1, "rgba(124,58,237,0)");
       c.fillStyle = g;
-      c.beginPath(); c.arc(120, 120, radius, 0, Math.PI * 2); c.fill();
+      c.beginPath(); c.arc(110, 110, radius, 0, Math.PI * 2); c.fill();
       audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
@@ -195,7 +139,7 @@ export default function OracleVoice({ path }) {
     try { audioRef.current.stream?.getTracks?.().forEach((t) => t.stop()); } catch {}
     audioRef.current = { ctx:null, analyser:null, src:null, animId:null, stream:null };
     const c = canvasRef.current?.getContext?.("2d");
-    if (c) c.clearRect(0, 0, 240, 240);
+    if (c) c.clearRect(0, 0, 220, 220);
   }
 
   /* --- Speech recognition (mobile safe) --- */
@@ -206,7 +150,7 @@ export default function OracleVoice({ path }) {
     const rec = new SR();
     rec.lang = chosenLang || "en-US";
     rec.interimResults = true;
-    rec.continuous = true; // iOS may end; we'll auto-restart onend
+    rec.continuous = true;
     rec.maxAlternatives = 1;
 
     rec.onresult = (e) => {
@@ -222,18 +166,20 @@ export default function OracleVoice({ path }) {
         }
       }
       interimRef.current = interim;
-      setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
+      // Keep editable text in sync while recording
+      const combined = [finalBufRef.current, interim].filter(Boolean).join(" ").trim();
+      setLiveText(combined);
     };
 
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
-    rec.onerror = () => {}; // do not kill session on iOS “network/no-speech”
+    rec.onerror = () => {}; // ignore iOS “no-speech” etc.
 
     recRef.current = rec;
     return rec;
   }
 
   async function onStart() {
-    setError(""); setReply(""); setLiveText("");
+    setError(""); setReply(""); setSources([]); setShowSrcs(false);
     finalBufRef.current = ""; interimRef.current = "";
     try {
       await startMicViz();
@@ -260,30 +206,25 @@ export default function OracleVoice({ path }) {
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
 
-    const text = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
+    // Prefer whatever the user typed/edited
+    const typed = String(liveText || "").trim();
+    const captured = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
+    const text = (typed || captured).trim();
     if (!text) return;
 
-    // Split merged "subject" into old fields for API compatibility
-    const isStyle  = subject.startsWith("style:");
-    const isTopic  = subject.startsWith("topic:");
+    // Split merged Subject into API mode/topic
+    const isStyle = subject.startsWith("style:");
+    const isTopic = subject.startsWith("topic:");
     const mode  = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
 
     setReplying(true);
     setError("");
     try {
-      // 🔎 NEW: get free, public-domain snippets from the web (no DB, no keys)
-      let remoteSources = [];
-      try {
-        remoteSources = await fetchFreeSources(text, path, 6);
-      } catch {
-        remoteSources = [];
-      }
-
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, path, mode, topic, lang: chosenLang, remoteSources }),
+        body: JSON.stringify({ message: text, path, mode, topic, lang: chosenLang }),
       });
 
       if (!r.ok) {
@@ -296,6 +237,7 @@ export default function OracleVoice({ path }) {
       const data = await r.json().catch(() => ({}));
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
+      setSources(Array.isArray(data?.sources) ? data.sources : []);
 
       if ("speechSynthesis" in window) {
         const u = new SpeechSynthesisUtterance(msg);
@@ -322,10 +264,13 @@ export default function OracleVoice({ path }) {
       `Date: ${new Date().toLocaleString()}`,
       "",
       "You:",
-      finalBufRef.current || liveText,
+      liveText || finalBufRef.current,
       "",
       "Guide:",
       reply,
+      ...(sources?.length ? ["", "Sources:", ...sources.map(s =>
+        `[#${s.i}] ${s.work}${s.author ? " — " + s.author : ""} (pos ${s.pos ?? 0})${s.url ? " — " + s.url : ""}\n${s.quote || ""}`
+      )] : [])
     ].join("\n");
     const blob = new Blob([text], { type:"text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -339,15 +284,17 @@ export default function OracleVoice({ path }) {
     if (!w) return;
     w.document.write(`
       <title>Oracle Guide</title>
-      <pre style="font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial; white-space:pre-wrap">
+      <pre style="font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;white-space:pre-wrap;padding:16px">
 Room: ${path} | Subject: ${subject} | Lang: ${chosenLang}
 Date: ${new Date().toLocaleString()}
 
 You:
-${finalBufRef.current || liveText}
+${liveText || finalBufRef.current}
 
 Guide:
 ${reply}
+
+${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author ? " — " + s.author : ""} (pos ${s.pos ?? 0})${s.url ? " — " + s.url : ""}\n${s.quote || ""}`).join("\n\n")}` : ""}
       </pre>`);
     w.document.close(); w.focus(); w.print();
   }
@@ -358,9 +305,9 @@ ${reply}
     <section className="oracle">
       <header className="head">
         <div className="persona">{persona}</div>
-        <h2>Speak to the Oracle</h2>
+        <h2>Write or Speak to the Oracle</h2>
         <p className="lead">
-          Share what’s on your heart. I’ll listen as long as you need, and answer when you press <b>Stop</b>.
+          Type or dictate. Edit your words if needed. I’ll answer when you press <b>Stop</b> or <b>Get Answer</b>.
         </p>
 
         <div className="bar">
@@ -384,12 +331,26 @@ ${reply}
       <div className="body">
         <div className="pane">
           <div className={`orb ${listening ? "on" : ""}`}>
-            <canvas ref={canvasRef} width={240} height={240} />
+            <canvas ref={canvasRef} width={220} height={220} />
             <div className="ring" />
           </div>
           <div className="log">
             <div className="label">You</div>
             <div className="bubble you">{liveText || (listening ? "…" : "—")}</div>
+
+            {/* EDITABLE text area (always available for corrections/typing) */}
+            <textarea
+              className="edit"
+              rows={3}
+              value={liveText}
+              onChange={(e) => setLiveText(e.target.value)}
+              placeholder="Type or correct your words here…"
+            />
+            {!listening && (
+              <button className="btn ghost small" onClick={() => onStop()}>
+                Get Answer ⟶
+              </button>
+            )}
           </div>
         </div>
 
@@ -402,6 +363,27 @@ ${reply}
             <div className="bubble guide">
               {error ? <span style={{color:"#b91c1c",fontWeight:700}}>{error}</span> : (reply || (replying ? "Listening to the silence…" : "—"))}
             </div>
+
+            {/* Sources/Quotes */}
+            {sources?.length > 0 && (
+              <div className="sources">
+                <button className="link" onClick={() => setShowSrcs(v => !v)}>
+                  {showSources ? "Hide sources" : "Show sources & quotes"}
+                </button>
+                {showSources && (
+                  <ul className="srcList">
+                    {sources.map(s => (
+                      <li key={s.i}>
+                        <div className="srcTitle">
+                          [#{s.i}] {s.work}{s.author ? ` — ${s.author}` : ""}{typeof s.pos === "number" ? ` (pos ${s.pos})` : ""} {s.url ? <a href={s.url} target="_blank" rel="noreferrer">source</a> : null}
+                        </div>
+                        {s.quote ? <blockquote className="quote">{s.quote}</blockquote> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -424,29 +406,30 @@ ${reply}
         )}
 
         <div className="hint">
-          {listening ? "Listening… take your time." : "Press to speak. I’ll answer when you stop."}
+          {listening ? "Listening… take your time." : "You can type or use the mic. Edit text before sending."}
         </div>
       </div>
 
       <style jsx>{`
-        .oracle { position:relative; max-width:1100px; margin:20px auto; padding:24px 18px; border-radius:24px;
+        .oracle { position:relative; max-width:1100px; margin:16px auto; padding:18px 12px; border-radius:24px;
                   background: radial-gradient(1200px 600px at 5% -10%, #eef2ff 0%, transparent 60%),
                               radial-gradient(900px 500px at 95% 0%, #ecfeff 0%, transparent 60%),
                               linear-gradient(180deg, #ffffff, #f8fafc);
                   border:1px solid rgba(15,23,42,.08); box-shadow:0 14px 40px rgba(2,6,23,.08); }
-        .head { text-align:center; }
+        .head { text-align:center; padding:0 8px; }
         .persona { display:inline-block; padding:6px 10px; font-weight:700; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; margin-bottom:6px; font-size:.9rem; }
-        .head h2 { margin:4px 0 6px; font-size:1.9rem; font-weight:800; color:#0f172a; }
-        .lead { color:#475569; max-width:760px; margin:0 auto 10px; }
-        .bar { margin-top:8px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; color:#475569; font-size:.95rem; }
-        .bar select { margin-left:6px; padding:6px 10px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; }
+        .head h2 { margin:4px 0 6px; font-size:1.7rem; font-weight:800; color:#0f172a; }
+        .lead { color:#475569; max-width:760px; margin:0 auto 8px; }
+        .bar { margin-top:6px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; color:#475569; font-size:.95rem; }
+        .bar select { margin-left:6px; padding:8px 10px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; }
         .bar input[type="range"] { vertical-align:middle; width:140px; margin-left:8px; }
-        .body { display:grid; gap:18px; grid-template-columns:1fr; margin-top:12px; }
+        .body { display:grid; gap:12px; grid-template-columns:1fr; margin-top:10px; padding:0 6px; }
         @media (min-width:860px){ .body { grid-template-columns:1fr 1fr; } }
-        .pane { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:16px; display:flex; gap:16px; align-items:center; }
-        .orb { width:160px; height:160px; min-width:160px; border-radius:999px; position:relative;
+        .pane { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:12px; display:flex; gap:12px; align-items:flex-start; }
+        .orb { width:140px; height:140px; min-width:140px; border-radius:999px; position:relative;
                background: radial-gradient(40% 40% at 50% 50%, rgba(124,58,237,.18), rgba(124,58,237,0));
                border:1px solid rgba(124,58,237,.25); display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        @media (min-width:500px){ .orb { width:160px; height:160px; min-width:160px; } }
         .orb .ring { position:absolute; inset:-10%; border-radius:999px; border:1px dashed rgba(124,58,237,.28); animation: slowspin 16s linear infinite; }
         .orb.on { box-shadow:0 0 0 10px rgba(124,58,237,.08), 0 0 50px rgba(124,58,237,.22) inset; }
         .orb.spirit { background: radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0)); border-color: rgba(14,165,233,.25); }
@@ -456,15 +439,22 @@ ${reply}
         @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
-        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:12px 14px; min-height:48px; }
+        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
         .bubble.guide { background:#eef6ff; border-color:#dbeafe; }
-        .controls { display:flex; gap:12px; align-items:center; justify-content:center; margin-top:16px; flex-wrap:wrap; }
-        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); transition: transform .06s, box-shadow .15s, filter .2s; }
+        .edit { width:100%; margin-top:8px; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; }
+        .small { padding:8px 12px !important; font-size:.95rem; }
+        .sources { margin-top:8px; }
+        .link { margin-top:8px; background:none; border:none; color:#2563eb; font-weight:700; cursor:pointer; padding:0; }
+        .srcList { list-style:none; padding:0; margin:8px 0 0; display:grid; gap:10px; }
+        .srcTitle { font-weight:700; color:#334155; }
+        .quote { margin:6px 0 0; padding-left:10px; border-left:3px solid #c7d2fe; color:#475569; }
+        .controls { display:flex; gap:10px; align-items:center; justify-content:center; margin-top:14px; flex-wrap:wrap; padding:0 6px; }
+        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); transition: transform .06s, box-shadow .15s, filter .2s; touch-action:manipulation; }
         .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
         .btn.stop { color:#fff; background:#111827; border:none; }
         .btn.ghost { background:#fff; }
         .btn:hover { transform: translateY(-1px); box-shadow:0 10px 26px rgba(2,6,23,.10); filter:brightness(1.04); }
-        .hint { color:#64748b; font-size:.95rem; }
+        .hint { color:#64748b; font-size:.95rem; text-align:center; padding:0 6px; }
       `}</style>
     </section>
   );
