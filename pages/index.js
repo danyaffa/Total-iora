@@ -7,53 +7,19 @@ import OracleVoice from "../components/OracleVoice";
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
-  const [locked, setLocked] = useState(true); // Ensures the page is locked on initial load
+  const [locked, setLocked] = useState(true); // page starts locked
 
-  // This effect checks the user's session and unlocks the page if they are logged in.
   useEffect(() => {
-    // ---- Optional "open for all" overrides (no UI changes) ----
-    try {
-      // Env flag (build-time)
-      if (process.env.NEXT_PUBLIC_ORACLE_OPEN_FOR_ALL === "1") {
-        setLocked(false);
-        return; // skip server polling when explicitly open
-      }
-      // URL param (first visit) -> persist
-      if (typeof window !== "undefined") {
-        const sp = new URLSearchParams(window.location.search);
-        if (sp.get("open") === "all" || sp.get("dev") === "on") {
-          localStorage.setItem("oracle_open_for_all", "1");
-        }
-        if (localStorage.getItem("oracle_open_for_all") === "1") {
-          setLocked(false);
-        }
-      }
-    } catch {
-      // ignore override errors; fall back to normal checks
-    }
-
-    // A simple client-side check for the registration cookie for faster UI feedback
-    const hasRegisteredCookie =
-      typeof document !== "undefined" &&
-      document.cookie.split(";").some(c => c.trim().startsWith("ac_registered=1"));
-    if (hasRegisteredCookie) {
-      setLocked(false);
-    }
-
-    // A more secure check against the server to confirm the session
+    // Server-confirmed session only (static until 200 OK)
     async function checkServerSession() {
       try {
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!r.ok); // Unlock only if the server confirms the session with a 200 OK
+        setLocked(!r.ok);
       } catch {
-        setLocked(true); // If the API call fails, ensure the page remains locked
+        setLocked(true);
       }
     }
-
-    // We run the server check to get the true status
     checkServerSession();
-
-    // We can periodically re-check if needed, for example if the user logs in in another tab
     const id = setInterval(checkServerSession, 5000);
     return () => clearInterval(id);
   }, []);
@@ -137,7 +103,8 @@ export default function Home() {
         aria-disabled={locked ? "true" : "false"}
       >
         <HeritageSelector path={path} onChange={setPath} />
-        <OracleVoice path={path} />
+        {/* Remount on unlock -> Oracle starts clean (no old text) */}
+        <OracleVoice key={locked ? "locked" : "unlocked"} path={path} />
       </div>
 
       <Footer />
