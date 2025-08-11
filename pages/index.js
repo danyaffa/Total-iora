@@ -15,44 +15,22 @@ function setCookie(name, value, maxAgeDays = 365) {
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
-  const [unlocked, setUnlocked] = useState(false);
+  const [locked, setLocked] = useState(true);
 
-  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    // support ?dev=on -> sets dev cookie
-    if (typeof window !== "undefined") {
-      const usp = new URLSearchParams(window.location.search);
-      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
+    async function check() {
+      try {
+        const r = await fetch("/api/auth/whoami", { credentials: "include" });
+        setLocked(!(r.ok || /(?:^|;\s*)ac_session=/.test(document.cookie)));
+      } catch {
+        setLocked(!/(?:^|;\s*)ac_session=/.test(document.cookie));
+      }
     }
-
-    const update = () => {
-      const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
-      const isDevBypass =
-        (typeof window !== "undefined" &&
-          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-           has("ac_dev") ||
-           window.location.hostname === "localhost"));
-
-      // ✅ accept either registration cookie OR a real login session cookie
-      const isRegistered =
-        has("ac_registered") ||
-        has("ac_session") || // <- NEW: login session from /api/login
-        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
-
-      setUnlocked(Boolean(isRegistered || isDevBypass));
-    };
-
-    update();                         // immediate
-    const t = setTimeout(update, 80); // catch any redirect race
-    window.addEventListener?.("storage", update);
-    return () => {
-      clearTimeout(t);
-      window.removeEventListener?.("storage", update);
-    };
+    check();
+    const id = setInterval(check, 1500);
+    return () => clearInterval(id);
   }, []);
 
-  const locked = !unlocked;
 
   return (
     <div className="page">
@@ -83,11 +61,7 @@ export default function Home() {
               </p>
             </header>
             <footer className="f">
-              {locked ? (
-                <Link href="/register" className="btn accent">Register to Open</Link>
-              ) : (
-                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
-              )}
+              <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
               <div className="disc">
                 This is your space. Do whatever you like on this page. We have no responsibility
                 for anything you write, and nothing is saved on our servers.
@@ -105,11 +79,7 @@ export default function Home() {
               </p>
             </header>
             <footer className="f">
-              {locked ? (
-                <Link href="/register" className="btn accent">Register to Get Yours</Link>
-              ) : (
-                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
-              )}
+              <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               <div className="disc">
                 Spiritual guidance only. No promises. No medical, legal, or financial advice.
               </div>
@@ -118,23 +88,27 @@ export default function Home() {
         </div>
       </section>
 
-      {/* GATED AREA — only after registration or dev bypass */}
-      {unlocked ? (
-        <>
-          <HeritageSelector path={path} onChange={setPath} />
-          <OracleVoice path={path} />
-        </>
-      ) : (
-        <section className="gate">
-          <div className="card gatecard">
-            <h3>Speak to the Oracle</h3>
-            <p>Register (free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
-            <Link href="/register" className="btn accent">Register — Free Access</Link>
-          </div>
-        </section>
-      )}
+      {/* Main interactive area is now always rendered */}
+      <>
+        <HeritageSelector path={path} onChange={setPath} />
+        <OracleVoice path={path} />
+      </>
 
       <Footer />
+      
+      {/* Gating logic is now a non-destructive overlay */}
+      {locked && (
+        <div className="guard" role="dialog" aria-modal="true">
+          <div className="guardCard">
+            <h3>Log in to activate</h3>
+            <p>This page is view-only until you sign in.</p>
+            <div className="row">
+              <Link className="btn accent" href="/register">Register</Link>
+              <Link className="btn" href="/login">Log in</Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
@@ -160,6 +134,12 @@ export default function Home() {
 
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
+        
+        .guard { position:fixed; inset:0; z-index:60; background:rgba(15,23,42,.55);
+          backdrop-filter:saturate(120%) blur(2px); display:flex; align-items:center; justify-content:center; }
+        .guardCard { max-width:520px; width:92%; background:#fff; padding:18px; border-radius:18px;
+          box-shadow:0 20px 60px rgba(2,6,23,.25); text-align:center; }
+        .guard .row { display:flex; gap:10px; justify-content:center; margin-top:8px; }
       `}</style>
     </div>
   );
