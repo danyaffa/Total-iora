@@ -4,32 +4,33 @@ import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-// --- tiny helpers (client-only) ---
-function setCookie(name, value, maxAgeDays = 365) {
-  if (typeof document === "undefined") return;
-  const maxAge = maxAgeDays * 24 * 3600;
-  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
-}
-
 export default function Home() {
   const [path, setPath] = useState("Universal");
-  const [locked, setLocked] = useState(true);
+  const [locked, setLocked] = useState(true); // Ensures the page is locked on initial load
 
-  // Trusts ONLY the server's response to unlock the page.
+  // This effect checks the user's session and unlocks the page if they are logged in.
   useEffect(() => {
-    async function check() {
+    // A simple client-side check for the registration cookie for faster UI feedback
+    const hasRegisteredCookie = typeof document !== 'undefined' && document.cookie.includes('ac_registered=1');
+    if (hasRegisteredCookie) {
+        setLocked(false);
+    }
+
+    // A more secure check against the server to confirm the session
+    async function checkServerSession() {
       try {
-        // This API route should return 200 OK if the user has a valid session
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!r.ok);
+        setLocked(!r.ok); // Unlock only if the server confirms the session with a 200 OK
       } catch {
-        // If the API call fails, the page remains locked
-        setLocked(true);
+        setLocked(true); // If the API call fails, ensure the page remains locked
       }
     }
-    check();
-    const id = setInterval(check, 1500);
+
+    // We run the server check to get the true status
+    checkServerSession();
+    
+    // We can periodically re-check if needed, for example if the user logs in in another tab
+    const id = setInterval(checkServerSession, 5000); 
     return () => clearInterval(id);
   }, []);
 
