@@ -1,6 +1,4 @@
 // FILE: /pages/index.js
-// Index MUST be STATIC until login. No dev bypass.
-
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -25,10 +23,8 @@ export default function Home() {
     setChecking(true);
     let ok = false;
     try {
-      // Prefer server truth if available
       const r = await fetch("/api/auth/whoami", { credentials: "include" });
       if (r.ok) ok = true;
-      // If endpoint not present, fall back to session cookie
       if (r.status === 404) ok = !!getCookie("ac_session");
     } catch {
       ok = !!getCookie("ac_session");
@@ -39,7 +35,7 @@ export default function Home() {
 
   useEffect(() => {
     checkLock();
-    const i = setInterval(checkLock, 1500); // react to login/logout quickly
+    const i = setInterval(checkLock, 1500);
     return () => clearInterval(i);
   }, [checkLock]);
 
@@ -54,13 +50,11 @@ export default function Home() {
 
   return (
     <div className="page">
-      {/* Top nav */}
       <nav className="topnav">
         <Link href="/register">Register — Free Access</Link>
         {locked ? <Link href="/login">Log in</Link> : <a href="/api/logout" onClick={doLogout}>Log out</a>}
       </nav>
 
-      {/* Logo + intro */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-Iora Logo" className="logo" />
         <p className="note">
@@ -72,7 +66,6 @@ export default function Home() {
         )}
       </section>
 
-      {/* Tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -156,4 +149,10 @@ export default function Home() {
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
-        .disc { color:#64748b; font-size:.92rem;
+        .disc { color:#64748b; font-size:.92rem; }
+        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
+        .gatecard { text-align:center; }
+      `}</style>
+    </div>
+  );
+}
