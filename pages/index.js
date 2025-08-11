@@ -1,4 +1,3 @@
-// FILE: /pages/index.js
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -17,13 +16,14 @@ export default function Home() {
   const [path, setPath] = useState("Universal");
   const [locked, setLocked] = useState(true);
 
+  // Trusts ONLY the server's response. 200 OK means unlocked.
   useEffect(() => {
     async function check() {
       try {
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!(r.ok || /(?:^|;\s*)ac_session=/.test(document.cookie)));
+        setLocked(!r.ok); // 200 => unlocked, otherwise locked
       } catch {
-        setLocked(!/(?:^|;\s*)ac_session=/.test(document.cookie));
+        setLocked(true);  // network error => stay locked
       }
     }
     check();
@@ -31,9 +31,8 @@ export default function Home() {
     return () => clearInterval(id);
   }, []);
 
-
   return (
-    <div className="page">
+    <div className={`page${locked ? " locked" : ""}`} aria-hidden={locked ? "true" : "false"}>
       {/* Top nav — Register always visible */}
       <nav className="topnav">
         <Link href="/register" className="btn cta">Register — Free Access</Link>
@@ -88,11 +87,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Main interactive area is now always rendered */}
-      <>
+      {/* The 'inert' attribute blocks keyboard focus and interaction */}
+      <div className="main" inert={locked ? "" : undefined}>
         <HeritageSelector path={path} onChange={setPath} />
         <OracleVoice path={path} />
-      </>
+      </div>
 
       <Footer />
       
@@ -132,14 +131,16 @@ export default function Home() {
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
-        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
-        .gatecard { text-align:center; }
-        
         .guard { position:fixed; inset:0; z-index:60; background:rgba(15,23,42,.55);
           backdrop-filter:saturate(120%) blur(2px); display:flex; align-items:center; justify-content:center; }
         .guardCard { max-width:520px; width:92%; background:#fff; padding:18px; border-radius:18px;
           box-shadow:0 20px 60px rgba(2,6,23,.25); text-align:center; }
         .guard .row { display:flex; gap:10px; justify-content:center; margin-top:8px; }
+        
+        /* New rules to truly freeze the page */
+        .page.locked { pointer-events: none; user-select: none; }
+        .page.locked .guard, .page.locked .guard * { pointer-events: auto; user-select: auto; }
+        .page.locked :focus { outline: none !important; }
       `}</style>
     </div>
   );
