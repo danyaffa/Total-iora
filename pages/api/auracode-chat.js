@@ -1,6 +1,21 @@
 // FILE: /pages/api/auracode-chat.js
+// Works WITHOUT any database.
+// OPTIONAL: If you later add Supabase + pgvector + the RPC `match_wisdom`, this will
+// automatically ground answers in your wisdom corpus. If not configured, it still replies.
+//
+// Env required (now):
+//   OPENAI_API_KEY
+//
+// Optional env (only if you later add retrieval):
+//   SUPABASE_URL
+//   SUPABASE_SERVICE_KEY
+//
+// Frontend sends: { message, path, mode, topic, lang }
+
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
+
+/* ---------------- helpers ---------------- */
 
 function langName(lang) {
   const s = String(lang || "");
@@ -13,11 +28,107 @@ function langName(lang) {
   return "English";
 }
 
+const GUIDANCE = {
+  Muslim:
+    "Draw gently from Qur’an and Hadith where fitting, adab & akhlaq, and Sufi practice. Offer mercy and clarity.",
+  Christian:
+    "Draw gently from the Gospels, parables, virtues, the Fathers, and the witness of the saints.",
+  Jewish:
+    "Draw gently from Torah, Psalms, and sages. For life-skills, lean on Rambam (Hilchot De’ot) and Mussar middot.",
+  Eastern:
+    "Draw gently from the Noble Eightfold Path, Taoist harmony, and Vedic disciplines such as yamas/niyamas.",
+  Universal:
+    "Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
+};
+
+const MODE_PROMPTS = {
+  general:   "Your mode is one of gentle guidance. Be wise and reflective.",
+  practical: "Your mode is practical. Focus on clear, actionable steps.",
+  wisdom:    "Your mode is timeless wisdom. Offer succinct, well-sourced insight.",
+  comfort:   "Your mode is comforting. Be exceptionally warm, empathetic, and reassuring.",
+};
+
+const TOPIC_PROMPTS = {
+  general:       "Topic: general guidance for the present moment.",
+  healthy:       "Topic: healthy living—sleep, simple movement, nourishing food, self-care. Avoid medical advice.",
+  relationships: "Topic: human relationships—listening, boundaries, reconciliation, empathy.",
+  partner:       "Topic: finding a life partner—character, shared values, patience, and practical steps to meet people.",
+  work:          "Topic: work & purpose—meaningful contribution, integrity, sustainable habits.",
+  parenting:     "Topic: parenting—patience, modeling virtues, age-appropriate guidance.",
+  grief:         "Topic: grief & healing—gentleness, permission to grieve, small rituals of remembrance.",
+  addiction:     "Topic: addiction support (non-clinical). Encourage safe supports and professional help when needed.",
+  mindfulness:   "Topic: mindfulness & calm—breath, presence, and simple contemplative practice.",
+};
+
+const ETHOS =
+  "Never provide medical, legal, or financial diagnosis. Encourage qualified help when needed. Do not promise outcomes. Keep paragraphs short.";
+
+/* ---------------- OPTIONAL retrieval (safe to ignore if not set) ---------------- */
+
+async function retrievePassages({ question, path, lang }) {
+  const SUPABASE_URL = process.env.SUPABASE_URL || "";
+  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+
+  // If not configured, skip retrieval gracefully.
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !OPENAI_API_KEY) return [];
+
+  // 1) Embed question
+  const embRes = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-large",
+      input: question,
+    }),
+  });
+
+  if (!embRes.ok) return [];
+  const embJson = await embRes.json().catch(() => ({}));
+  const embedding = embJson?.data?.[0]?.embedding;
+  if (!embedding) return [];
+
+  // 2) Call your Supabase RPC match_wisdom (you can create it later; if missing, this just fails silently)
+  const filter_lang = (String(lang || "en").startsWith("ar") && "ar") || "en";
+  const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/match_wisdom`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+    },
+    body: JSON.stringify({
+      query_embedding: embedding,
+      match_count: 8,
+      filter_path: path || "Universal",
+      filter_lang,
+    }),
+  }).catch(() => null);
+
+  if (!rpcRes || !rpcRes.ok) return [];
+  const rows = await rpcRes.json().catch(() => []);
+  // Expect rows: { work, author, chunk, url, pos, similarity }
+  return Array.isArray(rows) ? rows.slice(0, 8) : [];
+}
+
+/* ---------------- main handler ---------------- */
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { message, path = "Universal", mode = "general", topic = "general", lang = "en-US" } = req.body || {};
+    const {
+      message,
+      path = "Universal",
+      mode = "general",
+      topic = "general",
+      lang = "en-US",
+    } = req.body || {};
+
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Missing message" });
     }
@@ -26,59 +137,53 @@ export default async function handler(req, res) {
     if (!OPENAI_API_KEY) {
       return res.status(503).json({
         error: "Missing OPENAI_API_KEY",
-        hint: "Set OPENAI_API_KEY in Vercel → Project → Settings → Environment Variables, then redeploy.",
+        hint: "Set OPENAI_API_KEY in your environment, then redeploy.",
       });
     }
 
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    const GUIDANCE = {
-      Muslim:   "Draw gently from Qur’an and hadith where fitting, adab & akhlaq, and Sufi practice. Offer mercy and clarity.",
-      Christian:"Draw gently from the Gospels, parables, virtues, Church Fathers, and the witness of the saints.",
-      Jewish:   "Draw gently from Torah, Psalms, and sages. For life-skills, lean on Rambam (Hilchot De’ot) and Mussar middot.",
-      Eastern:  "Draw gently from the Noble Eightfold Path, Taoist harmony, and Vedic disciplines like yamas/niyamas.",
-      Universal:"Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
-    };
+    // Try optional retrieval (safe no-op if Supabase not set up)
+    let passages = [];
+    try {
+      passages = await retrievePassages({ question: message, path, lang });
+    } catch {
+      passages = [];
+    }
 
-    // *** ADDED THIS LOGIC TO MATCH THE FRONTEND ***
-    const MODE_PROMPTS = {
-      general:    "Your mode is one of gentle guidance. Be wise and reflective.",
-      practical:  "Your mode is practical. Focus on providing clear, actionable steps.",
-      wisdom:     "Your mode is to share timeless wisdom. Adopt the tone of a historian or scholar.",
-      comfort:    "Your mode is comforting. Be exceptionally warm, empathetic, and reassuring.",
-    };
-
-    const TOPIC_PROMPTS = {
-      general:      "Topic focus: general guidance for the present moment.",
-      healthy:      "Topic focus: healthy living—sleep, simple movement, nourishing food, self-care. Avoid medical advice.",
-      relationships:"Topic focus: human relationships—listening, boundaries, reconciliation, empathy.",
-      partner:      "Topic focus: finding a life partner—character, shared values, patience, and practical steps to meet people.",
-      work:         "Topic focus: work & purpose—meaningful contribution, integrity, and sustainable habits.",
-      parenting:    "Topic focus: parenting—patience, modeling virtues, age-appropriate guidance.",
-      grief:        "Topic focus: grief & healing—gentleness, permission to grieve, small rituals of remembrance.",
-      addiction:    "Topic focus: addiction support (non-clinical). Encourage safe supports and professional help when needed.",
-      mindfulness:  "Topic focus: mindfulness & calm—breath, presence, and simple contemplative practice.",
-    };
-
-    const ETHOS = "Never provide medical, legal, or financial diagnosis. Encourage qualified help if needed. Do not promise outcomes.";
+    // Build optional context
+    const contextBlock = passages.length
+      ? "\n\nWisdom sources:\n" +
+        passages
+          .map((p, i) => `[#${i + 1}] ${p.work}${p.author ? " — " + p.author : ""} (${p.pos ?? 0})\n${p.chunk}`)
+          .join("\n\n")
+      : "";
 
     const system = [
       `You are a calm, humane spiritual guide (${path}).`,
       GUIDANCE[path] || GUIDANCE.Universal,
       TOPIC_PROMPTS[topic] || TOPIC_PROMPTS.general,
-      // *** FIXED THIS LINE TO USE THE CORRECT VARIABLE ***
       MODE_PROMPTS[mode] || MODE_PROMPTS.general,
       ETHOS,
-      `Reply in ${targetLanguage}. Keep paragraphs short.`,
-    ].join(" ");
+      `Reply in ${targetLanguage}.`,
+      passages.length
+        ? "Ground your answer in the wisdom sources below. Quote sparingly. If you use a passage, add a short bracket citation like [#1]."
+        : "If you reference scripture or sages, do so generally (no hard citations) because no sources are attached for this question.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const userContent =
+      message.trim() +
+      (contextBlock ? `\n\n---\n${contextBlock}` : "");
 
     const payload = {
       model,
-      temperature: 0.8, // Simplified temperature
+      temperature: 0.6,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: message },
+        { role: "user", content: userContent },
       ],
     };
 
@@ -105,7 +210,20 @@ export default async function handler(req, res) {
     const reply = data?.choices?.[0]?.message?.content?.trim();
     if (!reply) return res.status(502).json({ error: "No content returned from model." });
 
-    return res.status(200).json({ reply });
+    // Keep response shape backward-compatible (OracleVoice expects {reply})
+    // Optionally include sources if we had any (won’t break UI)
+    const sources =
+      passages.length
+        ? passages.map((p, i) => ({
+            i: i + 1,
+            work: p.work,
+            author: p.author || null,
+            pos: p.pos ?? 0,
+            url: p.url || null,
+          }))
+        : [];
+
+    return res.status(200).json({ reply, ...(sources.length ? { sources } : {}) });
   } catch (err) {
     return res.status(500).json({ error: "Server error", detail: String(err?.message || err) });
   }
