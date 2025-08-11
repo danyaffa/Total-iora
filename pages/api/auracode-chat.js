@@ -2,6 +2,7 @@
 // Your original file with its custom logic has been preserved.
 // NEW: Added Wikiquote and Internet Archive as new source providers.
 // All providers now run in parallel for faster, more diverse results.
+// FIX: Added a guard to prevent server errors from malformed sources.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -259,6 +260,7 @@ export default async function handler(req, res) {
     // De-dup and cap
     const seen = new Set();
     sources = sources.filter((s) => {
+      if (!s || !s.source || !s.work) return false; // <-- THE FIX IS HERE
       const key = `${s.source}|${s.work}|${s.pos}`;
       if (seen.has(key)) return false;
       seen.add(key);
