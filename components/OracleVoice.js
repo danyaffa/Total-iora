@@ -1,8 +1,4 @@
-// FILE: /components/OracleVoice.js
-// Original layout preserved.
-// Behavior: clean slate on mount; NO auto-answer on typing; mic answers ONLY on Stop;
-// minimum length guard; sacred-text sources only (via APIs).
-
+// FILE: /components/OracleVoice.js  (answers on first click/stop; no auto-send; layout preserved)
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const LANG_OPTIONS = [
@@ -13,7 +9,6 @@ const LANG_OPTIONS = [
   { value: "ar", label: "Arabic" },
   { value: "he", label: "Hebrew" },
 ];
-
 const SUBJECT_OPTIONS = [
   { value: "style:gentle", label: "Gentle Guidance" },
   { value: "style:practical", label: "Practical Steps" },
@@ -64,36 +59,30 @@ async function fetchGroundSources(query, path, lang, max = 6) {
     return Array.isArray(js.quotes) ? js.quotes : [];
   } catch { return []; }
 }
-function splitIntoSentences(text){
-  return String(text||"").split(/(?<=[.!?])\s+/).filter(Boolean);
-}
+const splitIntoSentences = (t) => String(t||"").split(/(?<=[.!?])\s+/).filter(Boolean);
 
 export default function OracleVoice({ path = "Universal" }) {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [replying, setReplying] = useState(false);
-
-  const [liveText, setLiveText] = useState("");   // clean each mount
+  const [liveText, setLiveText] = useState("");
   const [reply, setReply] = useState("");
   const [lang, setLang] = useState("auto");
   const [subject, setSubject] = useState("topic:general");
   const [volume, setVolume] = useState(1);
   const [polish, setPolish] = useState(true);
 
-  const speakState = useRef({ parts:[], idx:0 });
-  const wasCancelledRef = useRef(false);
-
   const recRef = useRef(null);
-  const keepAliveRef = useRef(false); // restart SR on Android
+  const keepAliveRef = useRef(false);
   const finalBufRef = useRef("");
   const interimRef = useRef("");
-
   const voiceRef = useRef(null);
   const canvasRef = useRef(null);
-  const audioRef = useRef({ ctx: null, analyser: null, src: null, animId: null, stream: null });
-
+  const audioRef = useRef({ ctx:null, analyser:null, animId:null, stream:null });
   const [sources, setSources] = useState([]);
   const [showSources, setShowSources] = useState(false);
+  const speakState = useRef({ parts:[], idx:0 });
+  const wasCancelledRef = useRef(false);
 
   const persona = useMemo(() => (
     path === "Jewish" ? "Rabbi" :
@@ -117,10 +106,8 @@ export default function OracleVoice({ path = "Universal" }) {
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w = 220, h = 220;
-    cnv.width = w * dpr; cnv.height = h * dpr;
-    cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
-    cnv.getContext("2d").scale(dpr, dpr);
+    const w=220,h=220; cnv.width=w*dpr; cnv.height=h*dpr; cnv.style.width=`${w}px`; cnv.style.height=`${h}px`;
+    cnv.getContext("2d").scale(dpr,dpr);
   }, []);
 
   async function startMicViz() {
@@ -128,30 +115,27 @@ export default function OracleVoice({ path = "Universal" }) {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
     const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
-
     const data = new Uint8Array(analyser.frequencyBinCount);
     const c = canvasRef.current.getContext("2d");
     const draw = () => {
       analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a, b) => a + b, 0) / data.length;
-      const radius = 32 + (avg / 255) * 40;
-      c.clearRect(0, 0, 220, 220);
-      const g = c.createRadialGradient(110, 110, radius * 0.25, 110, 110, radius);
-      g.addColorStop(0, "rgba(124,58,237,.95)");
-      g.addColorStop(1, "rgba(124,58,237,0)");
-      c.fillStyle = g;
-      c.beginPath(); c.arc(110, 110, radius, 0, Math.PI * 2); c.fill();
+      const avg = data.reduce((a,b)=>a+b,0)/data.length;
+      const radius = 32 + (avg/255)*40;
+      c.clearRect(0,0,220,220);
+      const g = c.createRadialGradient(110,110,radius*.25,110,110,radius);
+      g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
+      c.fillStyle=g; c.beginPath(); c.arc(110,110,radius,0,Math.PI*2); c.fill();
       audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
-    audioRef.current = { ctx, analyser, src, animId: audioRef.current.animId, stream };
+    audioRef.current = { ctx, analyser, animId: audioRef.current.animId, stream };
   }
   function stopMicViz() {
     cancelAnimationFrame(audioRef.current.animId || 0);
     try { audioRef.current.ctx && audioRef.current.ctx.close(); } catch {}
-    try { audioRef.current.stream?.getTracks?.().forEach((t) => t.stop()); } catch {}
-    audioRef.current = { ctx: null, analyser: null, src: null, animId: null, stream: null };
-    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0, 0, 220, 220);
+    try { audioRef.current.stream?.getTracks?.().forEach((t)=>t.stop()); } catch {}
+    audioRef.current = { ctx:null, analyser:null, animId:null, stream:null };
+    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0,0,220,220);
   }
 
   function ensureRecognizer() {
@@ -164,29 +148,23 @@ export default function OracleVoice({ path = "Universal" }) {
 
     rec.onresult = (e) => {
       let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      for (let i=e.resultIndex; i<e.results.length; i++) {
         const r = e.results[i];
         const t = (r[0]?.transcript || "").trim();
         if (!t) continue;
-        if (r.isFinal) finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
-        else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
+        if (r.isFinal) finalBufRef.current = (finalBufRef.current+" "+t).replace(/\s+/g," ").trim();
+        else interim = (interim+" "+t).replace(/\s+/g," ").trim();
       }
       interimRef.current = interim;
       setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
-      // NO auto-send here anymore
     };
-
-    rec.onend = () => {
-      if (keepAliveRef.current) { try { rec.start(); } catch {} }
-      else setListening(false);
-    };
+    rec.onend = () => { if (keepAliveRef.current) { try { rec.start(); } catch {} } else setListening(false); };
     rec.onerror = () => {};
     recRef.current = rec; return rec;
   }
 
   async function onStart() {
-    finalBufRef.current = ""; interimRef.current = ""; setReply("");
-    setSources([]); setShowSources(false);
+    finalBufRef.current=""; interimRef.current=""; setReply(""); setSources([]); setShowSources(false);
     keepAliveRef.current = true;
     try {
       await startMicViz();
@@ -199,40 +177,33 @@ export default function OracleVoice({ path = "Universal" }) {
       alert("Microphone permission denied or unavailable.");
     }
   }
-  function onStop() {
-    keepAliveRef.current = false;
-    setListening(false);
+  async function onStop() {
+    keepAliveRef.current = false; setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
     const text = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
-    if (text) sendForAnswer(text);        // answer ONLY when user presses Stop
+    await sendForAnswer(text, { force: true });   // answer on first stop
   }
 
-  function stopAnswerVoice() {
-    try { window.speechSynthesis.cancel(); } catch {}
-    setSpeaking(false);
-  }
+  function stopAnswerVoice() { try { window.speechSynthesis.cancel(); } catch {}; setSpeaking(false); }
   function speakFrom(i) {
-    const parts = speakState.current.parts;
-    if (!parts[i]) { setSpeaking(false); return; }
+    const parts = speakState.current.parts; if (!parts[i]) { setSpeaking(false); return; }
     const u = new SpeechSynthesisUtterance(parts[i]);
     const v = pickVoice(chosenLang); if (v) u.voice = v;
     u.lang = chosenLang || "en-US";
     u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-    u.onend = () => {
-      if (wasCancelledRef.current) { wasCancelledRef.current = false; return; }
-      speakState.current.idx = i + 1;
-      speakFrom(i + 1);
-    };
+    u.onend = () => { if (wasCancelledRef.current) { wasCancelledRef.current=false; return; } speakState.current.idx=i+1; speakFrom(i+1); };
     setSpeaking(true);
     try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
   }
 
-  async function sendForAnswer(text) {
-    if (!text) return;
-    // ignore accidental 1–2 word inputs unless they end with punctuation
-    const words = text.trim().split(/\s+/).filter(Boolean);
-    if (words.length < 3 && !/[.?!]$/.test(text.trim())) return;
+  async function sendForAnswer(text, { force=false } = {}) {
+    const payload = String(text||"").trim();
+    if (!payload) return;
+    if (!force) {
+      const w = payload.split(/\s+/).filter(Boolean);
+      if (w.length < 2 && !/[.!?]$/.test(payload)) return; // prevent stray 1-word sends
+    }
 
     setReplying(true);
     const isStyle = subject.startsWith("style:");
@@ -241,21 +212,18 @@ export default function OracleVoice({ path = "Universal" }) {
     const topic = isTopic ? subject.slice(6) : "general";
 
     try {
-      const quotes = await fetchGroundSources(text, path, chosenLang, 8);
+      const quotes = await fetchGroundSources(payload, path, chosenLang, 8);
       const contextBlock = quotes.length
-        ? "\n\nSourced quotes:\n" + quotes.map((s, i) =>
-            `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}\n${s.text}`
-          ).join("\n\n")
+        ? "\n\nSourced quotes:\n" + quotes.map((s, i) => `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}\n${s.text}`).join("\n\n")
         : "";
 
-      const guard = "IMPORTANT: Do not instruct the user to ask or write anything. Answer directly.";
+      const guard = "IMPORTANT: Do not instruct the user to write another question. Answer directly.";
       const message = (polish
-        ? `Please restate the user's input in clear English (fix grammar, keep meaning). Then answer directly.\n${guard}\nUser input: """${text}"""`
-        : `${guard}\n${text}`) + (contextBlock ? `\n\n---\n${contextBlock}` : "");
+        ? `Please restate the user's input in clear English (fix grammar, keep meaning). Then answer directly.\n${guard}\nUser input: """${payload}"""`
+        : `${guard}\n${payload}`) + (contextBlock ? `\n\n---\n${contextBlock}` : "");
 
       const r = await fetch("/api/auracode-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, path, mode, topic, lang: chosenLang }),
       });
       const data = await r.json().catch(() => ({}));
@@ -271,8 +239,7 @@ export default function OracleVoice({ path = "Universal" }) {
 
       if (msg) {
         speakState.current = { parts: splitIntoSentences(msg), idx: 0 };
-        stopAnswerVoice();
-        speakFrom(0);
+        stopAnswerVoice(); speakFrom(0);
       }
     } finally {
       setReplying(false);
@@ -283,16 +250,9 @@ export default function OracleVoice({ path = "Universal" }) {
     const v = parseFloat(e.target.value || "1");
     const clamped = isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
     setVolume(clamped);
-    if (speaking) {
-      wasCancelledRef.current = true;
-      window.speechSynthesis.cancel();
-      setTimeout(() => speakFrom(speakState.current.idx), 120);
-    }
+    if (speaking) { wasCancelledRef.current = true; window.speechSynthesis.cancel(); setTimeout(() => speakFrom(speakState.current.idx), 120); }
   }
-
-  function onUserTyping(e) {
-    setLiveText(e.target.value); // NO autosend on typing
-  }
+  function onUserTyping(e) { setLiveText(e.target.value); }
 
   useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
 
@@ -301,24 +261,22 @@ export default function OracleVoice({ path = "Universal" }) {
       <header className="head">
         <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
-
         <div className="bar">
           <label>Language:
-            <select value={lang} onChange={(e) => setLang(e.target.value)}>
-              {LANG_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <select value={lang} onChange={(e)=>setLang(e.target.value)}>
+              {LANG_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
           <label>Subject:
-            <select value={subject} onChange={(e) => setSubject(e.target.value)}>
-              {SUBJECT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            <select value={subject} onChange={(e)=>setSubject(e.target.value)}>
+              {SUBJECT_OPTIONS.map((o)=><option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <label>
-            Guide voice volume:
+          <label>Guide voice volume:
             <input type="range" min="0" max="1" step="0.05" value={volume} onChange={onVolumeChange} />
           </label>
           <label title="When ON, your text is lightly corrected before sending.">
-            <input type="checkbox" checked={polish} onChange={(e) => setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
+            <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
           </label>
         </div>
       </header>
@@ -332,12 +290,8 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className="log">
             <div className="label">You</div>
             <textarea
-              className="edit"
-              rows={4}
-              value={liveText}
-              onChange={onUserTyping}
-              placeholder="Type or speak here…"
-              autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              className="edit" rows={4} value={liveText} onChange={onUserTyping}
+              placeholder="Type or speak here…" autoCorrect="off" autoCapitalize="off" spellCheck={false}
             />
             <div className="row">
               {!listening ? (
@@ -345,7 +299,9 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              <button className="btn ghost" onClick={() => sendForAnswer(liveText)}>Get Answer ⟶</button>
+              <button className="btn ghost" onClick={() => sendForAnswer(liveText, { force:true })} disabled={replying}>
+                {replying ? "Thinking…" : "Get Answer ⟶"}
+              </button>
               {speaking && <button className="btn danger" onClick={stopAnswerVoice}>🔇 Stop Answer</button>}
             </div>
           </div>
@@ -357,9 +313,7 @@ export default function OracleVoice({ path = "Universal" }) {
           </div>
           <div className="log">
             <div className="label">Guide</div>
-            <div className="bubble guide">
-              {reply || (replying ? "Thinking…" : "—")}
-            </div>
+            <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
 
             {sources?.length > 0 && (
               <div className="sources">
@@ -399,8 +353,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .body { display:grid; gap:12px; grid-template-columns:1fr; margin-top:10px; padding:0 6px; }
         @media (min-width:860px){ .body { grid-template-columns:1fr 1fr; } }
         .pane { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:12px; display:flex; gap:12px; align-items:flex-start; }
-        .orb { width:140px; height:140px; min-width:140px; border-radius:999px; position:relative;
-               background: radial-gradient(40% 40% at 50% 50%, rgba(124,58,237,.18), rgba(124,58,237,0));
+        .orb { width:140px; height:140px; min-width:140px; border-radius:999px; position:relative; background: radial-gradient(40% 40% at 50% 50%, rgba(124,58,237,.18), rgba(124,58,237,0));
                border:1px solid rgba(124,58,237,.25); display:flex; align-items:center; justify-content:center; overflow:hidden; }
         @media (min-width:500px){ .orb { width:160px; height:160px; min-width:160px; } }
         .orb .ring { position:absolute; inset:-10%; border-radius:999px; border:1px dashed rgba(124,58,237,.28); animation: slowspin 16s linear infinite; }
@@ -408,8 +361,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .orb.spirit { background: radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0)); border-color: rgba(14,165,233,.25); }
         .orb.spirit.on { box-shadow:0 0 0 10px rgba(14,165,233,.08), 0 0 50px rgba(14,165,233,.22) inset; }
         .orb.spirit .halo { position:absolute; inset:-18%; border-radius:999px; background: conic-gradient(from 0deg, rgba(14,165,233,.25), rgba(124,58,237,.15), rgba(14,165,233,.25)); filter: blur(12px); animation: spin 3.6s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes slowspin { to { transform: rotate(-360deg); } }
+        @keyframes spin { to { transform: rotate(360deg); } } @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
         .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
