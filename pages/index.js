@@ -1,4 +1,7 @@
 // FILE: /pages/index.js
+// (Same layout you provided — just 2 tweaks:
+// 1) Simple, inline banner (no blur, no modal).
+// 2) Remount Oracle on unlock so it starts CLEAN after login.)
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -10,11 +13,10 @@ export default function Home() {
   const [locked, setLocked] = useState(true); // page starts locked
 
   useEffect(() => {
-    // Server-confirmed session only (static until 200 OK)
     async function checkServerSession() {
       try {
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!r.ok);
+        setLocked(!r.ok); // static until server says 200 OK
       } catch {
         setLocked(true);
       }
@@ -40,11 +42,13 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Read-only banner shown when not logged in */}
+      {/* Readable, inline notice (no overlay, no blur) */}
       {locked && (
-        <div className="previewBanner" role="status">
-          You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
-          <Link href="/register">Register</Link> to use the interactive features.
+        <div className="previewBanner" role="status" aria-live="polite">
+          <strong>Welcome.</strong> This board is read-only until you sign in.
+          <span className="space" />
+          <Link href="/register">Register (free)</Link> or <Link href="/login">Log in</Link> to activate it.
+          <div className="sub">Private & protected — we register to keep your content yours.</div>
         </div>
       )}
 
@@ -96,14 +100,14 @@ export default function Home() {
         </div>
       </section>
 
-      {/* The 'inert' attribute blocks keyboard focus and interaction */}
+      {/* Everything is READABLE, but interaction is blocked while locked */}
       <div
         className={`main${locked ? " preview-locked" : ""}`}
         inert={locked ? "" : undefined}
         aria-disabled={locked ? "true" : "false"}
       >
         <HeritageSelector path={path} onChange={setPath} />
-        {/* Remount on unlock -> Oracle starts clean (no old text) */}
+        {/* Clean slate after login: remounts when locked -> unlocked */}
         <OracleVoice key={locked ? "locked" : "unlocked"} path={path} />
       </div>
 
@@ -117,6 +121,16 @@ export default function Home() {
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
+
+        .previewBanner {
+          margin: 8px auto 0; max-width: 1100px; padding: 12px 14px;
+          background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;
+          color: #0f172a; text-align: center; font-weight: 600;
+        }
+        .previewBanner .sub { margin-top:4px; font-weight: 500; color:#475569; }
+        .previewBanner a { color: #1d4ed8; text-decoration: underline; }
+        .previewBanner .space { display:inline-block; width:8px; }
+
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
@@ -127,12 +141,8 @@ export default function Home() {
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
-        .previewBanner {
-          margin: 8px auto 0; max-width: 1100px; padding: 10px 14px;
-          background: #fffbe6; border: 1px solid #facc15; border-radius: 10px;
-          color: #713f12; text-align: center; font-weight: 600;
-        }
-        .previewBanner a { color: #1d4ed8; text-decoration: underline; }
+
+        /* READABLE but inert before login */
         .main.preview-locked a,
         .main.preview-locked button,
         .main.preview-locked [role="button"],
@@ -140,7 +150,7 @@ export default function Home() {
         .main.preview-locked select,
         .main.preview-locked textarea {
           pointer-events: none !important;
-          opacity: .85;
+          opacity: .88;
         }
       `}</style>
     </div>
