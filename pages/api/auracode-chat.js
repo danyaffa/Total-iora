@@ -9,7 +9,7 @@
 // Frontend sends: { message, path, mode, topic, lang }
 // 2025-08-11 updates:
 // - Bias retrieval to tradition (e.g., Rambam/Maimonides for Jewish path)
-// - If user mentions Rambam/Maimonides, strongly prefer those quotes
+// - If user mentions Rambam/Maimonides, return ONLY Rambam quotes (no substitutions)
 // - Small prompt tweak: if ungrammatical input, you may briefly restate it first (also handled client-side)
 
 export const dynamic = "force-dynamic";
@@ -88,7 +88,7 @@ function pickPlainText(formats) {
   return k ? formats[k] : null;
 }
 
-// NEW: bias queries to tradition
+// Bias queries to tradition
 function biasQueryForPath(message, path) {
   const m = String(message || "");
   switch (path) {
@@ -105,15 +105,16 @@ function biasQueryForPath(message, path) {
   }
 }
 
-// Helper: filter to Rambam if explicitly requested
-function filterForRambamIfAsked(sources, message, path) {
-  const askRambam = /\b(rambam|maimonides|mishneh\s+torah|guide\s+for\s+the\s+perplexed)\b/i.test(message || "");
-  if (!askRambam && path !== "Jewish") return sources;
-  const pref = sources.filter((s) =>
+// Detect hard Rambam request
+function askedRambam(message) {
+  return /\b(rambam|maimonides|mishneh\s+torah|guide\s+for\s+the\s+perplexed)\b/i.test(message || "");
+}
+
+// Keep only Maimonides-related snippets
+function keepOnlyMaimonides(list) {
+  return (list || []).filter(s =>
     /maimonides|mishneh|perplexed/i.test(`${s.author || ""} ${s.work || ""} ${s.quote || ""}`)
   );
-  // if we found any Rambam sources, prefer them; otherwise fall back to originals
-  return pref.length ? pref.concat(sources.filter(x => !pref.includes(x))).slice(0, 8) : sources;
 }
 
 async function fetchGutenbergSnippets(query, topK = 6) {
@@ -161,7 +162,6 @@ async function fetchOpenLibrarySnippets(query, topK = 4) {
       const workKey = (d.key || "").startsWith("/works/") ? d.key : null;
       const title = d.title || "Open Library";
       const author = Array.isArray(d.author_name) ? d.author_name[0] : (d.author_name || null);
-      // try brief description endpoints
       let quote = "";
       if (workKey) {
         try {
@@ -231,6 +231,18 @@ async function retrieveSupabase({ question, path, lang }) {
   }));
 }
 
+/* ---------------- Rambam-only path ---------------- */
+
+async function getMaimonidesSources() {
+  // Multiple targeted queries to maximize hit rate
+  const q1 = await fetchGutenbergSnippets(`Maimonides "Guide for the Perplexed"`, 6);
+  const q2 = await fetchGutenbergSnippets(`Moses Maimonides "Guide for the Perplexed"`, 6);
+  const q3 = await fetchGutenbergSnippets(`Maimonides Mishneh Torah ethics`, 4);
+  const q4 = await fetchOpenLibrarySnippets(`Maimonides "Guide for the Perplexed"`, 4);
+  const merged = [...q1, ...q2, ...q3, ...q4];
+  return keepOnlyMaimonides(merged).slice(0, 8);
+}
+
 /* ---------------- main handler ---------------- */
 
 export default async function handler(req, res) {
@@ -254,20 +266,32 @@ export default async function handler(req, res) {
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    // 1) Gather optional sources:
+    // 1) Gather sources
+    const wantsRambam = askedRambam(message);
     let sources = [];
-    // Supabase corpus (if you add it later)
+
+    // Optional Supabase (kept)
     try { sources = sources.concat(await retrieveSupabase({ question: message, path, lang })); } catch {}
 
-    // Free web, now biased to tradition
-    const biased = biasQueryForPath(message, path);
-    try { sources = sources.concat(await fetchGutenbergSnippets(biased, 6)); } catch {}
-    try { sources = sources.concat(await fetchOpenLibrarySnippets(biased, 4)); } catch {}
+    if (wantsRambam) {
+      // HARD ENFORCEMENT: only Maimonides sources; no substitutions
+      const onlyRambam = await getMaimonidesSources();
+      sources = keepOnlyMaimonides([...sources, ...onlyRambam]).slice(0, 8);
+    } else {
+      // Free web, biased by path
+      const biased = biasQueryForPath(message, path);
+      try { sources = sources.concat(await fetchGutenbergSnippets(biased, 6)); } catch {}
+      try { sources = sources.concat(await fetchOpenLibrarySnippets(biased, 4)); } catch {}
+      // Prefer Rambam when Jewish path (but allow others)
+      if (path === "Jewish") {
+        const rambamFirst = keepOnlyMaimonides(sources);
+        const rest = sources.filter(x => !rambamFirst.includes(x));
+        sources = [...rambamFirst, ...rest];
+      }
+      sources = sources.slice(0, 8);
+    }
 
-    // Prefer Rambam when asked / Jewish path
-    sources = filterForRambamIfAsked(sources, message, path);
-
-    // De-dup and cap
+    // De-dup by (source|work|pos)
     const seen = new Set();
     sources = sources.filter((s) => {
       const key = `${s.source}|${s.work}|${s.pos}`;
@@ -284,9 +308,13 @@ export default async function handler(req, res) {
       MODE_PROMPTS[mode] || MODE_PROMPTS.general,
       ETHOS,
       `Reply in ${targetLanguage}.`,
-      sources.length
-        ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]."
-        : "If you reference scripture/sages, do so generally (no hard citations available).",
+      wantsRambam
+        ? (sources.length
+            ? "The user asked for Rambam (Maimonides). Provide only direct quotations from Maimonides. Do NOT substitute other authors."
+            : "The user asked for Rambam (Maimonides). No authentic Rambam sources are available right now. Say this briefly and do not substitute other authors. If you add any paraphrase, label it clearly as a paraphrase.")
+        : (sources.length
+            ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]."
+            : "If you reference scripture/sages, do so generally (no hard citations available)."),
     ].join(" ");
 
     const contextBlock = sources.length
