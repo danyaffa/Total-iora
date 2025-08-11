@@ -19,10 +19,20 @@ function downloadAuraDNA(content) {
 export default function GetYourAura(){
   const router = useRouter();
   const path = (router.query.path || "Universal") + "";
+  const [locked, setLocked] = useState(true);
   const [listening, setListening] = useState(false);
   const [conversation, setConversation] = useState([]);
   const [finalReading, setFinalReading] = useState(null);
   const recRef = useRef(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/whoami", { credentials: "include" });
+        setLocked(!r.ok);
+      } catch { setLocked(true); }
+    })();
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -47,6 +57,7 @@ export default function GetYourAura(){
   }, []);
 
   const toggleListen = () => {
+    if (locked) return;
     if (listening) {
       recRef.current?.stop();
     } else {
@@ -56,6 +67,7 @@ export default function GetYourAura(){
   };
 
   const finishSession = () => {
+    if (locked) return;
     const fullTranscript = conversation.filter(m => m.from === 'user').map(m => m.text).join(' ');
     const reading = `Based on your words, a feeling of gentle searching emerges. You carry both strength and vulnerability. Remember to be kind to yourself on this path. This is a reflection of the energy you've shared today.`;
     const { code, color } = generateAuraCode("Friend", "1970-01-01");
@@ -79,7 +91,7 @@ export default function GetYourAura(){
   }
 
   return (
-    <div className="max-w-2xl mx-auto grid gap-6">
+    <div className="max-w-2xl mx-auto grid gap-6" inert={locked ? "" : undefined} aria-disabled={locked ? "true" : "false"}>
       <div className="text-center">
         <h1 className="text-3xl font-bold text-slate-800">Live Mentor Session</h1>
         <p className="mt-2 text-slate-500">Speak freely. When you're ready, end the session for a final reflection.</p>
@@ -97,12 +109,13 @@ export default function GetYourAura(){
 
       <div className="flex flex-col items-center justify-center gap-4 mt-8">
         <ChatGPTBall isListening={listening} />
-        <button className="btn btn-soft" onClick={toggleListen}>
-          {listening ? 'Listening...' : 'Speak Now'}
+        <button className="btn btn-soft" onClick={toggleListen} disabled={locked}>
+          {locked ? "Log in to Speak" : (listening ? 'Listening...' : 'Speak Now')}
         </button>
-        <button className="text-sm text-slate-500 hover:underline" onClick={finishSession} disabled={conversation.length === 0}>
+        <button className="text-sm text-slate-500 hover:underline" onClick={finishSession} disabled={locked || conversation.length === 0}>
           End Session & Get Reflection
         </button>
+        {locked && <div className="lockhint" style={{marginTop: "10px", textAlign: "center", color: "#713f12", background: "#fffbe6", border: "1px solid #facc15", borderRadius: "10px", padding: "8px", width: "100%"}}>Log in to use this page.</div>}
       </div>
     </div>
   );
