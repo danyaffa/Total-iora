@@ -1,10 +1,16 @@
 // FILE: /pages/index.js
-// STATIC PREVIEW ONLY — no interactive components.
+// STATIC preview: same layout, but fully non-interactive (readable demo).
 
+import { useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
+import HeritageSelector from "../components/HeritageSelector";
+import OracleVoice from "../components/OracleVoice";
 
 export default function Index() {
+  const [path, setPath] = useState("Universal");
+  const locked = true; // always static
+
   return (
     <div className="page">
       {/* Top nav — Register always visible */}
@@ -21,12 +27,6 @@ export default function Index() {
         </p>
       </section>
 
-      {/* Always-visible read-only banner */}
-      <div className="previewBanner" role="status">
-        You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
-        <Link href="/register">Register</Link> to use the interactive features.
-      </div>
-
       {/* Feature tiles */}
       <section className="tiles">
         <div className="grid">
@@ -40,7 +40,7 @@ export default function Index() {
               </p>
             </header>
             <footer className="f">
-              <Link href="/login" className="btn accent" aria-disabled="true">Log in to Open</Link>
+              <Link href="/register" className="btn accent">Register to Open</Link>
               <div className="disc">
                 This is your space. Do whatever you like on this page. We have no responsibility
                 for anything you write, and nothing is saved on our servers.
@@ -58,7 +58,7 @@ export default function Index() {
               </p>
             </header>
             <footer className="f">
-              <Link href="/login" className="btn accent" aria-disabled="true">Log in to Get Yours</Link>
+              <Link href="/register" className="btn accent">Register to Get Yours</Link>
               <div className="disc">
                 Spiritual guidance only. No promises. No medical, legal, or financial advice.
               </div>
@@ -66,6 +66,16 @@ export default function Index() {
           </article>
         </div>
       </section>
+
+      {/* Same board UI, but inert to keep it read-only */}
+      <div
+        className="main preview-locked"
+        inert=""
+        aria-disabled="true"
+      >
+        <HeritageSelector path={path} onChange={setPath} />
+        <OracleVoice path={path} />
+      </div>
 
       <Footer />
 
@@ -91,12 +101,15 @@ export default function Index() {
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
-        .previewBanner {
-          margin: 8px auto 0; max-width: 1100px; padding: 10px 14px;
-          background: #fffbe6; border: 1px solid #facc15; border-radius: 10px;
-          color: #713f12; text-align: center; font-weight: 600;
+        .main.preview-locked a,
+        .main.preview-locked button,
+        .main.preview-locked [role="button"],
+        .main.preview-locked input,
+        .main.preview-locked select,
+        .main.preview-locked textarea {
+          pointer-events: none !important;
+          opacity: .85;
         }
-        .previewBanner a { color: #1d4ed8; text-decoration: underline; }
       `}</style>
     </div>
   );
