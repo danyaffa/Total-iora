@@ -1,7 +1,8 @@
 // FILE: /components/OracleVoice.js
-// Write OR Speak. Typing corrections allowed before sending.
-// Mobile-safe SR, Stop Answer, Volume control, Download/Print.
-// Shows quoted sources. Pulls free public-domain snippets (no DB, no keys).
+// Write OR Speak. Single editable box.
+// Mobile-safe SR, Stop Answer, Download/Print.
+// Shows quoted sources. Pulls free Rambam quotes (Sefaria) + public-domain snippets (Gutendex).
+// No DB. No keys.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -55,10 +56,80 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
+/* ---------- Free public-domain snippets via Gutendex (backup) ---------- */
+function pickPlainText(formats) {
+  const keys = Object.keys(formats || {});
+  const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
+  return k ? formats[k] : null;
+}
+function splitParas(txt, maxChars = 900) {
+  const ps = txt.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  for (const p of ps) {
+    if (p.length <= maxChars) out.push(p);
+    else for (let i=0;i<p.length;i+=maxChars) out.push(p.slice(i,i+maxChars));
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+function scorePara(p, terms) {
+  const s = p.toLowerCase();
+  let sc = 0;
+  for (const t of terms) if (s.includes(t)) sc += t.length;
+  const L = p.length; if (L > 200 && L < 800) sc += 50;
+  return sc;
+}
+async function fetchFreeSources(query, topK = 4) {
+  try {
+    const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(query)}`, { redirect: "follow" });
+    if (!r.ok) return [];
+    const data = await r.json().catch(() => ({}));
+    const books = (data?.results || []).slice(0, 2);
+    const terms = String(query || "").toLowerCase().split(/\W+/).filter(Boolean);
+    const all = [];
+    for (const b of books) {
+      const url = pickPlainText(b.formats || {});
+      if (!url) continue;
+      const tr = await fetch(url, { redirect: "follow" });
+      if (!tr.ok) continue;
+      const raw = await tr.text();
+      const paras = splitParas(raw);
+      const scored = paras
+        .map((p, i) => ({ p, i, score: scorePara(p, terms) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))));
+      for (const s of scored) {
+        all.push({
+          work: b.title || "Project Gutenberg",
+          author: (b.authors?.[0]?.name) || null,
+          pos: s.i,
+          text: s.p.slice(0, 900),
+          url,
+        });
+      }
+    }
+    return all.slice(0, topK);
+  } catch { return []; }
+}
+
+/* ---------- Rambam quotes via our tiny API (Sefaria) ---------- */
+async function fetchRambamQuotes(query, max=5) {
+  try {
+    const r = await fetch("/api/rambam-quotes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, max })
+    });
+    if (!r.ok) return [];
+    const { quotes = [] } = await r.json().catch(() => ({ quotes: [] }));
+    return quotes; // {work, author, url, pos, text}
+  } catch { return []; }
+}
+
 /* --- Component --- */
 export default function OracleVoice({ path }) {
   const [listening, setListening]   = useState(false);
-  const [liveText, setLiveText]     = useState("");   // editable (typing or SR)
+  const [liveText, setLiveText]     = useState("");   // ONE editable box (typing or SR)
   const [reply, setReply]           = useState("");
   const [replying, setReplying]     = useState(false);
   const [speaking, setSpeaking]     = useState(false);
@@ -166,13 +237,12 @@ export default function OracleVoice({ path }) {
         }
       }
       interimRef.current = interim;
-      // Keep editable text in sync while recording
       const combined = [finalBufRef.current, interim].filter(Boolean).join(" ").trim();
       setLiveText(combined);
     };
 
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
-    rec.onerror = () => {}; // ignore iOS “no-speech” etc.
+    rec.onerror = () => {}; // ignore transient errors
 
     recRef.current = rec;
     return rec;
@@ -206,13 +276,11 @@ export default function OracleVoice({ path }) {
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
 
-    // Prefer whatever the user typed/edited
     const typed = String(liveText || "").trim();
     const captured = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
     const text = (typed || captured).trim();
     if (!text) return;
 
-    // Split merged Subject into API mode/topic
     const isStyle = subject.startsWith("style:");
     const isTopic = subject.startsWith("topic:");
     const mode  = isStyle ? subject.slice(6) : "gentle";
@@ -220,11 +288,30 @@ export default function OracleVoice({ path }) {
 
     setReplying(true);
     setError("");
+
     try {
+      // 1) Try to fetch Rambam quotes when requested or in Jewish room
+      const wantsRambam = /rambam|maimonides/i.test(text) || path === "Jewish";
+      const rambam = wantsRambam ? await fetchRambamQuotes(text, 5) : [];
+
+      // 2) Also try public-domain snippets (backup)
+      let freeSnips = [];
+      try { freeSnips = await fetchFreeSources(text, 3); } catch {}
+
+      // Build context block so the model will actually quote
+      const allCtx = [...rambam, ...freeSnips];
+      const contextBlock = allCtx.length
+        ? "\n\nSourced quotes:\n" +
+          allCtx.map((s, i) => `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`).join("\n\n")
+        : "";
+
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, path, mode, topic, lang: chosenLang }),
+        body: JSON.stringify({
+          message: text + (contextBlock ? `\n\n---\n${contextBlock}` : ""),
+          path, mode, topic, lang: chosenLang
+        }),
       });
 
       if (!r.ok) {
@@ -237,8 +324,16 @@ export default function OracleVoice({ path }) {
       const data = await r.json().catch(() => ({}));
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
-      setSources(Array.isArray(data?.sources) ? data.sources : []);
 
+      // Merge any server sources with our fetched quotes/snippets
+      const srv = Array.isArray(data?.sources) ? data.sources : [];
+      const merged = [
+        ...srv.map((s, i) => ({ i: i + 1, work: s.work, author: s.author, pos: s.pos, url: s.url, quote: s.quote })),
+        ...allCtx.map((s) => ({ i: (srv.length || 0) + 1, work: s.work, author: s.author, pos: s.pos, url: s.url, quote: s.text })),
+      ];
+      setSources(merged);
+
+      // Speak
       if ("speechSynthesis" in window) {
         const u = new SpeechSynthesisUtterance(msg);
         const v = pickVoice(chosenLang);
@@ -321,7 +416,7 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
               {SUBJECT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <label title="Also raise your device/system volume">
+          <label title="Browser TTS volume (0–100%)">
             Voice volume:
             <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(e.target.value)} />
           </label>
@@ -336,21 +431,21 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
           </div>
           <div className="log">
             <div className="label">You</div>
-            <div className="bubble you">{liveText || (listening ? "…" : "—")}</div>
-
-            {/* EDITABLE text area (always available for corrections/typing) */}
             <textarea
               className="edit"
-              rows={3}
+              rows={4}
               value={liveText}
               onChange={(e) => setLiveText(e.target.value)}
-              placeholder="Type or correct your words here…"
+              placeholder="Type or speak here… you can edit before sending."
             />
-            {!listening && (
-              <button className="btn ghost small" onClick={() => onStop()}>
-                Get Answer ⟶
-              </button>
-            )}
+            <div className="row">
+              {!listening ? (
+                <button className="btn start" onClick={onStart}>🎙️ Start</button>
+              ) : (
+                <button className="btn stop" onClick={onStop}>⏹ Stop</button>
+              )}
+              <button className="btn ghost" onClick={onStop}>Get Answer ⟶</button>
+            </div>
           </div>
         </div>
 
@@ -361,10 +456,9 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
           <div className="log">
             <div className="label">Guide</div>
             <div className="bubble guide">
-              {error ? <span style={{color:"#b91c1c",fontWeight:700}}>{error}</span> : (reply || (replying ? "Listening to the silence…" : "—"))}
+              {error ? <span style={{color:"#b91c1c",fontWeight:700}}>{error}</span> : (reply || (replying ? "Thinking…" : "—"))}
             </div>
 
-            {/* Sources/Quotes */}
             {sources?.length > 0 && (
               <div className="sources">
                 <button className="link" onClick={() => setShowSrcs(v => !v)}>
@@ -372,12 +466,12 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
                 </button>
                 {showSources && (
                   <ul className="srcList">
-                    {sources.map(s => (
-                      <li key={s.i}>
+                    {sources.map((s, idx) => (
+                      <li key={idx}>
                         <div className="srcTitle">
-                          [#{s.i}] {s.work}{s.author ? ` — ${s.author}` : ""}{typeof s.pos === "number" ? ` (pos ${s.pos})` : ""} {s.url ? <a href={s.url} target="_blank" rel="noreferrer">source</a> : null}
+                          [#{idx+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{typeof s.pos === "number" ? ` (pos ${s.pos})` : ""} {s.url ? <a href={s.url} target="_blank" rel="noreferrer">source</a> : null}
                         </div>
-                        {s.quote ? <blockquote className="quote">{s.quote}</blockquote> : null}
+                        {s.quote ? <blockquote className="quote">“{s.quote}”</blockquote> : null}
                       </li>
                     ))}
                   </ul>
@@ -389,10 +483,6 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
       </div>
 
       <div className="controls">
-        <button onClick={listening ? onStop : onStart} className={`btn ${listening ? "stop" : "start"}`}>
-          {listening ? "⏹ Stop & Answer" : "🎙️ Start Conversation"}
-        </button>
-
         {(speaking || reply) && (
           <>
             {speaking && <button onClick={stopAnswerVoice} className="btn ghost">Stop Answer</button>}
@@ -404,10 +494,6 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
             )}
           </>
         )}
-
-        <div className="hint">
-          {listening ? "Listening… take your time." : "You can type or use the mic. Edit text before sending."}
-        </div>
       </div>
 
       <style jsx>{`
@@ -441,20 +527,17 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
         .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
         .bubble.guide { background:#eef6ff; border-color:#dbeafe; }
-        .edit { width:100%; margin-top:8px; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; }
-        .small { padding:8px 12px !important; font-size:.95rem; }
-        .sources { margin-top:8px; }
+        .edit { width:100%; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; min-height:120px; }
+        .row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+        .controls { display:flex; gap:10px; align-items:center; justify-content:center; margin-top:14px; flex-wrap:wrap; padding:0 6px; }
+        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); touch-action:manipulation; }
+        .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
+        .btn.stop  { color:#fff; background:#111827; border:none; }
+        .btn.ghost { background:#fff; }
         .link { margin-top:8px; background:none; border:none; color:#2563eb; font-weight:700; cursor:pointer; padding:0; }
         .srcList { list-style:none; padding:0; margin:8px 0 0; display:grid; gap:10px; }
         .srcTitle { font-weight:700; color:#334155; }
         .quote { margin:6px 0 0; padding-left:10px; border-left:3px solid #c7d2fe; color:#475569; }
-        .controls { display:flex; gap:10px; align-items:center; justify-content:center; margin-top:14px; flex-wrap:wrap; padding:0 6px; }
-        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); transition: transform .06s, box-shadow .15s, filter .2s; touch-action:manipulation; }
-        .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
-        .btn.stop { color:#fff; background:#111827; border:none; }
-        .btn.ghost { background:#fff; }
-        .btn:hover { transform: translateY(-1px); box-shadow:0 10px 26px rgba(2,6,23,.10); filter:brightness(1.04); }
-        .hint { color:#64748b; font-size:.95rem; text-align:center; padding:0 6px; }
       `}</style>
     </section>
   );
