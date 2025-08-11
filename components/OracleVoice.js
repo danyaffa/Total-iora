@@ -2,6 +2,11 @@
 // Write OR Speak. Single editable box.
 // Mobile-safe SR, Stop Answer, Download/Print.
 // Shows quoted sources. Uses /api/ground-sources for ALL traditions.
+// 2025-08-11 updates:
+// - Added "Stop Answer" button to cancel TTS mid-speech
+// - Preserve dictated/typed text (and store to localStorage)
+// - Added "Fix my grammar before sending" toggle
+// - Volume slider stored as Number and label clarified
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -76,6 +81,7 @@ export default function OracleVoice({ path }) {
   const [lang, setLang]             = useState("auto");
   const [subject, setSubject]       = useState("topic:general");
   const [volume, setVolume]         = useState(1);
+  const [polish, setPolish]         = useState(true); // NEW: fix grammar
   const [error, setError]           = useState("");
   const [sources, setSources]       = useState([]);   // [{work,author,url,pos,quote}]
   const [showSources, setShowSrcs]  = useState(false);
@@ -95,6 +101,17 @@ export default function OracleVoice({ path }) {
   ), [path]);
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
+
+  /* --- Restore / persist text so dictations aren't “lost” --- */
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("oracle_live_text");
+      if (saved) setLiveText(saved);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("oracle_live_text", liveText || ""); } catch {}
+  }, [liveText]);
 
   /* --- TTS voice prepared --- */
   useEffect(() => {
@@ -190,6 +207,7 @@ export default function OracleVoice({ path }) {
 
   async function onStart() {
     setError(""); setReply(""); setSources([]); setShowSrcs(false);
+    // DO NOT clear liveText; user keeps dictation
     finalBufRef.current = ""; interimRef.current = "";
     try {
       await startMicViz();
@@ -221,6 +239,9 @@ export default function OracleVoice({ path }) {
     const text = (typed || captured).trim();
     if (!text) return;
 
+    // Preserve what was sent so it doesn't "disappear"
+    setLiveText(text);
+
     const isStyle = subject.startsWith("style:");
     const isTopic = subject.startsWith("topic:");
     const mode  = isStyle ? subject.slice(6) : "gentle";
@@ -239,11 +260,16 @@ export default function OracleVoice({ path }) {
           quotes.map((s, i) => `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`).join("\n\n")
         : "";
 
+      // Optional input polishing
+      const message = polish
+        ? `Please first restate the user's input in clear, simple English (fix grammar, keep meaning). Then answer their request. User input: """${text}"""` + (contextBlock ? `\n\n---\n${contextBlock}` : "")
+        : text + (contextBlock ? `\n\n---\n${contextBlock}` : "");
+
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: text + (contextBlock ? `\n\n---\n${contextBlock}` : ""),
+          message,
           path, mode, topic, lang: chosenLang
         }),
       });
@@ -271,7 +297,7 @@ export default function OracleVoice({ path }) {
         const v = pickVoice(chosenLang);
         if (v) u.voice = v;
         u.lang = chosenLang || "en-US";
-        u.volume = Math.max(0, Math.min(1, Number(volume) || 1)); // TTS can’t exceed device volume
+        u.volume = Math.max(0, Math.min(1, Number(volume) || 1)); // browser TTS volume (cap = system volume)
         u.rate = 1; u.pitch = 1;
         u.onstart = () => setSpeaking(true);
         u.onend   = () => setSpeaking(false);
@@ -348,9 +374,20 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
               {SUBJECT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <label title="Browser TTS volume (0–100%). For louder audio, raise device volume.">
-            Voice volume:
-            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(e.target.value)} />
+          <label title="Browser speech volume (0–100%). For louder audio, raise your device/system volume.">
+            Guide voice volume:
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => setVolume(parseFloat(e.target.value))}
+            />
+          </label>
+          <label title="When ON, your text is lightly corrected before sending.">
+            <input type="checkbox" checked={polish} onChange={(e) => setPolish(e.target.checked)} />
+            &nbsp;Fix my grammar before sending
           </label>
         </div>
       </header>
@@ -377,6 +414,7 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
               <button className="btn ghost" onClick={onStop}>Get Answer ⟶</button>
+              {speaking && <button className="btn danger" onClick={stopAnswerVoice}>🔇 Stop Answer</button>}
               <button className="btn ghost" onClick={downloadReply}>Download</button>
               <button className="btn ghost" onClick={printReply}>Print</button>
             </div>
@@ -445,19 +483,4 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
         @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
-        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
-        .bubble.guide { background:#eef6ff; border-color:#dbeafe; }
-        .edit { width:100%; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; min-height:120px; }
-        .row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
-        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); touch-action:manipulation; }
-        .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
-        .btn.stop  { color:#fff; background:#111827; border:none; }
-        .btn.ghost { background:#fff; }
-        .link { margin-top:8px; background:none; border:none; color:#2563eb; font-weight:700; cursor:pointer; padding:0; }
-        .srcList { list-style:none; padding:0; margin:8px 0 0; display:grid; gap:10px; }
-        .srcTitle { font-weight:700; color:#334155; }
-        .quote { margin:6px 0 0; padding-left:10px; border-left:3px solid #c7d2fe; color:#475569; }
-      `}</style>
-    </section>
-  );
-}
+        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-h
