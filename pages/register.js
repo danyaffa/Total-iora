@@ -1,7 +1,12 @@
 // FILE: /pages/register.js
 import { useState } from "react";
 import Link from "next/link";
-import Footer from "../components/Footer";
+
+function setCookie(name, value, maxAgeDays = 365) {
+  const maxAge = maxAgeDays * 24 * 3600;
+  const secure = typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure?"; Secure":""}`;
+}
 
 export default function Register() {
   const [form, setForm] = useState({ username: "", email: "", phone: "", password: "" });
@@ -27,27 +32,21 @@ export default function Register() {
       const r = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username,
-          name: username,
-          email,
-          phone,
-          password,
-        }),
+        body: JSON.stringify({ username, name: username, email, phone, password }),
+        credentials: "include",
       });
-      
-      const data = await r.json().catch(() => ({}));
+      const data = await r.json().catch(()=>({}));
       if (!r.ok || !data?.ok) {
         setMsg(data?.error || "Registration failed.");
       } else {
-        // Redirect to home page on successful registration
-        window.location.href = "/";
+        // mark client-side so Index stays static but Homepage unlocks
+        setCookie("ac_registered","1",365);
+        setCookie("ac_session","1",7); // if API also creates a session
+        window.location.replace("/homepage");
       }
     } catch (err) {
-      setMsg(String(err?.message || err || "Could not register."));
-    } finally {
-      setBusy(false);
-    }
+      setMsg("Could not register. Please try again.");
+    } finally { setBusy(false); }
   }
 
   return (
@@ -55,7 +54,7 @@ export default function Register() {
       <header className="hero">
         <div className="pill">Free Access</div>
         <h1>Create your private sanctuary</h1>
-        <p>Register to enter. You’ll be the only one who can access your space.</p>
+        <p>Register to enter. Only you can access your notes and questions.</p>
       </header>
 
       <main className="card">
@@ -81,39 +80,25 @@ export default function Register() {
             />
           </label>
           <label className="ck" htmlFor="showpw">
-            <input
-              id="showpw"
-              type="checkbox"
-              checked={showPw}
-              onChange={(e) => setShowPw(e.target.checked)}
-              aria-controls="reg-password"
-            />
+            <input id="showpw" type="checkbox" checked={showPw} onChange={(e)=>setShowPw(e.target.checked)} aria-controls="reg-password" />
             <span>Show password</span>
           </label>
-          <button className="btn accent" type="submit" disabled={busy}>
-            {busy ? "Creating…" : "Register — Free"}
-          </button>
+
+          <button className="btn accent" type="submit" disabled={busy}>{busy ? "Creating…" : "Register — Free"}</button>
           {msg && <p className="err">{msg}</p>}
-          <p className="small">
-            Already registered? <Link href="/login">Log in</Link>.
-          </p>
+          <p className="small">Already registered? <Link href="/login">Log in</Link>.</p>
         </form>
       </main>
 
-      <Footer />
-
       <style jsx>{`
-        /* Styles are unchanged */
-        .wrap { min-height:100vh; background:linear-gradient(#fff,#f8fafc); padding: 22px 12px 40px; }
+        .wrap { min-height:100vh; background:linear-gradient(#fff,#f8fafc); padding:22px 12px 40px; }
         .hero { text-align:center; }
         .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
         h1 { margin:8px 0 6px; font-size:1.9rem; font-weight:800; color:#0f172a; }
         .card { max-width:800px; margin:12px auto 0; background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; padding:16px; box-shadow:0 10px 30px rgba(2,6,23,.08); }
         .form { display:grid; gap:12px; }
         label { color:#334155; font-weight:700; font-size:.95rem; display:flex; flex-direction:column; gap:6px; }
-        input[type="text"], input[type="email"], input[type="tel"], input[type="password"] {
-          border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; width:100%;
-        }
+        input { border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; width:100%; }
         .ck { flex-direction:row; align-items:center; gap:8px; font-weight:600; color:#475569; margin-top:-4px; }
         .btn { margin-top:8px; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
