@@ -1,16 +1,12 @@
 // FILE: /pages/api/auracode-chat.js
 // Works WITHOUT any database.
-// OPTIONAL: If you later add Supabase + pgvector + the RPC `match_wisdom`, this will
-// automatically ground answers in your wisdom corpus. If not configured, it still replies.
+// Adds FREE retrieval from Project Gutenberg + Open Library (quotes + links).
+// If later you add Supabase + pgvector + RPC `match_wisdom`, it will also ground to your corpus.
 //
-// Env required (now):
-//   OPENAI_API_KEY
+// Env now (required): OPENAI_API_KEY
+// Optional later: SUPABASE_URL, SUPABASE_SERVICE_KEY
 //
-// Optional env (only if you later add retrieval):
-//   SUPABASE_URL
-//   SUPABASE_SERVICE_KEY
-//
-// Frontend sends: { message, path, mode, topic, lang, remoteSources? }
+// Frontend sends: { message, path, mode, topic, lang }
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -63,34 +59,126 @@ const TOPIC_PROMPTS = {
 const ETHOS =
   "Never provide medical, legal, or financial diagnosis. Encourage qualified help when needed. Do not promise outcomes. Keep paragraphs short.";
 
-/* ---------------- OPTIONAL retrieval (Supabase; safe to ignore if not set) ---------------- */
+/* ---------------- FREE web retrieval (no keys) ---------------- */
 
-async function retrievePassages({ question, path, lang }) {
+function splitParas(txt, maxChars = 900) {
+  const ps = String(txt || "").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+  const out = [];
+  for (const p of ps) {
+    if (p.length <= maxChars) out.push(p);
+    else for (let i=0;i<p.length;i+=maxChars) out.push(p.slice(i,i+maxChars));
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+function scorePara(p, terms) {
+  const s = p.toLowerCase();
+  let sc = 0;
+  for (const t of terms) if (s.includes(t)) sc += Math.min(10, t.length);
+  const L = p.length; if (L > 160 && L < 800) sc += 20;
+  return sc;
+}
+function pickPlainText(formats) {
+  const keys = Object.keys(formats || {});
+  const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
+  return k ? formats[k] : null;
+}
+
+async function fetchGutenbergSnippets(query, topK = 6) {
+  try {
+    const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(query)}`, { redirect: "follow" });
+    if (!r.ok) return [];
+    const data = await r.json().catch(() => ({}));
+    const books = (data?.results || []).slice(0, 3);
+    const terms = String(query || "").toLowerCase().split(/\W+/).filter(Boolean);
+    const all = [];
+    for (const b of books) {
+      const url = pickPlainText(b.formats || {});
+      if (!url) continue;
+      const tr = await fetch(url, { redirect: "follow" });
+      if (!tr.ok) continue;
+      const raw = await tr.text();
+      const paras = splitParas(raw);
+      const scored = paras
+        .map((p, i) => ({ p, i, score: scorePara(p, terms) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))));
+      for (const s of scored) {
+        all.push({
+          work: b.title || "Project Gutenberg",
+          author: (b.authors?.[0]?.name) || null,
+          pos: s.i,
+          quote: s.p.slice(0, 900),
+          url,
+          source: "gutenberg",
+        });
+      }
+    }
+    return all.slice(0, topK);
+  } catch { return []; }
+}
+
+async function fetchOpenLibrarySnippets(query, topK = 4) {
+  try {
+    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5`, { redirect:"follow" });
+    if (!r.ok) return [];
+    const data = await r.json().catch(() => ({}));
+    const docs = Array.isArray(data?.docs) ? data.docs.slice(0, 5) : [];
+    const out = [];
+    for (const d of docs) {
+      const workKey = (d.key || "").startsWith("/works/") ? d.key : null;
+      const title = d.title || "Open Library";
+      const author = Array.isArray(d.author_name) ? d.author_name[0] : (d.author_name || null);
+      // try brief description endpoints
+      let quote = "";
+      if (workKey) {
+        try {
+          const wr = await fetch(`https://openlibrary.org${workKey}.json`, { redirect:"follow" });
+          if (wr.ok) {
+            const wj = await wr.json().catch(() => ({}));
+            const desc = wj?.description;
+            quote = typeof desc === "string" ? desc : (desc?.value || "");
+            quote = String(quote || "").trim().slice(0, 700);
+          }
+        } catch {}
+      }
+      if (!quote && d.first_sentence) {
+        quote = Array.isArray(d.first_sentence) ? d.first_sentence[0] : (d.first_sentence?.value || d.first_sentence || "");
+        quote = String(quote || "").trim().slice(0, 300);
+      }
+      out.push({
+        work: title,
+        author: author || null,
+        pos: 0,
+        quote: quote || "",
+        url: workKey ? `https://openlibrary.org${workKey}` : undefined,
+        source: "openlibrary",
+      });
+    }
+    return out.slice(0, topK);
+  } catch { return []; }
+}
+
+/* ---------------- OPTIONAL Supabase retrieval ---------------- */
+
+async function retrieveSupabase({ question, path, lang }) {
   const SUPABASE_URL = process.env.SUPABASE_URL || "";
   const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !OPENAI_API_KEY) return [];
 
-  // 1) Embed question
+  // 1) Embed
   const embRes = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "text-embedding-3-large",
-      input: question,
-    }),
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "text-embedding-3-large", input: question }),
   });
-
   if (!embRes.ok) return [];
   const embJson = await embRes.json().catch(() => ({}));
   const embedding = embJson?.data?.[0]?.embedding;
   if (!embedding) return [];
 
-  // 2) Call Supabase RPC (if present)
+  // 2) RPC
   const filter_lang = (String(lang || "en").startsWith("ar") && "ar") || "en";
   const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/match_wisdom`, {
     method: "POST",
@@ -100,18 +188,15 @@ async function retrievePassages({ question, path, lang }) {
       "Content-Type": "application/json",
       Prefer: "return=representation",
     },
-    body: JSON.stringify({
-      query_embedding: embedding,
-      match_count: 8,
-      filter_path: path || "Universal",
-      filter_lang,
-    }),
+    body: JSON.stringify({ query_embedding: embedding, match_count: 8, filter_path: path || "Universal", filter_lang }),
   }).catch(() => null);
 
   if (!rpcRes || !rpcRes.ok) return [];
   const rows = await rpcRes.json().catch(() => []);
-  // Expect rows: { work, author, chunk, url, pos, similarity }
-  return Array.isArray(rows) ? rows.slice(0, 8) : [];
+  return (rows || []).map((p, i) => ({
+    work: p.work, author: p.author || null, pos: p.pos ?? 0,
+    quote: String(p.chunk || "").slice(0, 900), url: p.url || null, source: "supabase"
+  }));
 }
 
 /* ---------------- main handler ---------------- */
@@ -120,15 +205,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const {
-      message,
-      path = "Universal",
-      mode = "general",
-      topic = "general",
-      lang = "en-US",
-      // NEW: accept free web snippets gathered by the client (no-cost grounding)
-      remoteSources = [], // [{work, author, pos, text, url}]
-    } = req.body || {};
+    const { message, path = "Universal", mode = "general", topic = "general", lang = "en-US" } = req.body || {};
 
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Missing message" });
@@ -145,26 +222,24 @@ export default async function handler(req, res) {
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    // Try optional Supabase retrieval (safe no-op if not set)
-    let passages = [];
-    try { passages = await retrievePassages({ question: message, path, lang }); } catch { passages = []; }
+    // 1) Gather optional sources:
+    let sources = [];
+    // Supabase corpus (if you add it later)
+    try { sources = sources.concat(await retrieveSupabase({ question: message, path, lang })); } catch {}
+    // Free web (always on, no keys)
+    try { sources = sources.concat(await fetchGutenbergSnippets(message, 6)); } catch {}
+    try { sources = sources.concat(await fetchOpenLibrarySnippets(message, 4)); } catch {}
 
-    // Merge client-provided remoteSources (free web) + server passages; cap total to 8
-    const merged = [
-      ...(Array.isArray(remoteSources) ? remoteSources.map((p) => ({
-        work: p.work || "—", author: p.author || null, pos: p.pos ?? 0, chunk: p.text || "", url: p.url || null
-      })) : []),
-      ...(Array.isArray(passages) ? passages : []),
-    ].filter((p) => p && p.chunk && p.chunk.trim()).slice(0, 8);
+    // De-dup and cap
+    const seen = new Set();
+    sources = sources.filter((s) => {
+      const key = `${s.source}|${s.work}|${s.pos}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 8);
 
-    // Build optional context
-    const contextBlock = merged.length
-      ? "\n\nWisdom sources:\n" +
-        merged
-          .map((p, i) => `[#${i + 1}] ${p.work}${p.author ? " — " + p.author : ""} (${p.pos ?? 0})\n${p.chunk}`)
-          .join("\n\n")
-      : "";
-
+    // 2) Build prompt
     const system = [
       `You are a calm, humane spiritual guide (${path}).`,
       GUIDANCE[path] || GUIDANCE.Universal,
@@ -172,23 +247,23 @@ export default async function handler(req, res) {
       MODE_PROMPTS[mode] || MODE_PROMPTS.general,
       ETHOS,
       `Reply in ${targetLanguage}.`,
-      merged.length
-        ? "Ground your answer in the wisdom sources below. Quote sparingly. If you use a passage, add a short bracket citation like [#1]."
-        : "If you reference scripture or sages, do so generally (no hard citations) because no sources are attached for this question.",
-    ]
-      .filter(Boolean)
-      .join(" ");
+      sources.length
+        ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]."
+        : "If you reference scripture/sages, do so generally (no hard citations available).",
+    ].join(" ");
 
-    const userContent =
-      message.trim() +
-      (contextBlock ? `\n\n---\n${contextBlock}` : "");
+    const contextBlock = sources.length
+      ? "\n\nSources:\n" + sources.map((s, i) =>
+          `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (pos ${s.pos})` : ""}\n${(s.quote || "").slice(0, 900)}`
+        ).join("\n\n")
+      : "";
 
     const payload = {
       model,
       temperature: 0.6,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: userContent },
+        { role: "user", content: message.trim() + (contextBlock ? `\n\n---\n${contextBlock}` : "") },
       ],
     };
 
@@ -215,19 +290,17 @@ export default async function handler(req, res) {
     const reply = data?.choices?.[0]?.message?.content?.trim();
     if (!reply) return res.status(502).json({ error: "No content returned from model." });
 
-    // Include sources if we had any (won’t break UI)
-    const sources =
-      merged.length
-        ? merged.map((p, i) => ({
-            i: i + 1,
-            work: p.work,
-            author: p.author || null,
-            pos: p.pos ?? 0,
-            url: p.url || null,
-          }))
-        : [];
+    // Return sources with stable indices + quotes
+    const outSources = sources.map((s, i) => ({
+      i: i + 1,
+      work: s.work,
+      author: s.author || null,
+      pos: s.pos ?? 0,
+      url: s.url || null,
+      quote: s.quote || "",
+    }));
 
-    return res.status(200).json({ reply, ...(sources.length ? { sources } : {}) });
+    return res.status(200).json({ reply, ...(outSources.length ? { sources: outSources } : {}) });
   } catch (err) {
     return res.status(500).json({ error: "Server error", detail: String(err?.message || err) });
   }
