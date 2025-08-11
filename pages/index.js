@@ -1,7 +1,4 @@
 // FILE: /pages/index.js
-// (Same layout you provided — just 2 tweaks:
-// 1) Simple, inline banner (no blur, no modal).
-// 2) Remount Oracle on unlock so it starts CLEAN after login.)
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -10,13 +7,13 @@ import OracleVoice from "../components/OracleVoice";
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
-  const [locked, setLocked] = useState(true); // page starts locked
+  const [locked, setLocked] = useState(true); // page starts locked (static/inert until server confirms)
 
   useEffect(() => {
     async function checkServerSession() {
       try {
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!r.ok); // static until server says 200 OK
+        setLocked(!r.ok); // only unlock when server returns 200 OK
       } catch {
         setLocked(true);
       }
@@ -42,13 +39,12 @@ export default function Home() {
         </p>
       </section>
 
-      {/* Readable, inline notice (no overlay, no blur) */}
+      {/* Readable inline banner (no overlay, no blur) */}
       {locked && (
         <div className="previewBanner" role="status" aria-live="polite">
-          <strong>Welcome.</strong> This board is read-only until you sign in.
-          <span className="space" />
+          <strong>Welcome.</strong> This board is read-only until you sign in.{" "}
           <Link href="/register">Register (free)</Link> or <Link href="/login">Log in</Link> to activate it.
-          <div className="sub">Private & protected — we register to keep your content yours.</div>
+          <div className="sub">We register to protect your privacy—only you can access your space.</div>
         </div>
       )}
 
@@ -107,7 +103,7 @@ export default function Home() {
         aria-disabled={locked ? "true" : "false"}
       >
         <HeritageSelector path={path} onChange={setPath} />
-        {/* Clean slate after login: remounts when locked -> unlocked */}
+        {/* Remount on unlock -> Oracle starts clean (no old text) */}
         <OracleVoice key={locked ? "locked" : "unlocked"} path={path} />
       </div>
 
@@ -129,8 +125,6 @@ export default function Home() {
         }
         .previewBanner .sub { margin-top:4px; font-weight: 500; color:#475569; }
         .previewBanner a { color: #1d4ed8; text-decoration: underline; }
-        .previewBanner .space { display:inline-block; width:8px; }
-
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
