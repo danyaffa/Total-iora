@@ -1,5 +1,5 @@
 // FILE: /pages/index.js
-// Full-layout PREVIEW. No functionality except Register / Log in.
+// PREVIEW-ONLY: looks like the homepage, but totally inert except Register / Log in.
 
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -7,19 +7,18 @@ import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
 export default function IndexPreview() {
-  const path = "Universal";           // static preview path
-  const locked = true;                // always locked (inert preview)
+  const path = "Universal"; // static preview path
 
   return (
     <div className="page">
-      {/* Top nav — ONLY live links allowed */}
+      {/* Top nav — ONLY Register / Log in are live */}
       <nav className="topnav">
         <Link href="/register" className="btn cta">Register — Free Access</Link>
-        <span style={{width:8}} />
+        <span style={{ width: 8 }} />
         <Link href="/login" className="btn">Log in</Link>
       </nav>
 
-      {/* Logo + line */}
+      {/* Logo + short line */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
         <p className="note">
@@ -28,7 +27,7 @@ export default function IndexPreview() {
         </p>
       </section>
 
-      {/* Feature tiles — links replaced with inert spans */}
+      {/* Feature tiles — buttons are visually identical but disabled */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -70,13 +69,9 @@ export default function IndexPreview() {
         </div>
       </section>
 
-      {/* Board preview — visually identical, totally inert */}
-      <div
-        className="main preview-locked"
-        inert=""                 // blocks focus & clicks
-        aria-disabled="true"
-      >
-        <HeritageSelector path={path} onChange={()=>{}} />
+      {/* Board preview — rendered but fully inert */}
+      <div className="main preview-locked" inert="" aria-disabled="true">
+        <HeritageSelector path={path} onChange={() => {}} />
         <OracleVoice path={path} />
       </div>
 
@@ -84,13 +79,16 @@ export default function IndexPreview() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
+
         .topnav { display:flex; justify-content:center; padding:14px; flex-wrap:wrap; gap:8px; }
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
         .btn.disabled { opacity:.6; cursor:default; }
+
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
+
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
@@ -101,7 +99,8 @@ export default function IndexPreview() {
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
-        /* Make EVERYTHING inside the preview non-interactive and still readable */
+
+        /* Hard-disable all interactive child elements */
         .main.preview-locked a,
         .main.preview-locked button,
         .main.preview-locked [role="button"],
