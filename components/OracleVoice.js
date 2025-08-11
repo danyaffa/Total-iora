@@ -22,8 +22,9 @@ const SUBJECT_OPTIONS = [
   { value: "style:comfort", label: "Comfort & Healing" },
   { value: "topic:general", label: "General" },
   { value: "topic:healthy", label: "Healthy living" },
-  { value: "topic:relationships", label: "Relationships" },
-  { value: "topic:partner", label: "Finding a partner" },
+  { value: "topic:relationships", label: "Human to human" },
+  { value: "topic:skills", label: "Life skills (practical)" },
+  { value: "topic:partner", label: "Finding a life partner" },
   { value: "topic:work", label: "Work & purpose" },
   { value: "topic:parenting", label: "Parenting" },
   { value: "topic:grief", label: "Grief & healing" },
@@ -98,14 +99,12 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
 
-  /* restore/persist editor text so dictations never “disappear” */
+  /* restore/persist editor text */
   useEffect(() => { try {
     const t = localStorage.getItem("oracle_live_text");
     if (t) setLiveText(t);
   } catch {} }, []);
-  useEffect(() => { try {
-    localStorage.setItem("oracle_live_text", liveText || "");
-  } catch {} }, [liveText]);
+  useEffect(() => { try { localStorage.setItem("oracle_live_text", liveText || ""); } catch {} }, [liveText]);
 
   /* prepare TTS voice */
   useEffect(() => {
@@ -203,7 +202,6 @@ export default function OracleVoice({ path = "Universal" }) {
     try { window.speechSynthesis.cancel(); } catch {}
     setSpeaking(false);
   }
-
   function speakNow(text) {
     if (!("speechSynthesis" in window)) return;
     const u = new SpeechSynthesisUtterance(text);
@@ -233,6 +231,9 @@ export default function OracleVoice({ path = "Universal" }) {
     const mode = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
 
+    // If user explicitly asks for Rambam, add a clear instruction signal
+    const strictRambam = /\b(rambam|maimonides)\b/i.test(text);
+
     try {
       const quotes = await fetchGroundSources(text, path, chosenLang, 6);
       const contextBlock = quotes.length
@@ -241,9 +242,13 @@ export default function OracleVoice({ path = "Universal" }) {
           ).join("\n\n")
         : "";
 
-      const message = polish
-        ? `Please first restate the user's input in clear, simple English (fix grammar, keep meaning). Then answer their request. User input: """${text}"""` + (contextBlock ? `\n\n---\n${contextBlock}` : "")
-        : text + (contextBlock ? `\n\n---\n${contextBlock}` : "");
+      const extraGuard = strictRambam
+        ? "\n\nIMPORTANT: The user asked specifically for Rambam (Maimonides). Only provide quotations from Maimonides. Do NOT substitute any other author. If you cannot find a Maimonides quote, say so briefly."
+        : "";
+
+      const message = (polish
+        ? `Please first restate the user's input in clear, simple English (fix grammar, keep meaning). Then answer their request. User input: """${text}"""`
+        : text) + (contextBlock ? `\n\n---\n${contextBlock}` : "") + extraGuard;
 
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
