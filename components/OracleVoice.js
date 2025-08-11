@@ -1,53 +1,45 @@
 // FILE: /components/OracleVoice.js
-// Write OR Speak. Single editable box.
-// Mobile-safe SR, Stop Answer, Download/Print.
-// Shows quoted sources. Uses /api/ground-sources for ALL traditions.
-// 2025-08-11 updates:
-// - Added "Stop Answer" button to cancel TTS mid-speech
-// - Preserve dictated/typed text (and store to localStorage)
-// - Added "Fix my grammar before sending" toggle
-// - Volume slider stored as Number and label clarified
+// Write or Speak to the Oracle – mobile/desktop safe
+// 2025-08-11: fixes build (closed styled-jsx), adds Stop Answer,
+// preserves dictation, grammar-fix toggle, working volume slider.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-/* --- Select options --- */
+/* ---------- options ---------- */
 const LANG_OPTIONS = [
-  { value: "auto",   label: "Auto (by room)" },
-  { value: "en-US",  label: "English (US)" },
-  { value: "en-GB",  label: "English (UK)" },
-  { value: "en-IN",  label: "English (India)" },
-  { value: "ar",     label: "Arabic" },
-  { value: "he",     label: "Hebrew" },
+  { value: "auto", label: "Auto (by room)" },
+  { value: "en-US", label: "English (US)" },
+  { value: "en-GB", label: "English (UK)" },
+  { value: "en-IN", label: "English (India)" },
+  { value: "he", label: "Hebrew" },
+  { value: "ar", label: "Arabic" },
 ];
 
-// One “Subject” menu (styles + topics)
 const SUBJECT_OPTIONS = [
-  { value: "style:gentle",    label: "Gentle Guidance" },
+  { value: "style:gentle", label: "Gentle Guidance" },
   { value: "style:practical", label: "Practical Steps" },
-  { value: "style:wisdom",    label: "Ancient Wisdom" },
-  { value: "style:comfort",   label: "Comfort & Healing" },
-  { value: "topic:general",       label: "General" },
-  { value: "topic:healthy",       label: "Healthy living" },
-  { value: "topic:relationships", label: "Human to human" },
-  { value: "topic:skills",        label: "Life skills (practical)" },
-  { value: "topic:partner",       label: "Finding a life partner" },
-  { value: "topic:work",          label: "Work & purpose" },
-  { value: "topic:parenting",     label: "Parenting" },
-  { value: "topic:grief",         label: "Grief & healing" },
-  { value: "topic:addiction",     label: "Addiction support (non-clinical)" },
-  { value: "topic:mindfulness",   label: "Mindfulness & calm" },
+  { value: "style:wisdom", label: "Ancient Wisdom" },
+  { value: "style:comfort", label: "Comfort & Healing" },
+  { value: "topic:general", label: "General" },
+  { value: "topic:healthy", label: "Healthy living" },
+  { value: "topic:relationships", label: "Relationships" },
+  { value: "topic:partner", label: "Finding a partner" },
+  { value: "topic:work", label: "Work & purpose" },
+  { value: "topic:parenting", label: "Parenting" },
+  { value: "topic:grief", label: "Grief & healing" },
+  { value: "topic:addiction", label: "Addiction support (non-clinical)" },
+  { value: "topic:mindfulness", label: "Mindfulness & calm" },
 ];
 
 function autoLangFromPath(path) {
   switch (path) {
-    case "Muslim":    return "ar";
-    case "Jewish":    return "he";
-    case "Eastern":   return "en-IN";
+    case "Jewish": return "he";
+    case "Muslim": return "ar";
+    case "Eastern": return "en-IN";
     case "Christian": return "en-GB";
-    default:          return "en-US";
+    default: return "en-US";
   }
 }
-
 function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
@@ -59,39 +51,43 @@ function pickVoice(lang) {
     return v || voices[0];
   } catch { return null; }
 }
-
 async function fetchGroundSources(query, path, lang, max = 6) {
-  const r = await fetch("/api/ground-sources", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, path, lang, max }),
-  });
-  if (!r.ok) return [];
-  const js = await r.json().catch(() => ({}));
-  return Array.isArray(js.quotes) ? js.quotes : [];
+  try {
+    const r = await fetch("/api/ground-sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, path, lang, max }),
+    });
+    if (!r.ok) return [];
+    const js = await r.json().catch(() => ({}));
+    return Array.isArray(js.quotes) ? js.quotes : [];
+  } catch { return []; }
 }
 
-/* --- Component --- */
-export default function OracleVoice({ path }) {
-  const [listening, setListening]   = useState(false);
-  const [liveText, setLiveText]     = useState("");   // ONE editable box (typing or SR)
-  const [reply, setReply]           = useState("");
-  const [replying, setReplying]     = useState(false);
-  const [speaking, setSpeaking]     = useState(false);
-  const [lang, setLang]             = useState("auto");
-  const [subject, setSubject]       = useState("topic:general");
-  const [volume, setVolume]         = useState(1);
-  const [polish, setPolish]         = useState(true); // NEW: fix grammar
-  const [error, setError]           = useState("");
-  const [sources, setSources]       = useState([]);   // [{work,author,url,pos,quote}]
-  const [showSources, setShowSrcs]  = useState(false);
+/* ---------- component ---------- */
+export default function OracleVoice({ path = "Universal" }) {
+  const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [replying, setReplying] = useState(false);
 
-  const recRef        = useRef(null);
-  const finalBufRef   = useRef("");
-  const interimRef    = useRef("");
-  const canvasRef     = useRef(null);
-  const audioRef      = useRef({ ctx:null, analyser:null, src:null, animId:null, stream:null });
-  const voiceRef      = useRef(null);
+  const [liveText, setLiveText] = useState("");
+  const [reply, setReply] = useState("");
+  const [error, setError] = useState("");
+
+  const [lang, setLang] = useState("auto");
+  const [subject, setSubject] = useState("topic:general");
+  const [volume, setVolume] = useState(1);
+  const [polish, setPolish] = useState(true);
+
+  const recRef = useRef(null);
+  const finalBufRef = useRef("");
+  const interimRef = useRef("");
+  const voiceRef = useRef(null);
+  const canvasRef = useRef(null);
+  const audioRef = useRef({ ctx: null, analyser: null, src: null, animId: null, stream: null });
+
+  const [sources, setSources] = useState([]);
+  const [showSources, setShowSources] = useState(false);
 
   const persona = useMemo(() => (
     path === "Jewish" ? "Rabbi" :
@@ -102,49 +98,43 @@ export default function OracleVoice({ path }) {
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
 
-  /* --- Restore / persist text so dictations aren't “lost” --- */
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("oracle_live_text");
-      if (saved) setLiveText(saved);
-    } catch {}
-  }, []);
-  useEffect(() => {
-    try { localStorage.setItem("oracle_live_text", liveText || ""); } catch {}
-  }, [liveText]);
+  /* restore/persist editor text (avoid “deleted dictation”) */
+  useEffect(() => { try {
+    const t = localStorage.getItem("oracle_live_text");
+    if (t) setLiveText(t);
+  } catch {} }, []);
+  useEffect(() => { try {
+    localStorage.setItem("oracle_live_text", liveText || "");
+  } catch {} }, [liveText]);
 
-  /* --- TTS voice prepared --- */
+  /* prepare TTS voice */
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
     const assign = () => (voiceRef.current = pickVoice(chosenLang));
     window.speechSynthesis.onvoiceschanged = assign;
-    setTimeout(assign, 120);
+    setTimeout(assign, 150);
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [chosenLang]);
 
-  /* --- HiDPI canvas --- */
+  /* hidpi canvas */
   useEffect(() => {
-    const cnv = canvasRef.current;
-    if (!cnv) return;
+    const cnv = canvasRef.current; if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
     const w = 220, h = 220;
     cnv.width = w * dpr; cnv.height = h * dpr;
     cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
-    const c = cnv.getContext("2d"); c.scale(dpr, dpr);
+    cnv.getContext("2d").scale(dpr, dpr);
   }, []);
 
-  /* --- Mic visualization --- */
+  /* mic visualizer */
   async function startMicViz() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 512;
-    const src = ctx.createMediaStreamSource(stream);
-    src.connect(analyser);
+    const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+    const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
 
     const data = new Uint8Array(analyser.frequencyBinCount);
     const c = canvasRef.current.getContext("2d");
-
     const draw = () => {
       analyser.getByteFrequencyData(data);
       const avg = data.reduce((a, b) => a + b, 0) / data.length;
@@ -158,28 +148,24 @@ export default function OracleVoice({ path }) {
       audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
-
     audioRef.current = { ctx, analyser, src, animId: audioRef.current.animId, stream };
   }
   function stopMicViz() {
     cancelAnimationFrame(audioRef.current.animId || 0);
     try { audioRef.current.ctx && audioRef.current.ctx.close(); } catch {}
     try { audioRef.current.stream?.getTracks?.().forEach((t) => t.stop()); } catch {}
-    audioRef.current = { ctx:null, analyser:null, src:null, animId:null, stream:null };
-    const c = canvasRef.current?.getContext?.("2d");
-    if (c) c.clearRect(0, 0, 220, 220);
+    audioRef.current = { ctx: null, analyser: null, src: null, animId: null, stream: null };
+    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0, 0, 220, 220);
   }
 
-  /* --- Speech recognition (mobile safe) --- */
+  /* speech recognition */
   function ensureRecognizer() {
     if (recRef.current) return recRef.current;
-    const SR = (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
+    const SR = (window.webkitSpeechRecognition || window.SpeechRecognition);
     if (!SR) { alert("Voice recognition isn’t supported on this device."); return null; }
     const rec = new SR();
     rec.lang = chosenLang || "en-US";
-    rec.interimResults = true;
-    rec.continuous = true;
-    rec.maxAlternatives = 1;
+    rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
 
     rec.onresult = (e) => {
       let interim = "";
@@ -187,33 +173,22 @@ export default function OracleVoice({ path }) {
         const r = e.results[i];
         const t = (r[0]?.transcript || "").trim();
         if (!t) continue;
-        if (r.isFinal) {
-          finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
-        } else {
-          interim = (interim + " " + t).replace(/\s+/g, " ").trim();
-        }
+        if (r.isFinal) finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
+        else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
       }
       interimRef.current = interim;
-      const combined = [finalBufRef.current, interim].filter(Boolean).join(" ").trim();
-      setLiveText(combined);
+      setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
     };
-
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
     rec.onerror = () => {};
-
-    recRef.current = rec;
-    return rec;
+    recRef.current = rec; return rec;
   }
 
   async function onStart() {
-    setError(""); setReply(""); setSources([]); setShowSrcs(false);
-    // DO NOT clear liveText; user keeps dictation
+    setError(""); setReply(""); setSources([]); setShowSources(false);
     finalBufRef.current = ""; interimRef.current = "";
     try {
       await startMicViz();
-      if (audioRef.current?.ctx?.state === "suspended") {
-        try { await audioRef.current.ctx.resume(); } catch {}
-      }
       const rec = ensureRecognizer(); if (!rec) return;
       rec.lang = chosenLang || "en-US";
       setListening(true);
@@ -223,12 +198,10 @@ export default function OracleVoice({ path }) {
       alert("Microphone permission denied or unavailable.");
     }
   }
-
   function stopAnswerVoice() {
     try { window.speechSynthesis.cancel(); } catch {}
     setSpeaking(false);
   }
-
   async function onStop() {
     setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
@@ -239,28 +212,21 @@ export default function OracleVoice({ path }) {
     const text = (typed || captured).trim();
     if (!text) return;
 
-    // Preserve what was sent so it doesn't "disappear"
-    setLiveText(text);
+    setReplying(true); setError("");
 
     const isStyle = subject.startsWith("style:");
     const isTopic = subject.startsWith("topic:");
-    const mode  = isStyle ? subject.slice(6) : "gentle";
+    const mode = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
 
-    setReplying(true);
-    setError("");
-
     try {
-      // 1) Get grounded quotes for THIS room
       const quotes = await fetchGroundSources(text, path, chosenLang, 6);
-
-      // 2) Build context for the model + show them in UI
       const contextBlock = quotes.length
-        ? "\n\nSourced quotes:\n" +
-          quotes.map((s, i) => `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`).join("\n\n")
+        ? "\n\nSourced quotes:\n" + quotes.map((s, i) =>
+            `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`
+          ).join("\n\n")
         : "";
 
-      // Optional input polishing
       const message = polish
         ? `Please first restate the user's input in clear, simple English (fix grammar, keep meaning). Then answer their request. User input: """${text}"""` + (contextBlock ? `\n\n---\n${contextBlock}` : "")
         : text + (contextBlock ? `\n\n---\n${contextBlock}` : "");
@@ -268,16 +234,12 @@ export default function OracleVoice({ path }) {
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          path, mode, topic, lang: chosenLang
-        }),
+        body: JSON.stringify({ message, path, mode, topic, lang: chosenLang }),
       });
 
       if (!r.ok) {
-        const detail = await r.json().catch(async () => ({ error:"Unknown error", detail: await r.text() }));
-        setReply("");
-        setError(detail?.error ? `${detail.error}${detail.detail ? ` — ${detail.detail}` : ""}` : "Service error.");
+        const detail = await r.json().catch(async () => ({ error: "Unknown error", detail: await r.text() }));
+        setReply(""); setError(detail?.error ? `${detail.error}${detail.detail ? ` — ${detail.detail}` : ""}` : "Service error.");
         return;
       }
 
@@ -294,18 +256,16 @@ export default function OracleVoice({ path }) {
 
       if ("speechSynthesis" in window) {
         const u = new SpeechSynthesisUtterance(msg);
-        const v = pickVoice(chosenLang);
-        if (v) u.voice = v;
+        const v = pickVoice(chosenLang); if (v) u.voice = v;
         u.lang = chosenLang || "en-US";
-        u.volume = Math.max(0, Math.min(1, Number(volume) || 1)); // browser TTS volume (cap = system volume)
+        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
         u.rate = 1; u.pitch = 1;
         u.onstart = () => setSpeaking(true);
-        u.onend   = () => setSpeaking(false);
+        u.onend = () => setSpeaking(false);
         try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
       }
     } catch (e) {
-      setReply("");
-      setError(String(e?.message || e || "Network error"));
+      setReply(""); setError(String(e?.message || e || "Network error"));
     } finally {
       setReplying(false);
     }
@@ -314,27 +274,19 @@ export default function OracleVoice({ path }) {
   function downloadReply() {
     const text = [
       `Room: ${path} | Subject: ${subject} | Lang: ${chosenLang}`,
-      `Date: ${new Date().toLocaleString()}`,
-      "",
-      "You:",
-      liveText || finalBufRef.current,
-      "",
-      "Guide:",
-      reply,
+      `Date: ${new Date().toLocaleString()}`, "",
+      "You:", liveText, "", "Guide:", reply,
       ...(sources?.length ? ["", "Sources:", ...sources.map((s,i) =>
         `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}${s.pos != null ? ` (pos ${s.pos})` : ""}${s.url ? " — " + s.url : ""}\n${s.quote || ""}`
       )] : [])
     ].join("\n");
     const blob = new Blob([text], { type:"text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `oracle-${path}-${Date.now()}.txt`; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `oracle-${path}-${Date.now()}.txt`; a.click();
     URL.revokeObjectURL(url);
   }
-
   function printReply() {
-    const w = window.open("", "_blank", "width=720,height=900");
-    if (!w) return;
+    const w = window.open("", "_blank", "width=720,height=900"); if (!w) return;
     w.document.write(`
       <title>Oracle Guide</title>
       <pre style="font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;white-space:pre-wrap;padding:16px">
@@ -342,7 +294,7 @@ Room: ${path} | Subject: ${subject} | Lang: ${chosenLang}
 Date: ${new Date().toLocaleString()}
 
 You:
-${liveText || finalBufRef.current}
+${liveText}
 
 Guide:
 ${reply}
@@ -359,9 +311,7 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
       <header className="head">
         <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
-        <p className="lead">
-          Type or dictate. Edit your words if needed. I’ll answer when you press <b>Stop</b> or <b>Get Answer</b>.
-        </p>
+        <p className="lead">Type or dictate. Edit your words if needed. I’ll answer when you press <b>Stop</b> or <b>Get Answer</b>.</p>
 
         <div className="bar">
           <label>Language:
@@ -376,18 +326,10 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
           </label>
           <label title="Browser speech volume (0–100%). For louder audio, raise your device/system volume.">
             Guide voice volume:
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={volume}
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
-            />
+            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} />
           </label>
           <label title="When ON, your text is lightly corrected before sending.">
-            <input type="checkbox" checked={polish} onChange={(e) => setPolish(e.target.checked)} />
-            &nbsp;Fix my grammar before sending
+            <input type="checkbox" checked={polish} onChange={(e) => setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
           </label>
         </div>
       </header>
@@ -400,13 +342,7 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
           </div>
           <div className="log">
             <div className="label">You</div>
-            <textarea
-              className="edit"
-              rows={4}
-              value={liveText}
-              onChange={(e) => setLiveText(e.target.value)}
-              placeholder="Type or speak here… you can edit before sending."
-            />
+            <textarea className="edit" rows={4} value={liveText} onChange={(e) => setLiveText(e.target.value)} placeholder="Type or speak here…" />
             <div className="row">
               {!listening ? (
                 <button className="btn start" onClick={onStart}>🎙️ Start</button>
@@ -433,7 +369,7 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
 
             {sources?.length > 0 && (
               <div className="sources">
-                <button className="link" onClick={() => setShowSrcs(v => !v)}>
+                <button className="link" onClick={() => setShowSources(v => !v)}>
                   {showSources ? "Hide sources" : "Show sources & quotes"}
                 </button>
                 {showSources && (
@@ -483,4 +419,21 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
         @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
-        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-h
+        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
+        .bubble.guide { background:#eef6ff; border-color:#dbeafe; }
+        .edit { width:100%; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; min-height:120px; }
+        .row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); touch-action:manipulation; }
+        .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
+        .btn.stop  { color:#fff; background:#111827; border:none; }
+        .btn.ghost { background:#fff; }
+        .btn.danger { color:#fff; background:#b91c1c; border:none; }
+        .link { margin-top:8px; background:none; border:none; color:#2563eb; font-weight:700; cursor:pointer; padding:0; }
+        .sources { margin-top:6px; }
+        .srcList { list-style:none; padding:0; margin:8px 0 0; display:grid; gap:10px; }
+        .srcTitle { font-weight:700; color:#334155; }
+        .quote { margin:6px 0 0; padding-left:10px; border-left:3px solid #c7d2fe; color:#475569; }
+      `}</style>
+    </section>
+  );
+}
