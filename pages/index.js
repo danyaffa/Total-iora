@@ -1,71 +1,76 @@
 // FILE: /pages/index.js
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-/* ---------- helpers ---------- */
-function getCookie(name) {
-  if (typeof document === "undefined") return "";
-  return (document.cookie || "")
-    .split("; ")
-    .find((c) => c.startsWith(name + "="))
-    ?.split("=")[1] || "";
+// --- tiny helpers (client-only) ---
+function setCookie(name, value, maxAgeDays = 365) {
+  if (typeof document === "undefined") return;
+  const maxAge = maxAgeDays * 24 * 3600;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
 export default function Home() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
-  const [checking, setChecking] = useState(true);
 
-  const checkLock = useCallback(async () => {
-    setChecking(true);
-    let ok = false;
-    try {
-      const r = await fetch("/api/auth/whoami", { credentials: "include" });
-      if (r.ok) ok = true;
-      if (r.status === 404) ok = !!getCookie("ac_session");
-    } catch {
-      ok = !!getCookie("ac_session");
-    }
-    setUnlocked(Boolean(ok));
-    setChecking(false);
-  }, []);
-
+  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    checkLock();
-    const i = setInterval(checkLock, 1500);
-    return () => clearInterval(i);
-  }, [checkLock]);
+    // support ?dev=on -> sets dev cookie
+    if (typeof window !== "undefined") {
+      const usp = new URLSearchParams(window.location.search);
+      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
+    }
+
+    const update = () => {
+      const onHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
+      const isDevBypass =
+        (typeof window !== "undefined" &&
+          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+           has("ac_dev") ||
+           window.location.hostname === "localhost"));
+
+      // ✅ accept either registration cookie OR a real login session cookie
+      const isRegistered =
+        has("ac_registered") ||
+        has("ac_session") || // <- NEW: login session from /api/login
+        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+
+      setUnlocked(Boolean(isRegistered || isDevBypass));
+    };
+
+    update();                         // immediate
+    const t = setTimeout(update, 80); // catch any redirect race
+    window.addEventListener?.("storage", update);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
+  }, []);
 
   const locked = !unlocked;
 
-  async function doLogout(e) {
-    e?.preventDefault?.();
-    try { await fetch("/api/logout", { method: "POST", credentials: "include" }); } catch {}
-    try { localStorage.removeItem("ac_registered"); } catch {}
-    window.location.href = "/";
-  }
-
   return (
     <div className="page">
+      {/* Top nav — Register always visible */}
       <nav className="topnav">
-        <Link href="/register">Register — Free Access</Link>
-        {locked ? <Link href="/login">Log in</Link> : <a href="/api/logout" onClick={doLogout}>Log out</a>}
+        <Link href="/register" className="btn cta">Register — Free Access</Link>
       </nav>
 
+      {/* Logo + short line */}
       <section className="hero">
-        <img src="/TotalIora_Logo.png" alt="Total-Iora Logo" className="logo" />
+        <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
         <p className="note">
           Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
         </p>
-        {!unlocked && (
-          <div className="gateNote">{checking ? "Checking session…" : "Please log in to activate the page."}</div>
-        )}
       </section>
 
+      {/* Feature tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -79,7 +84,7 @@ export default function Home() {
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent" aria-disabled>Log in to Open</Link>
+                <Link href="/register" className="btn accent">Register to Open</Link>
               ) : (
                 <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
               )}
@@ -101,7 +106,7 @@ export default function Home() {
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent" aria-disabled>Log in to Get Yours</Link>
+                <Link href="/register" className="btn accent">Register to Get Yours</Link>
               ) : (
                 <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               )}
@@ -113,7 +118,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Gated: heritage + voice only after login */}
+      {/* GATED AREA — only after registration or dev bypass */}
       {unlocked ? (
         <>
           <HeritageSelector path={path} onChange={setPath} />
@@ -123,8 +128,8 @@ export default function Home() {
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Log in (free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
-            <Link href="/login" className="btn accent">Log in</Link>
+            <p>Register (free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <Link href="/register" className="btn accent">Register — Free Access</Link>
           </div>
         </section>
       )}
@@ -133,11 +138,14 @@ export default function Home() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-        .topnav { display:flex; gap:16px; justify-content:center; padding:14px; }
+
+        .topnav { display:flex; justify-content:center; padding:14px; }
+        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
+        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
+
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
-        .gateNote { margin-top:6px; color:#334155; font-size:.9rem; }
 
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
@@ -147,9 +155,9 @@ export default function Home() {
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-        .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
+
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
       `}</style>
