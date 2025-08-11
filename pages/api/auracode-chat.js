@@ -1,22 +1,20 @@
 // FILE: /pages/api/auracode-chat.js
-// Works WITHOUT any database.
-// OPTIONAL: If you later add Supabase + pgvector + the RPC `match_wisdom`, this will
-// automatically ground answers in your wisdom corpus. If not configured, it still replies.
+// Works WITH or WITHOUT a database.
+// OPTIONAL: If Supabase + pgvector + `match_wisdom` RPC is configured, it grounds
+// answers in your wisdom corpus.
+// NOW with free, on-demand grounding via public domain texts.
 //
-// Env required (now):
+// Env required:
 //   OPENAI_API_KEY
 //
-// Optional env (only if you later add retrieval):
+// Optional env (for private corpus):
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_KEY
 //
-// Frontend sends: { message, path, mode, topic, lang }
-
+// Frontend sends: { message, path, mode, topic, lang, remoteSources? }
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
 /* ---------------- helpers ---------------- */
-
 function langName(lang) {
   const s = String(lang || "");
   if (!s || s === "auto") return "English";
@@ -27,7 +25,6 @@ function langName(lang) {
   if (s.startsWith("en")) return "English";
   return "English";
 }
-
 const GUIDANCE = {
   Muslim:
     "Draw gently from Qur’an and Hadith where fitting, adab & akhlaq, and Sufi practice. Offer mercy and clarity.",
@@ -40,14 +37,12 @@ const GUIDANCE = {
   Universal:
     "Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
 };
-
 const MODE_PROMPTS = {
   general:   "Your mode is one of gentle guidance. Be wise and reflective.",
   practical: "Your mode is practical. Focus on clear, actionable steps.",
   wisdom:    "Your mode is timeless wisdom. Offer succinct, well-sourced insight.",
   comfort:   "Your mode is comforting. Be exceptionally warm, empathetic, and reassuring.",
 };
-
 const TOPIC_PROMPTS = {
   general:       "Topic: general guidance for the present moment.",
   healthy:       "Topic: healthy living—sleep, simple movement, nourishing food, self-care. Avoid medical advice.",
@@ -59,20 +54,15 @@ const TOPIC_PROMPTS = {
   addiction:     "Topic: addiction support (non-clinical). Encourage safe supports and professional help when needed.",
   mindfulness:   "Topic: mindfulness & calm—breath, presence, and simple contemplative practice.",
 };
-
 const ETHOS =
   "Never provide medical, legal, or financial diagnosis. Encourage qualified help when needed. Do not promise outcomes. Keep paragraphs short.";
-
 /* ---------------- OPTIONAL retrieval (safe to ignore if not set) ---------------- */
-
 async function retrievePassages({ question, path, lang }) {
   const SUPABASE_URL = process.env.SUPABASE_URL || "";
   const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-
   // If not configured, skip retrieval gracefully.
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !OPENAI_API_KEY) return [];
-
   // 1) Embed question
   const embRes = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
@@ -85,12 +75,10 @@ async function retrievePassages({ question, path, lang }) {
       input: question,
     }),
   });
-
   if (!embRes.ok) return [];
   const embJson = await embRes.json().catch(() => ({}));
   const embedding = embJson?.data?.[0]?.embedding;
   if (!embedding) return [];
-
   // 2) Call your Supabase RPC match_wisdom (you can create it later; if missing, this just fails silently)
   const filter_lang = (String(lang || "en").startsWith("ar") && "ar") || "en";
   const rpcRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/match_wisdom`, {
@@ -108,18 +96,14 @@ async function retrievePassages({ question, path, lang }) {
       filter_lang,
     }),
   }).catch(() => null);
-
   if (!rpcRes || !rpcRes.ok) return [];
   const rows = await rpcRes.json().catch(() => []);
   // Expect rows: { work, author, chunk, url, pos, similarity }
   return Array.isArray(rows) ? rows.slice(0, 8) : [];
 }
-
 /* ---------------- main handler ---------------- */
-
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   try {
     const {
       message,
@@ -127,12 +111,11 @@ export default async function handler(req, res) {
       mode = "general",
       topic = "general",
       lang = "en-US",
+      remoteSources, // From the new free-rag endpoint
     } = req.body || {};
-
     if (!message || typeof message !== "string" || !message.trim()) {
       return res.status(400).json({ error: "Missing message" });
     }
-
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_API_KEY) {
       return res.status(503).json({
@@ -140,17 +123,23 @@ export default async function handler(req, res) {
         hint: "Set OPENAI_API_KEY in your environment, then redeploy.",
       });
     }
-
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    // Try optional retrieval (safe no-op if Supabase not set up)
-    let passages = [];
+    // Retrieve from optional Supabase DB
+    let supabasePassages = [];
     try {
-      passages = await retrievePassages({ question: message, path, lang });
+      supabasePassages = await retrievePassages({ question: message, path, lang });
     } catch {
-      passages = [];
+      supabasePassages = []; // fail silently
     }
+
+    // Normalize and combine all sources (Supabase + free RAG)
+    const normalizedRemote = (Array.isArray(remoteSources) ? remoteSources : []).map(p => ({
+      ...p,
+      chunk: p.text || "", // use 'chunk' which the rest of the logic expects
+    }));
+    const passages = [...supabasePassages, ...normalizedRemote].slice(0, 8); // Combine and limit
 
     // Build optional context
     const contextBlock = passages.length
@@ -159,7 +148,6 @@ export default async function handler(req, res) {
           .map((p, i) => `[#${i + 1}] ${p.work}${p.author ? " — " + p.author : ""} (${p.pos ?? 0})\n${p.chunk}`)
           .join("\n\n")
       : "";
-
     const system = [
       `You are a calm, humane spiritual guide (${path}).`,
       GUIDANCE[path] || GUIDANCE.Universal,
@@ -173,11 +161,9 @@ export default async function handler(req, res) {
     ]
       .filter(Boolean)
       .join(" ");
-
     const userContent =
       message.trim() +
       (contextBlock ? `\n\n---\n${contextBlock}` : "");
-
     const payload = {
       model,
       temperature: 0.6,
@@ -186,10 +172,8 @@ export default async function handler(req, res) {
         { role: "user", content: userContent },
       ],
     };
-
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 25000);
-
     const r = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
@@ -198,20 +182,16 @@ export default async function handler(req, res) {
     }).catch((e) => {
       return { ok: false, status: 502, text: async () => String(e?.message || e) };
     });
-
     clearTimeout(t);
-
     if (!r.ok) {
       const detail = await (r.text?.() || Promise.resolve("Unknown upstream error"));
       return res.status(500).json({ error: "Upstream error", detail });
     }
-
     const data = await r.json().catch(() => ({}));
     const reply = data?.choices?.[0]?.message?.content?.trim();
     if (!reply) return res.status(502).json({ error: "No content returned from model." });
-
-    // Keep response shape backward-compatible (OracleVoice expects {reply})
-    // Optionally include sources if we had any (won’t break UI)
+    
+    // Rename 'chunk' back to 'text' for remote sources if needed, for consistency in the final response.
     const sources =
       passages.length
         ? passages.map((p, i) => ({
@@ -220,9 +200,9 @@ export default async function handler(req, res) {
             author: p.author || null,
             pos: p.pos ?? 0,
             url: p.url || null,
+            text: p.chunk, // Send `text` to the frontend for display
           }))
         : [];
-
     return res.status(200).json({ reply, ...(sources.length ? { sources } : {}) });
   } catch (err) {
     return res.status(500).json({ error: "Server error", detail: String(err?.message || err) });
