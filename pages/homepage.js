@@ -1,5 +1,6 @@
 // FILE: /pages/homepage.js
-// ACTIVE page: exactly your original logic & layout (interactive after unlock).
+// (UNCHANGED LAYOUT) — your original interactive page.
+// Shows a read-only banner when locked; becomes fully active after login.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -68,6 +69,14 @@ export default function HomePage() {
           or start with Sacred Notes.
         </p>
       </section>
+
+      {/* Read-only banner shown when not logged in */}
+      {locked && (
+        <div className="previewBanner" role="status">
+          You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
+          <Link href="/register">Register</Link> to use the interactive features.
+        </div>
+      )}
 
       {/* Feature tiles */}
       <section className="tiles">
