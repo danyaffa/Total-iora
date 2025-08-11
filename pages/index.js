@@ -68,7 +68,11 @@ export default function Home() {
               </p>
             </header>
             <footer className="f">
-              <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+              {locked ? (
+                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Open</Link>
+              ) : (
+                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+              )}
               <div className="disc">
                 This is your space. Do whatever you like on this page. We have no responsibility
                 for anything you write, and nothing is saved on our servers.
@@ -86,7 +90,11 @@ export default function Home() {
               </p>
             </header>
             <footer className="f">
-              <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+              {locked ? (
+                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Get Yours</Link>
+              ) : (
+                <Link href="/get-your-aura" className="btn accent">Get Your Oracle Universe DNA</Link>
+              )}
               <div className="disc">
                 Spiritual guidance only. No promises. No medical, legal, or financial advice.
               </div>
@@ -129,7 +137,6 @@ export default function Home() {
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
-        /* NEW STYLES */
         .previewBanner {
           margin: 8px auto 0; max-width: 1100px; padding: 10px 14px;
           background: #fffbe6; border: 1px solid #facc15; border-radius: 10px;
@@ -137,7 +144,6 @@ export default function Home() {
         }
         .previewBanner a { color: #1d4ed8; text-decoration: underline; }
 
-        /* Read-only, but fully visible */
         .main.preview-locked a,
         .main.preview-locked button,
         .main.preview-locked [role="button"],
