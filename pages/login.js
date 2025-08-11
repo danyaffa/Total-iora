@@ -1,31 +1,86 @@
-// FILE: /pages/api/login.js
-import { serialize } from "cookie";
+// FILE: /pages/login.js
+import { useState } from "react";
+import Link from "next/link";
 
-export default async function handler(req, res) {
-  // --- IMPORTANT: Replace with your actual user validation logic ---
-  // This is a placeholder. You should check the email and password
-  // against your database.
-  const { email, password } = req.body;
-  if (!email || !password || password.length < 8) {
-    return res.status(400).json({ ok: false, error: "Invalid credentials" });
+export default function Login() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setMsg("");
+    setBusy(true);
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data?.ok) {
+        setMsg(data?.error || "Invalid credentials");
+      } else {
+        // Redirect to home page on successful login
+        window.location.href = "/";
+      }
+    } catch {
+      setMsg("Network error. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   }
-  // --- End of placeholder logic ---
 
-  const isProd = process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
-  const host = req.headers.host || "";
-  // Set domain to .totaliora.com for production to share across subdomains
-  const domain = host.endsWith("totaliora.com") ? ".totaliora.com" : undefined;
+  return (
+    <div className="wrap">
+      <main className="card">
+        <h1>Log in</h1>
+        <form onSubmit={onSubmit} className="form">
+          <label>Email
+            <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+          </label>
 
-  // Replace "<session-token-or-id>" with your actual secure session token
-  const cookie = serialize("ac_session", "<session-token-or-id>", {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: "lax",
-    path: "/",
-    domain,
-    maxAge: 60 * 60 * 24 * 30, // 30 days
-  });
+          <label>Password
+            <input
+              type={show ? "text" : "password"}
+              value={password}
+              onChange={(e)=>setPassword(e.target.value)}
+              required
+              minLength={8}
+            />
+          </label>
 
-  res.setHeader("Set-Cookie", cookie);
-  return res.status(200).json({ ok: true });
+          <label className="row">
+            <input type="checkbox" checked={show} onChange={(e)=>setShow(e.target.checked)} />
+            <span>Show password</span>
+          </label>
+
+          <button className="btn" type="submit" disabled={busy}>
+            {busy ? "Signing in…" : "Log in"}
+          </button>
+
+          {msg && <p className="err">{msg}</p>}
+
+          <p className="note">
+            No account? <Link href="/register">Register free</Link>.
+          </p>
+        </form>
+      </main>
+
+      <style jsx>{`
+        .wrap { min-height:100vh; display:grid; place-items:center; background:linear-gradient(#fff,#f8fafc); padding:24px 12px; }
+        .card { width:100%; max-width:560px; background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; padding:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); }
+        h1 { margin:0 0 10px; font-size:2rem; }
+        .form { display:grid; gap:12px; }
+        label { display:flex; flex-direction:column; gap:6px; font-weight:700; color:#334155; }
+        .row { flex-direction:row; align-items:center; gap:8px; font-weight:600; }
+        input { border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; }
+        .btn { margin-top:6px; padding:12px 18px; border-radius:14px; font-weight:800; color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
+        .err { color:#b91c1c; font-weight:700; }
+        .note { color:#64748b; }
+      `}</style>
+    </div>
+  );
 }
