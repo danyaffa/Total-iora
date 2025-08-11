@@ -1,8 +1,7 @@
 // FILE: /components/OracleVoice.js
 // Write OR Speak. Single editable box.
 // Mobile-safe SR, Stop Answer, Download/Print.
-// Shows quoted sources. Pulls free Rambam quotes (Sefaria) + public-domain snippets (Gutendex).
-// No DB. No keys.
+// Shows quoted sources. Uses /api/ground-sources for ALL traditions.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -56,74 +55,15 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-/* ---------- Free public-domain snippets via Gutendex (backup) ---------- */
-function pickPlainText(formats) {
-  const keys = Object.keys(formats || {});
-  const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
-  return k ? formats[k] : null;
-}
-function splitParas(txt, maxChars = 900) {
-  const ps = txt.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-  const out = [];
-  for (const p of ps) {
-    if (p.length <= maxChars) out.push(p);
-    else for (let i=0;i<p.length;i+=maxChars) out.push(p.slice(i,i+maxChars));
-    if (out.length >= 40) break;
-  }
-  return out;
-}
-function scorePara(p, terms) {
-  const s = p.toLowerCase();
-  let sc = 0;
-  for (const t of terms) if (s.includes(t)) sc += t.length;
-  const L = p.length; if (L > 200 && L < 800) sc += 50;
-  return sc;
-}
-async function fetchFreeSources(query, topK = 4) {
-  try {
-    const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(query)}`, { redirect: "follow" });
-    if (!r.ok) return [];
-    const data = await r.json().catch(() => ({}));
-    const books = (data?.results || []).slice(0, 2);
-    const terms = String(query || "").toLowerCase().split(/\W+/).filter(Boolean);
-    const all = [];
-    for (const b of books) {
-      const url = pickPlainText(b.formats || {});
-      if (!url) continue;
-      const tr = await fetch(url, { redirect: "follow" });
-      if (!tr.ok) continue;
-      const raw = await tr.text();
-      const paras = splitParas(raw);
-      const scored = paras
-        .map((p, i) => ({ p, i, score: scorePara(p, terms) }))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))));
-      for (const s of scored) {
-        all.push({
-          work: b.title || "Project Gutenberg",
-          author: (b.authors?.[0]?.name) || null,
-          pos: s.i,
-          text: s.p.slice(0, 900),
-          url,
-        });
-      }
-    }
-    return all.slice(0, topK);
-  } catch { return []; }
-}
-
-/* ---------- Rambam quotes via our tiny API (Sefaria) ---------- */
-async function fetchRambamQuotes(query, max=5) {
-  try {
-    const r = await fetch("/api/rambam-quotes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, max })
-    });
-    if (!r.ok) return [];
-    const { quotes = [] } = await r.json().catch(() => ({ quotes: [] }));
-    return quotes; // {work, author, url, pos, text}
-  } catch { return []; }
+async function fetchGroundSources(query, path, lang, max = 6) {
+  const r = await fetch("/api/ground-sources", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, path, lang, max }),
+  });
+  if (!r.ok) return [];
+  const js = await r.json().catch(() => ({}));
+  return Array.isArray(js.quotes) ? js.quotes : [];
 }
 
 /* --- Component --- */
@@ -137,7 +77,7 @@ export default function OracleVoice({ path }) {
   const [subject, setSubject]       = useState("topic:general");
   const [volume, setVolume]         = useState(1);
   const [error, setError]           = useState("");
-  const [sources, setSources]       = useState([]);   // [{i,work,author,pos,url,quote}]
+  const [sources, setSources]       = useState([]);   // [{work,author,url,pos,quote}]
   const [showSources, setShowSrcs]  = useState(false);
 
   const recRef        = useRef(null);
@@ -242,7 +182,7 @@ export default function OracleVoice({ path }) {
     };
 
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
-    rec.onerror = () => {}; // ignore transient errors
+    rec.onerror = () => {};
 
     recRef.current = rec;
     return rec;
@@ -290,19 +230,13 @@ export default function OracleVoice({ path }) {
     setError("");
 
     try {
-      // 1) Try to fetch Rambam quotes when requested or in Jewish room
-      const wantsRambam = /rambam|maimonides/i.test(text) || path === "Jewish";
-      const rambam = wantsRambam ? await fetchRambamQuotes(text, 5) : [];
+      // 1) Get grounded quotes for THIS room
+      const quotes = await fetchGroundSources(text, path, chosenLang, 6);
 
-      // 2) Also try public-domain snippets (backup)
-      let freeSnips = [];
-      try { freeSnips = await fetchFreeSources(text, 3); } catch {}
-
-      // Build context block so the model will actually quote
-      const allCtx = [...rambam, ...freeSnips];
-      const contextBlock = allCtx.length
+      // 2) Build context for the model + show them in UI
+      const contextBlock = quotes.length
         ? "\n\nSourced quotes:\n" +
-          allCtx.map((s, i) => `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`).join("\n\n")
+          quotes.map((s, i) => `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (#${s.pos})` : ""}\n${s.text}`).join("\n\n")
         : "";
 
       const r = await fetch("/api/auracode-chat", {
@@ -325,21 +259,19 @@ export default function OracleVoice({ path }) {
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
 
-      // Merge any server sources with our fetched quotes/snippets
       const srv = Array.isArray(data?.sources) ? data.sources : [];
       const merged = [
-        ...srv.map((s, i) => ({ i: i + 1, work: s.work, author: s.author, pos: s.pos, url: s.url, quote: s.quote })),
-        ...allCtx.map((s) => ({ i: (srv.length || 0) + 1, work: s.work, author: s.author, pos: s.pos, url: s.url, quote: s.text })),
+        ...srv.map(s => ({ work: s.work, author: s.author, url: s.url, pos: s.pos, quote: s.quote })),
+        ...quotes.map(s => ({ work: s.work, author: s.author, url: s.url, pos: s.pos, quote: s.text }))
       ];
       setSources(merged);
 
-      // Speak
       if ("speechSynthesis" in window) {
         const u = new SpeechSynthesisUtterance(msg);
         const v = pickVoice(chosenLang);
         if (v) u.voice = v;
         u.lang = chosenLang || "en-US";
-        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+        u.volume = Math.max(0, Math.min(1, Number(volume) || 1)); // TTS can’t exceed device volume
         u.rate = 1; u.pitch = 1;
         u.onstart = () => setSpeaking(true);
         u.onend   = () => setSpeaking(false);
@@ -363,8 +295,8 @@ export default function OracleVoice({ path }) {
       "",
       "Guide:",
       reply,
-      ...(sources?.length ? ["", "Sources:", ...sources.map(s =>
-        `[#${s.i}] ${s.work}${s.author ? " — " + s.author : ""} (pos ${s.pos ?? 0})${s.url ? " — " + s.url : ""}\n${s.quote || ""}`
+      ...(sources?.length ? ["", "Sources:", ...sources.map((s,i) =>
+        `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}${s.pos != null ? ` (pos ${s.pos})` : ""}${s.url ? " — " + s.url : ""}\n${s.quote || ""}`
       )] : [])
     ].join("\n");
     const blob = new Blob([text], { type:"text/plain;charset=utf-8" });
@@ -389,7 +321,7 @@ ${liveText || finalBufRef.current}
 Guide:
 ${reply}
 
-${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author ? " — " + s.author : ""} (pos ${s.pos ?? 0})${s.url ? " — " + s.url : ""}\n${s.quote || ""}`).join("\n\n")}` : ""}
+${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}${s.pos != null ? ` (pos ${s.pos})` : ""}${s.url ? " — " + s.url : ""}\n${s.quote || ""}`).join("\n\n")}` : ""}
       </pre>`);
     w.document.close(); w.focus(); w.print();
   }
@@ -416,7 +348,7 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
               {SUBJECT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <label title="Browser TTS volume (0–100%)">
+          <label title="Browser TTS volume (0–100%). For louder audio, raise device volume.">
             Voice volume:
             <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(e.target.value)} />
           </label>
@@ -445,6 +377,8 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
               <button className="btn ghost" onClick={onStop}>Get Answer ⟶</button>
+              <button className="btn ghost" onClick={downloadReply}>Download</button>
+              <button className="btn ghost" onClick={printReply}>Print</button>
             </div>
           </div>
         </div>
@@ -466,10 +400,10 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
                 </button>
                 {showSources && (
                   <ul className="srcList">
-                    {sources.map((s, idx) => (
-                      <li key={idx}>
+                    {sources.map((s, i) => (
+                      <li key={i}>
                         <div className="srcTitle">
-                          [#{idx+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{typeof s.pos === "number" ? ` (pos ${s.pos})` : ""} {s.url ? <a href={s.url} target="_blank" rel="noreferrer">source</a> : null}
+                          [#{i+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{s.pos != null ? ` (pos ${s.pos})` : ""} {s.url ? <a href={s.url} target="_blank" rel="noreferrer">source</a> : null}
                         </div>
                         {s.quote ? <blockquote className="quote">“{s.quote}”</blockquote> : null}
                       </li>
@@ -480,20 +414,6 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
             )}
           </div>
         </div>
-      </div>
-
-      <div className="controls">
-        {(speaking || reply) && (
-          <>
-            {speaking && <button onClick={stopAnswerVoice} className="btn ghost">Stop Answer</button>}
-            {!!reply && (
-              <>
-                <button onClick={downloadReply} className="btn ghost">Download</button>
-                <button onClick={printReply} className="btn ghost">Print</button>
-              </>
-            )}
-          </>
-        )}
       </div>
 
       <style jsx>{`
@@ -529,7 +449,6 @@ ${sources?.length ? `Sources:\n${sources.map(s => `[#${s.i}] ${s.work}${s.author
         .bubble.guide { background:#eef6ff; border-color:#dbeafe; }
         .edit { width:100%; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; min-height:120px; }
         .row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
-        .controls { display:flex; gap:10px; align-items:center; justify-content:center; margin-top:14px; flex-wrap:wrap; padding:0 6px; }
         .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); touch-action:manipulation; }
         .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
         .btn.stop  { color:#fff; background:#111827; border:none; }
