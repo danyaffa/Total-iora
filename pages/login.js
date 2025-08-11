@@ -1,4 +1,6 @@
 // FILE: /pages/login.js
+// On success: set cookies and go to /homepage
+
 import { useState } from "react";
 import Link from "next/link";
 
@@ -29,8 +31,8 @@ export default function Login() {
       if (!r.ok || !data?.ok) {
         setMsg(data?.error || "Invalid email or password.");
       } else {
-        setCookie("ac_session", "1", 7);
-        setCookie("ac_registered", "1", 365); // many backends auto-login after register; harmless if already set
+        setCookie("ac_session","1",7);
+        setCookie("ac_registered","1",365);
         window.location.replace("/homepage");
       }
     } catch {
@@ -42,18 +44,11 @@ export default function Login() {
     <div className="wrap">
       <main className="card">
         <h1>Log in</h1>
-        <p className="lead">Enter to your private space. We keep your notes and questions private.</p>
+        <p className="lead">Enter your private space. We keep your notes and questions private.</p>
         <form onSubmit={onSubmit} className="form">
-          <label>Email
-            <input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
-          </label>
-          <label>Password
-            <input type={show ? "text" : "password"} value={password} onChange={(e)=>setPassword(e.target.value)} required minLength={8} />
-          </label>
-          <label className="row">
-            <input type="checkbox" checked={show} onChange={(e)=>setShow(e.target.checked)} />
-            <span>Show password</span>
-          </label>
+          <label>Email<input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required /></label>
+          <label>Password<input type={show ? "text" : "password"} value={password} onChange={(e)=>setPassword(e.target.value)} required minLength={8} /></label>
+          <label className="row"><input type="checkbox" checked={show} onChange={(e)=>setShow(e.target.checked)} /><span>Show password</span></label>
           <button className="btn" type="submit" disabled={busy}>{busy ? "Signing in…" : "Log in"}</button>
           {msg && <p className="err">{msg}</p>}
           <p className="note">No account? <Link href="/register">Register free</Link>.</p>
