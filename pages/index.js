@@ -1,4 +1,6 @@
 // FILE: /pages/index.js
+// Index MUST be STATIC until login. No dev bypass.
+
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -17,31 +19,27 @@ function getCookie(name) {
 export default function Home() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
+  const [checking, setChecking] = useState(true);
 
-  const checkLock = useCallback(() => {
-    // REQUIRE a real login session each visit. Registration by itself is not enough.
-    const hasSession = !!getCookie("ac_session"); // set by /api/login
-    // (Optional) developer bypass: ?dev=on once per device
-    const devBypass =
-      typeof window !== "undefined" &&
-      (getCookie("ac_dev") ||
-        process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-        window.location.hostname === "localhost");
-    setUnlocked(Boolean(hasSession || devBypass));
+  const checkLock = useCallback(async () => {
+    setChecking(true);
+    let ok = false;
+    try {
+      // Prefer server truth if available
+      const r = await fetch("/api/auth/whoami", { credentials: "include" });
+      if (r.ok) ok = true;
+      // If endpoint not present, fall back to session cookie
+      if (r.status === 404) ok = !!getCookie("ac_session");
+    } catch {
+      ok = !!getCookie("ac_session");
+    }
+    setUnlocked(Boolean(ok));
+    setChecking(false);
   }, []);
 
   useEffect(() => {
-    // allow ?dev=on to set a bypass cookie for local testing
-    if (typeof window !== "undefined") {
-      const usp = new URLSearchParams(window.location.search);
-      if (usp.get("dev") === "on") {
-        const maxAge = 30 * 24 * 3600;
-        const secure = window.location.protocol === "https:" ? "; Secure" : "";
-        document.cookie = `ac_dev=1; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`;
-      }
-    }
     checkLock();
-    const i = setInterval(checkLock, 1500); // catch changes after login/logout
+    const i = setInterval(checkLock, 1500); // react to login/logout quickly
     return () => clearInterval(i);
   }, [checkLock]);
 
@@ -49,12 +47,9 @@ export default function Home() {
 
   async function doLogout(e) {
     e?.preventDefault?.();
-    try {
-      await fetch("/api/logout", { method: "POST" });
-    } catch {}
-    // Clear any local hints just in case
+    try { await fetch("/api/logout", { method: "POST", credentials: "include" }); } catch {}
     try { localStorage.removeItem("ac_registered"); } catch {}
-    window.location.href = "/"; // reload cleanly without showing JSON
+    window.location.href = "/";
   }
 
   return (
@@ -72,6 +67,9 @@ export default function Home() {
           Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
         </p>
+        {!unlocked && (
+          <div className="gateNote">{checking ? "Checking session…" : "Please log in to activate the page."}</div>
+        )}
       </section>
 
       {/* Tiles */}
@@ -88,7 +86,7 @@ export default function Home() {
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent">Log in to Open</Link>
+                <Link href="/login" className="btn accent" aria-disabled>Log in to Open</Link>
               ) : (
                 <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
               )}
@@ -110,7 +108,7 @@ export default function Home() {
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent">Log in to Get Yours</Link>
+                <Link href="/login" className="btn accent" aria-disabled>Log in to Get Yours</Link>
               ) : (
                 <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               )}
@@ -146,6 +144,7 @@ export default function Home() {
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
+        .gateNote { margin-top:6px; color:#334155; font-size:.9rem; }
 
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
@@ -157,10 +156,4 @@ export default function Home() {
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn { display:inline-block; padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
-        .disc { color:#64748b; font-size:.92rem; }
-        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
-        .gatecard { text-align:center; }
-      `}</style>
-    </div>
-  );
-}
+        .disc { color:#64748b; font-size:.92rem;
