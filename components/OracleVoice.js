@@ -2,6 +2,8 @@
 // Write or Speak to the Oracle – mobile/desktop safe
 // Stop Answer • preserves dictation • grammar-fix toggle
 // Live volume replay (slider cancels & re-speaks so you hear it)
+// NEW: Doesn't re-send same input; sentence-aware TTS resume.
+// FIX: Volume change resumes the *current* sentence correctly.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -64,6 +66,10 @@ async function fetchGroundSources(query, path, lang, max = 6) {
     return Array.isArray(js.quotes) ? js.quotes : [];
   } catch { return []; }
 }
+function sig(s){ return String(s||"").trim().replace(/\s+/g," ").slice(0,400); } // cheap signature
+function splitIntoSentences(text){
+  return String(text||"").split(/(?<=[.!?])\s+/).filter(Boolean);
+}
 
 /* ---------- component ---------- */
 export default function OracleVoice({ path = "Universal" }) {
@@ -79,6 +85,11 @@ export default function OracleVoice({ path = "Universal" }) {
   const [subject, setSubject] = useState("topic:general");
   const [volume, setVolume] = useState(1);
   const [polish, setPolish] = useState(true);
+
+  const [editedInSession, setEditedInSession] = useState(false);
+  const lastSentSigRef = useRef("");
+  const speakState = useRef({ parts:[], idx:0 });
+  const wasCancelledRef = useRef(false);
 
   const recRef = useRef(null);
   const finalBufRef = useRef("");
@@ -105,6 +116,7 @@ export default function OracleVoice({ path = "Universal" }) {
     if (t) setLiveText(t);
   } catch {} }, []);
   useEffect(() => { try { localStorage.setItem("oracle_live_text", liveText || ""); } catch {} }, [liveText]);
+  useEffect(() => { if (liveText && liveText.length) setEditedInSession(true); }, [liveText]);
 
   /* prepare TTS voice */
   useEffect(() => {
@@ -177,6 +189,7 @@ export default function OracleVoice({ path = "Universal" }) {
       }
       interimRef.current = interim;
       setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
+      if ((finalBufRef.current || interim).length) setEditedInSession(true);
     };
     rec.onend = () => { if (listening) { try { rec.start(); } catch {} } };
     rec.onerror = () => {};
@@ -186,6 +199,7 @@ export default function OracleVoice({ path = "Universal" }) {
   async function onStart() {
     setError(""); setReply(""); setSources([]); setShowSources(false);
     finalBufRef.current = ""; interimRef.current = "";
+    setEditedInSession(false);
     try {
       await startMicViz();
       const rec = ensureRecognizer(); if (!rec) return;
@@ -202,15 +216,20 @@ export default function OracleVoice({ path = "Universal" }) {
     try { window.speechSynthesis.cancel(); } catch {}
     setSpeaking(false);
   }
-  function speakNow(text) {
-    if (!("speechSynthesis" in window)) return;
-    const u = new SpeechSynthesisUtterance(text);
+
+  function speakFrom(i) {
+    const parts = speakState.current.parts;
+    if (!parts[i]) { setSpeaking(false); return; }
+    const u = new SpeechSynthesisUtterance(parts[i]);
     const v = pickVoice(chosenLang); if (v) u.voice = v;
     u.lang = chosenLang || "en-US";
     u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-    u.rate = 1; u.pitch = 1;
-    u.onstart = () => setSpeaking(true);
-    u.onend = () => setSpeaking(false);
+    u.onend = () => {
+      if (wasCancelledRef.current) { wasCancelledRef.current = false; return; } // don't advance on cancel
+      speakState.current.idx = i + 1;
+      speakFrom(i + 1);
+    };
+    setSpeaking(true);
     try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
   }
 
@@ -222,7 +241,17 @@ export default function OracleVoice({ path = "Universal" }) {
     const typed = String(liveText || "").trim();
     const captured = [finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim();
     const text = (typed || captured).trim();
-    if (!text) return;
+    
+    if (!editedInSession || !text) {
+      setReply(""); setError("Please say or type a new question first.");
+      return;
+    }
+    const sigNow = sig(text);
+    if (sigNow && sigNow === lastSentSigRef.current) {
+      setReply(""); setError("That looks like the same text as last time. Change or add something new.");
+      return;
+    }
+    lastSentSigRef.current = sigNow;
 
     setReplying(true); setError("");
 
@@ -231,7 +260,6 @@ export default function OracleVoice({ path = "Universal" }) {
     const mode = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
 
-    // If user explicitly asks for Rambam, add a clear instruction signal
     const strictRambam = /\b(rambam|maimonides)\b/i.test(text);
 
     try {
@@ -273,7 +301,9 @@ export default function OracleVoice({ path = "Universal" }) {
       ];
       setSources(merged);
 
-      speakNow(msg);
+      speakState.current = { parts: splitIntoSentences(msg), idx: 0 };
+      speakFrom(0);
+
     } catch (e) {
       setReply(""); setError(String(e?.message || e || "Network error"));
     } finally {
@@ -281,13 +311,13 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  // LIVE: change volume while speaking -> replay so you hear it
   function onVolumeChange(e) {
     const v = parseFloat(e.target.value || "1");
     setVolume(isNaN(v) ? 1 : v);
-    if (speaking && reply) {
-      stopAnswerVoice();
-      setTimeout(() => speakNow(reply), 120);
+    if (speaking) {
+      wasCancelledRef.current = true;
+      window.speechSynthesis.cancel();
+      setTimeout(() => speakFrom(speakState.current.idx), 120);
     }
   }
 
