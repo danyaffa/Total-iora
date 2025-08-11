@@ -1,4 +1,6 @@
 // FILE: /pages/register.js
+// On success: set cookies and go to /homepage
+
 import { useState } from "react";
 import Link from "next/link";
 
@@ -39,12 +41,11 @@ export default function Register() {
       if (!r.ok || !data?.ok) {
         setMsg(data?.error || "Registration failed.");
       } else {
-        // mark client-side so Index stays static but Homepage unlocks
         setCookie("ac_registered","1",365);
-        setCookie("ac_session","1",7); // if API also creates a session
+        setCookie("ac_session","1",7);
         window.location.replace("/homepage");
       }
-    } catch (err) {
+    } catch {
       setMsg("Could not register. Please try again.");
     } finally { setBusy(false); }
   }
