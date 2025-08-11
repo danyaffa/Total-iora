@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "cookie": "^0.6.0",
     "firebase": "^10.12.2",
     "next": "14.2.5",
     "openai": "^4.53.2",
