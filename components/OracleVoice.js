@@ -1,7 +1,7 @@
 // FILE: /components/OracleVoice.js
 // Write or Speak to the Oracle – mobile/desktop safe
-// 2025-08-11: fixes build (closed styled-jsx), adds Stop Answer,
-// preserves dictation, grammar-fix toggle, working volume slider.
+// Stop Answer • preserves dictation • grammar-fix toggle
+// Live volume replay (slider cancels & re-speaks so you hear it)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -11,8 +11,8 @@ const LANG_OPTIONS = [
   { value: "en-US", label: "English (US)" },
   { value: "en-GB", label: "English (UK)" },
   { value: "en-IN", label: "English (India)" },
-  { value: "he", label: "Hebrew" },
   { value: "ar", label: "Arabic" },
+  { value: "he", label: "Hebrew" },
 ];
 
 const SUBJECT_OPTIONS = [
@@ -98,7 +98,7 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
 
-  /* restore/persist editor text (avoid “deleted dictation”) */
+  /* restore/persist editor text so dictations never “disappear” */
   useEffect(() => { try {
     const t = localStorage.getItem("oracle_live_text");
     if (t) setLiveText(t);
@@ -198,10 +198,24 @@ export default function OracleVoice({ path = "Universal" }) {
       alert("Microphone permission denied or unavailable.");
     }
   }
+
   function stopAnswerVoice() {
     try { window.speechSynthesis.cancel(); } catch {}
     setSpeaking(false);
   }
+
+  function speakNow(text) {
+    if (!("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickVoice(chosenLang); if (v) u.voice = v;
+    u.lang = chosenLang || "en-US";
+    u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+    u.rate = 1; u.pitch = 1;
+    u.onstart = () => setSpeaking(true);
+    u.onend = () => setSpeaking(false);
+    try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
+  }
+
   async function onStop() {
     setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
@@ -254,20 +268,21 @@ export default function OracleVoice({ path = "Universal" }) {
       ];
       setSources(merged);
 
-      if ("speechSynthesis" in window) {
-        const u = new SpeechSynthesisUtterance(msg);
-        const v = pickVoice(chosenLang); if (v) u.voice = v;
-        u.lang = chosenLang || "en-US";
-        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-        u.rate = 1; u.pitch = 1;
-        u.onstart = () => setSpeaking(true);
-        u.onend = () => setSpeaking(false);
-        try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
-      }
+      speakNow(msg);
     } catch (e) {
       setReply(""); setError(String(e?.message || e || "Network error"));
     } finally {
       setReplying(false);
+    }
+  }
+
+  // LIVE: change volume while speaking -> replay so you hear it
+  function onVolumeChange(e) {
+    const v = parseFloat(e.target.value || "1");
+    setVolume(isNaN(v) ? 1 : v);
+    if (speaking && reply) {
+      stopAnswerVoice();
+      setTimeout(() => speakNow(reply), 120);
     }
   }
 
@@ -326,7 +341,7 @@ ${sources?.length ? `Sources:\n${sources.map((s,i) => `[#${i+1}] ${s.work}${s.au
           </label>
           <label title="Browser speech volume (0–100%). For louder audio, raise your device/system volume.">
             Guide voice volume:
-            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} />
+            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={onVolumeChange} />
           </label>
           <label title="When ON, your text is lightly corrected before sending.">
             <input type="checkbox" checked={polish} onChange={(e) => setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
