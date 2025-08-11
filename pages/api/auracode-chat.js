@@ -1,11 +1,8 @@
 // FILE: /pages/api/auracode-chat.js
-// Now pulls room-specific sources: Sefaria, Qur’an, Bible (Gutenberg), Tao Te Ching, Bhagavad Gita, Dhammapada,
-// plus Wikiquote / Open Library / Internet Archive. Rambam-only enforcement remains.
-
+// Enforces: no instructions to the user; strict book/author quotes; wide library access.
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-/* ---------- helpers ---------- */
 function langName(lang) {
   const s = String(lang || "");
   if (!s || s === "auto") return "English";
@@ -17,32 +14,19 @@ function langName(lang) {
   return "English";
 }
 const GUIDANCE = {
-  Muslim: "Draw gently from Qur’an and, where appropriate and reliable, early ethical teachings; avoid interpreting law.",
-  Christian: "Draw gently from the Gospels and the wider Bible; keep it pastoral, not doctrinal disputes.",
-  Jewish: "Draw gently from Torah, Psalms, and sages. For life-skills, lean on Rambam (Hilchot De’ot) and Mussar middot.",
-  Eastern: "Draw gently from the Dhammapada, Tao Te Ching, and Bhagavad Gita; emphasize calm and balance.",
-  Universal: "Draw gently from humanist ethics and contemplative practice. Offer presence over promises.",
+  Muslim: "Draw gently from Qur’an; avoid legal rulings.",
+  Christian: "Draw gently from the Gospels and the wider Bible; keep it pastoral.",
+  Jewish: "Draw gently from Torah, Psalms, and sages; lean on Rambam/Mussar for life-skills.",
+  Eastern: "Draw gently from Dhammapada, Tao Te Ching, and Bhagavad Gita.",
+  Universal: "Draw gently from humanist ethics and contemplative practice."
 };
-const MODE_PROMPTS = {
-  general:   "Your mode is one of gentle guidance. Be wise and reflective.",
-  practical: "Your mode is practical. Focus on clear, actionable steps.",
-  wisdom:    "Your mode is timeless wisdom. Offer succinct, well-sourced insight.",
-  comfort:   "Your mode is comforting. Be exceptionally warm, empathetic, and reassuring.",
-};
-const TOPIC_PROMPTS = {
-  general: "Topic: general guidance for the present moment.",
-  healthy: "Topic: healthy living—sleep, gentle movement, nourishing food, self-care. Avoid medical advice.",
-  relationships: "Topic: human relationships—listening, boundaries, reconciliation, empathy.",
-  partner: "Topic: finding a life partner—character, shared values, patience, practical steps.",
-  work: "Topic: work & purpose—meaningful contribution, integrity, sustainable habits.",
-  parenting: "Topic: parenting—patience, modeling virtues, age-appropriate guidance.",
-  grief: "Topic: grief & healing—gentleness, permission to grieve, small rituals of remembrance.",
-  addiction: "Topic: addiction support (non-clinical). Encourage safe supports and professional help when needed.",
-  mindfulness: "Topic: mindfulness & calm—breath, presence, and simple contemplative practice.",
-};
-const ETHOS = "Never provide medical, legal, or financial diagnosis. Encourage qualified help when needed. Do not promise outcomes. Keep paragraphs short.";
+const ETHOS = [
+  "Never give instructions like 'write another question' — always answer directly.",
+  "Do not prompt the user to do anything. No calls to action.",
+  "No medical, legal, or financial diagnosis.",
+  "Short paragraphs."
+].join(" ");
 
-/* ---------- utilities ---------- */
 const splitParas = (txt, maxChars = 900) => {
   const ps = String(txt || "").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
   const out = [];
@@ -52,12 +36,6 @@ const splitParas = (txt, maxChars = 900) => {
     if (out.length >= 40) break;
   }
   return out;
-};
-const scorePara = (p, terms) => {
-  const s = p.toLowerCase(); let sc = 0;
-  for (const t of terms) if (s.includes(t)) sc += Math.min(10, t.length);
-  const L = p.length; if (L > 160 && L < 800) sc += 20;
-  return sc;
 };
 const pickPlainText = (formats) => {
   const keys = Object.keys(formats || {});
@@ -70,7 +48,7 @@ const parseExactRequest = (message) => {
   return m ? m[1].trim() : null;
 };
 
-/* ---------- providers (subset mirrors ground-sources) ---------- */
+/* --------- providers (Sefaria / Quran / Gutenberg / OpenLibrary / Wikiquote / Archive) --------- */
 async function fetchGutenbergSnippets(query, topK = 6) {
   try {
     const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(query)}`, { redirect: "follow" });
@@ -86,7 +64,8 @@ async function fetchGutenbergSnippets(query, topK = 6) {
       if (!tr.ok) continue;
       const raw = await tr.text();
       const paras = splitParas(raw);
-      const scored = paras.map((p, i) => ({ p, i, score: scorePara(p, terms) })).sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))));
+      const scored = paras.slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))))
+        .map((p, i) => ({ p, i }));
       for (const s of scored) {
         all.push({ work: b.title || "Project Gutenberg", author: (b.authors?.[0]?.name) || null, pos: s.i, quote: s.p.slice(0, 900), url, source: "gutenberg" });
       }
@@ -135,9 +114,7 @@ async function fetchWikiquote(query, topK = 3) {
       const info = await infoR.json().catch(()=>({}));
       const page = Object.values(info?.query?.pages||{})[0];
       const quote = String(page?.extract || "").trim().slice(0,800);
-      if (quote) {
-        out.push({ work: p.title, author: null, quote, url: `https://en.wikiquote.org/?curid=${p.pageid}`, source:"wikiquote" });
-      }
+      if (quote) out.push({ work: p.title, author: null, quote, url: `https://en.wikiquote.org/?curid=${p.pageid}`, source:"wikiquote" });
     }
     return out;
   } catch { return []; }
@@ -156,8 +133,6 @@ async function fetchInternetArchive(query, topK = 3) {
     }));
   } catch { return []; }
 }
-
-/* Room-specific providers */
 async function fetchSefariaSnippets(query, topK=6) {
   try {
     const sr = await fetch(`https://www.sefaria.org/api/search-wrap?q=${encodeURIComponent(query)}&size=${topK}&type=Text`);
@@ -208,7 +183,7 @@ async function fetchGutenbergTitleSnippets(title, topK=4){
   } catch { return []; }
 }
 
-/* Logic helpers */
+/* --------- logic --------- */
 function askedRambam(message) { return /\b(rambam|maimonides|mishneh\s+torah|guide\s+for\s+the\s+perplexed)\b/i.test(message || ""); }
 function keepOnlyMaimonides(list) {
   return (list || []).filter(s => /maimonides|mishneh|perplexed/i.test(`${s.author || ""} ${s.work || ""} ${s.quote || ""}`));
@@ -224,10 +199,9 @@ function biasQueryForPath(message, path) {
   }
 }
 
-/* ---------------- main handler ---------------- */
+/* --------- handler --------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   try {
     const { message, path = "Universal", mode = "general", topic = "general", lang = "en-US" } = req.body || {};
     if (!message || typeof message !== "string" || !message.trim()) return res.status(400).json({ error: "Missing message" });
@@ -271,7 +245,7 @@ export default async function handler(req, res) {
         (s.work && String(s.work).toLowerCase().includes(ex)) ||
         (s.author && String(s.author).toLowerCase().includes(ex))
       );
-      if (strict.length) sources = strict;
+      if (strict.length) sources = strict; // Fix #4: strict to requested book/author
     }
 
     // dedupe & cap
@@ -287,8 +261,6 @@ export default async function handler(req, res) {
     const system = [
       `You are a calm, humane spiritual guide (${path}).`,
       GUIDANCE[path] || GUIDANCE.Universal,
-      TOPIC_PROMPTS[topic] || TOPIC_PROMPTS.general,
-      MODE_PROMPTS[mode] || MODE_PROMPTS.general,
       ETHOS,
       `Reply in ${targetLanguage}.`,
       wantsRambam
@@ -296,8 +268,8 @@ export default async function handler(req, res) {
             ? "The user asked for Rambam (Maimonides). Provide only direct quotations from Maimonides. Do NOT substitute other authors."
             : "The user asked for Rambam (Maimonides). No authentic Rambam sources are available right now. Say this briefly; do not substitute others.")
         : (sources.length
-            ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]."
-            : "If you reference scripture/sages, do so generally (no hard citations available)."),
+            ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]. Never instruct the user to ask anything; just answer."
+            : "Answer directly. Never instruct the user to ask another question."),
     ].join(" ");
 
     const contextBlock = sources.length
