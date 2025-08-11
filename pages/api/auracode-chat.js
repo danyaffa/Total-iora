@@ -1,5 +1,6 @@
 // FILE: /pages/api/auracode-chat.js
-// Enforces: no instructions to the user; strict book/author quotes; wide library access.
+// STRICT SOURCE WHITELIST — removes CIA/FOIA/government/etc.
+// Keeps only: Sefaria (Jewish), alquran.cloud (Qur’an), Gutenberg (KJV, Tao Te Ching, Bhagavad Gita, Dhammapada).
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -22,117 +23,25 @@ const GUIDANCE = {
 };
 const ETHOS = [
   "Never give instructions like 'write another question' — always answer directly.",
-  "Do not prompt the user to do anything. No calls to action.",
   "No medical, legal, or financial diagnosis.",
   "Short paragraphs."
 ].join(" ");
 
-const splitParas = (txt, maxChars = 900) => {
-  const ps = String(txt || "").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-  const out = [];
-  for (const p of ps) {
-    if (p.length <= maxChars) out.push(p);
-    else for (let i=0;i<p.length;i+=maxChars) out.push(p.slice(i,i+maxChars));
-    if (out.length >= 40) break;
-  }
-  return out;
-};
+const splitParas = (txt, maxChars = 900) => String(txt||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).slice(0,50);
 const pickPlainText = (formats) => {
   const keys = Object.keys(formats || {});
   const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
   return k ? formats[k] : null;
 };
-const parseExactRequest = (message) => {
-  const s = String(message||"");
-  const m = s.match(/\b(?:quote|quotes?)\s+(?:from|of)\s+["“”']?([^"”']+)["“”']?/i);
-  return m ? m[1].trim() : null;
-};
 
-/* --------- providers (Sefaria / Quran / Gutenberg / OpenLibrary / Wikiquote / Archive) --------- */
-async function fetchGutenbergSnippets(query, topK = 6) {
-  try {
-    const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(query)}`, { redirect: "follow" });
-    if (!r.ok) return [];
-    const data = await r.json().catch(() => ({}));
-    const books = (data?.results || []).slice(0, 3);
-    const terms = String(query || "").toLowerCase().split(/\W+/).filter(Boolean);
-    const all = [];
-    for (const b of books) {
-      const url = pickPlainText(b.formats || {});
-      if (!url) continue;
-      const tr = await fetch(url, { redirect: "follow" });
-      if (!tr.ok) continue;
-      const raw = await tr.text();
-      const paras = splitParas(raw);
-      const scored = paras.slice(0, Math.max(1, Math.ceil(topK / Math.max(1, books.length))))
-        .map((p, i) => ({ p, i }));
-      for (const s of scored) {
-        all.push({ work: b.title || "Project Gutenberg", author: (b.authors?.[0]?.name) || null, pos: s.i, quote: s.p.slice(0, 900), url, source: "gutenberg" });
-      }
-    }
-    return all.slice(0, topK);
-  } catch { return []; }
+/* ---------- WHITELIST FILTER ---------- */
+function allowSource(s) {
+  const all = `${s.work||""} ${s.author||""} ${s.url||""}`.toLowerCase();
+  const banned = /(central intelligence agency|cia|foia|world factbook|\.gov\b|whitehouse|nsa|fbi)/i;
+  return !banned.test(all);
 }
-async function fetchOpenLibrarySnippets(query, topK = 4) {
-  try {
-    const r = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=5`, { redirect:"follow" });
-    if (!r.ok) return [];
-    const data = await r.json().catch(() => ({}));
-    const docs = Array.isArray(data?.docs) ? data.docs.slice(0, 5) : [];
-    const out = [];
-    for (const d of docs) {
-      const workKey = (d.key || "").startsWith("/works/") ? d.key : null;
-      const title = d.title || "Open Library";
-      const author = Array.isArray(d.author_name) ? d.author_name[0] : (d.author_name || null);
-      let quote = "";
-      if (workKey) {
-        try {
-          const wr = await fetch(`https://openlibrary.org${workKey}.json`, { redirect:"follow" });
-          if (wr.ok) {
-            const wj = await wr.json().catch(() => ({}));
-            const desc = wj?.description;
-            quote = typeof desc === "string" ? desc : (desc?.value || "");
-            quote = String(quote || "").trim().slice(0, 700);
-          }
-        } catch {}
-      }
-      out.push({ work: title, author: author || null, pos: 0, quote: quote || "", url: workKey ? `https://openlibrary.org${workKey}` : undefined, source: "openlibrary" });
-    }
-    return out.slice(0, topK);
-  } catch { return []; }
-}
-async function fetchWikiquote(query, topK = 3) {
-  try {
-    const endpoint = `https://en.wikiquote.org/w/api.php?action=query&origin=*&format=json&list=search&srsearch=${encodeURIComponent(query)}&srlimit=${topK}`;
-    const r = await fetch(endpoint); if (!r.ok) return [];
-    const data = await r.json().catch(()=>({}));
-    const pages = data?.query?.search || [];
-    const out = [];
-    for (const p of pages.slice(0, topK)) {
-      const infoR = await fetch(`https://en.wikiquote.org/w/api.php?action=query&origin=*&format=json&prop=extracts&exintro&explaintext&pageids=${p.pageid}`);
-      if (!infoR.ok) continue;
-      const info = await infoR.json().catch(()=>({}));
-      const page = Object.values(info?.query?.pages||{})[0];
-      const quote = String(page?.extract || "").trim().slice(0,800);
-      if (quote) out.push({ work: p.title, author: null, quote, url: `https://en.wikiquote.org/?curid=${p.pageid}`, source:"wikiquote" });
-    }
-    return out;
-  } catch { return []; }
-}
-async function fetchInternetArchive(query, topK = 3) {
-  try {
-    const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)} AND mediatype:texts&fl[]=identifier,title,creator,description&rows=${topK}&output=json`;
-    const r = await fetch(url); if (!r.ok) return [];
-    const data = await r.json().catch(()=>({}));
-    return (data?.response?.docs || []).map(d => ({
-      work: d.title || "Internet Archive",
-      author: Array.isArray(d.creator) ? d.creator[0] : (d.creator || null),
-      quote: String(d.description || "").trim().slice(0, 800),
-      url: d.identifier ? `https://archive.org/details/${d.identifier}` : null,
-      source: "internetarchive",
-    }));
-  } catch { return []; }
-}
+
+/* ---------- PROVIDERS (ONLY APPROVED) ---------- */
 async function fetchSefariaSnippets(query, topK=6) {
   try {
     const sr = await fetch(`https://www.sefaria.org/api/search-wrap?q=${encodeURIComponent(query)}&size=${topK}&type=Text`);
@@ -150,7 +59,7 @@ async function fetchSefariaSnippets(query, topK=6) {
       if (!quote) continue;
       out.push({ work: ref, author: "Sefaria", pos: 0, quote, url: `https://www.sefaria.org/${encodeURIComponent(ref)}`, source: "sefaria" });
     }
-    return out;
+    return out.filter(allowSource);
   } catch { return []; }
 }
 async function fetchQuranSnippets(query, topK=6){
@@ -166,7 +75,7 @@ async function fetchQuranSnippets(query, topK=6){
       quote: String(m.text || "").slice(0,800),
       url: `https://quran.com/${m.surah?.number || ""}/${m.numberInSurah || ""}`,
       source: "quran",
-    }));
+    })).filter(allowSource);
   } catch { return []; }
 }
 async function fetchGutenbergTitleSnippets(title, topK=4){
@@ -179,29 +88,14 @@ async function fetchGutenbergTitleSnippets(title, topK=4){
     const tr = await fetch(url); if (!tr.ok) return [];
     const raw = await tr.text();
     const paras = splitParas(raw);
-    return paras.slice(0, topK).map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, pos:i, quote: p.slice(0,900), url, source:"gutenberg" }));
+    return paras.slice(0, topK).map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, pos:i, quote: p.slice(0,900), url, source:"gutenberg" })).filter(allowSource);
   } catch { return []; }
 }
 
-/* --------- logic --------- */
-function askedRambam(message) { return /\b(rambam|maimonides|mishneh\s+torah|guide\s+for\s+the\s+perplexed)\b/i.test(message || ""); }
-function keepOnlyMaimonides(list) {
-  return (list || []).filter(s => /maimonides|mishneh|perplexed/i.test(`${s.author || ""} ${s.work || ""} ${s.quote || ""}`));
-}
-function biasQueryForPath(message, path) {
-  const m = String(message || "");
-  switch (path) {
-    case "Jewish": return `${m} Rambam "Pirkei Avot" Torah Psalms`;
-    case "Muslim": return `${m} Qur'an Surah`;
-    case "Christian": return `${m} Gospel Proverbs Psalms`;
-    case "Eastern": return `${m} Dhammapada "Tao Te Ching" Bhagavad Gita`;
-    default: return m;
-  }
-}
-
-/* --------- handler --------- */
+/* ---------- handler ---------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
   try {
     const { message, path = "Universal", mode = "general", topic = "general", lang = "en-US" } = req.body || {};
     if (!message || typeof message !== "string" || !message.trim()) return res.status(400).json({ error: "Missing message" });
@@ -212,47 +106,32 @@ export default async function handler(req, res) {
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    const wantsRambam = askedRambam(message);
-    const exactRequest = parseExactRequest(message);
-    let sources = [];
-
-    const biased = biasQueryForPath(message, path);
+    // ONLY approved sources
     const roomPromises = [];
-    if (path === "Jewish" || /rambam|pirkei|psalms|talmud|mishna|tehillim/i.test(message)) roomPromises.push(fetchSefariaSnippets(exactRequest || message, 6));
-    if (path === "Muslim" || /\b(qur'?an|koran)\b/i.test(message)) roomPromises.push(fetchQuranSnippets(exactRequest || message, 6));
-    if (path === "Christian" || /\bbible\b/i.test(message)) roomPromises.push(fetchGutenbergTitleSnippets("King James Bible", 6));
-    if (path === "Eastern" || /tao\s*te\s*ching|bhagavad\s*gita|dhammapada/i.test(message)) {
+    if (path === "Jewish") roomPromises.push(fetchSefariaSnippets(message, 6));
+    if (path === "Muslim") roomPromises.push(fetchQuranSnippets(message, 6));
+    if (path === "Christian") roomPromises.push(fetchGutenbergTitleSnippets("King James Bible", 6));
+    if (path === "Eastern") {
       roomPromises.push(fetchGutenbergTitleSnippets("Tao Te Ching", 4));
       roomPromises.push(fetchGutenbergTitleSnippets("Bhagavad Gita", 4));
       roomPromises.push(fetchGutenbergTitleSnippets("Dhammapada", 4));
     }
-
-    const providerPromises = [
-      ...roomPromises,
-      fetchGutenbergSnippets(biased, 6),
-      fetchOpenLibrarySnippets(biased, 4),
-      fetchWikiquote(biased, 3),
-      fetchInternetArchive(biased, 3),
-    ];
-    const results = await Promise.allSettled(providerPromises);
-    for (const r of results) if (r.status === "fulfilled" && Array.isArray(r.value)) sources.push(...r.value);
-
-    if (wantsRambam) sources = keepOnlyMaimonides(sources);
-
-    if (exactRequest) {
-      const ex = exactRequest.toLowerCase();
-      const strict = sources.filter(s =>
-        (s.work && String(s.work).toLowerCase().includes(ex)) ||
-        (s.author && String(s.author).toLowerCase().includes(ex))
-      );
-      if (strict.length) sources = strict; // Fix #4: strict to requested book/author
+    if (path === "Universal") {
+      roomPromises.push(fetchGutenbergTitleSnippets("Tao Te Ching", 2));
+      roomPromises.push(fetchGutenbergTitleSnippets("Bhagavad Gita", 2));
+      roomPromises.push(fetchGutenbergTitleSnippets("Dhammapada", 2));
+      roomPromises.push(fetchSefariaSnippets(message, 2));
     }
+
+    const results = await Promise.allSettled(roomPromises);
+    let sources = [];
+    for (const r of results) if (r.status === "fulfilled" && Array.isArray(r.value)) sources.push(...r.value);
 
     // dedupe & cap
     const seen = new Set();
     sources = sources.filter((s) => {
       if (!s || !s.work) return false;
-      const key = `${s.source || "x"}|${s.work}|${s.pos || 0}|${(s.author||"")}`;
+      const key = `${s.source||"x"}|${s.work}|${s.pos||0}|${s.author||""}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -263,13 +142,9 @@ export default async function handler(req, res) {
       GUIDANCE[path] || GUIDANCE.Universal,
       ETHOS,
       `Reply in ${targetLanguage}.`,
-      wantsRambam
-        ? (sources.length
-            ? "The user asked for Rambam (Maimonides). Provide only direct quotations from Maimonides. Do NOT substitute other authors."
-            : "The user asked for Rambam (Maimonides). No authentic Rambam sources are available right now. Say this briefly; do not substitute others.")
-        : (sources.length
-            ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]. Never instruct the user to ask anything; just answer."
-            : "Answer directly. Never instruct the user to ask another question."),
+      sources.length
+        ? "Ground your answer in the sources below. Quote sparingly. When you draw from one, add a bracket like [#1]."
+        : "Answer directly (no citations available right now).",
     ].join(" ");
 
     const contextBlock = sources.length
