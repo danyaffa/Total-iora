@@ -50,10 +50,20 @@ const templates = [
 ];
 
 export default function SacredSpace() {
+  const [locked, setLocked] = useState(true);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [candleLit, setCandleLit] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/whoami", { credentials: "include" });
+        setLocked(!r.ok);
+      } catch { setLocked(true); }
+    })();
+  }, []);
 
   // fade status
   useEffect(() => {
@@ -94,13 +104,14 @@ export default function SacredSpace() {
         <p>Leave a private note. Light a candle. We don’t read or judge; we hold space.</p>
       </header>
 
-      <main className="card">
+      <main className="card" inert={locked ? "" : undefined} aria-disabled={locked ? "true" : "false"}>
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={5}
           placeholder="Write your note here…"
           className="ta"
+          disabled={locked}
         />
         <div className="templates">
           <span>Templates:</span>
@@ -110,6 +121,7 @@ export default function SacredSpace() {
               className="chip"
               onClick={() => setNote(t.text)}
               type="button"
+              disabled={locked}
             >
               {t.key}
             </button>
@@ -120,7 +132,7 @@ export default function SacredSpace() {
           <button
             className="btn soft"
             onClick={() => save("note")}
-            disabled={saving}
+            disabled={locked || saving}
             type="button"
           >
             {saving ? "Saving…" : "Place Note"}
@@ -128,12 +140,14 @@ export default function SacredSpace() {
           <button
             className="btn accent"
             onClick={() => save("candle")}
-            disabled={saving}
+            disabled={locked || saving}
             type="button"
           >
             {saving ? "Lighting…" : "Light a Candle"}
           </button>
         </div>
+
+        {locked && <div className="lockhint">Log in to use this page.</div>}
 
         {status && <div className="status">{status}</div>}
 
@@ -159,11 +173,9 @@ export default function SacredSpace() {
             radial-gradient(900px 500px at 90% 0%, #ecfeff 0%, transparent 60%),
             linear-gradient(180deg, #ffffff, #f8fafc);
         }
-
         .hero { text-align: center; margin-bottom: 16px; }
         .hero h1 { font-size: 2.2rem; margin: 0; color: #0f172a; letter-spacing: .3px; }
         .hero p { margin-top: 8px; color: #475569; }
-
         .card {
           max-width: 860px;
           margin: 0 auto;
@@ -174,7 +186,6 @@ export default function SacredSpace() {
           padding: 22px 20px;
           backdrop-filter: blur(6px);
         }
-
         .ta {
           width: 100%;
           resize: vertical;
@@ -190,7 +201,6 @@ export default function SacredSpace() {
           border-color: #a5b4fc;
           box-shadow: 0 0 0 4px rgba(99,102,241,.15);
         }
-
         .templates {
           display: flex;
           flex-wrap: wrap;
@@ -201,7 +211,6 @@ export default function SacredSpace() {
           font-size: .92rem;
         }
         .templates span { margin-right: 6px; }
-
         .chip {
           border: 1px solid #e2e8f0;
           background: #fff;
@@ -212,7 +221,6 @@ export default function SacredSpace() {
           text-transform: capitalize;
         }
         .chip:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(2,6,23,.08); }
-
         .actions {
           display: flex;
           gap: 10px;
@@ -237,14 +245,12 @@ export default function SacredSpace() {
           border: none;
         }
         .btn.accent:hover { filter: brightness(1.06); transform: translateY(-1px); }
-
         .status {
           text-align: center;
           margin-top: 10px;
           color: #334155;
           font-size: .98rem;
         }
-
         .candleArea {
           display: grid;
           place-items: center;
@@ -254,14 +260,13 @@ export default function SacredSpace() {
           animation: fadeIn .3s ease;
         }
         .candleArea p { margin: 8px 0 0; color: #334155; font-weight: 600; }
-
         .privacy {
           margin-top: 18px;
           text-align: center;
           font-size: .88rem;
           color: #94a3b8;
         }
-
+        .lockhint { margin-top:10px; text-align:center; color:#713f12; background:#fffbe6; border:1px solid #facc15; border-radius:10px; padding:8px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity:1; transform:none; } }
       `}</style>
     </div>
