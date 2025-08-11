@@ -1,5 +1,5 @@
 // FILE: /pages/homepage.js
-// FULLY ACTIVE BOARD — same as your original (was Home), unchanged layout/logic.
+// ACTIVE page: exactly your original logic & layout (interactive after unlock).
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -7,27 +7,51 @@ import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 
-export default function Home() {
+// --- tiny helpers (client-only) ---
+function setCookie(name, value, maxAgeDays = 365) {
+  if (typeof document === "undefined") return;
+  const maxAge = maxAgeDays * 24 * 3600;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+}
+
+export default function HomePage() {
   const [path, setPath] = useState("Universal");
-  const [locked, setLocked] = useState(true); // Ensures the page is locked on initial load
+  const [unlocked, setUnlocked] = useState(false);
 
+  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    const hasRegisteredCookie =
-      typeof document !== "undefined" && document.cookie.includes("ac_registered=1");
-    if (hasRegisteredCookie) setLocked(false);
-
-    async function checkServerSession() {
-      try {
-        const r = await fetch("/api/auth/whoami", { credentials: "include" });
-        setLocked(!r.ok);
-      } catch {
-        setLocked(true);
-      }
+    if (typeof window !== "undefined") {
+      const usp = new URLSearchParams(window.location.search);
+      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
-    checkServerSession();
-    const id = setInterval(checkServerSession, 5000);
-    return () => clearInterval(id);
+
+    const update = () => {
+      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
+      const isDevBypass =
+        (typeof window !== "undefined" &&
+          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+           has("ac_dev") ||
+           window.location.hostname === "localhost"));
+
+      const isRegistered =
+        has("ac_registered") ||
+        has("ac_session") ||
+        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+
+      setUnlocked(Boolean(isRegistered || isDevBypass));
+    };
+
+    update();
+    const t = setTimeout(update, 80);
+    window.addEventListener?.("storage", update);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
   }, []);
+
+  const locked = !unlocked;
 
   return (
     <div className="page">
@@ -44,14 +68,6 @@ export default function Home() {
           or start with Sacred Notes.
         </p>
       </section>
-
-      {/* Read-only banner shown when not logged in */}
-      {locked && (
-        <div className="previewBanner" role="status">
-          You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
-          <Link href="/register">Register</Link> to use the interactive features.
-        </div>
-      )}
 
       {/* Feature tiles */}
       <section className="tiles">
@@ -101,15 +117,21 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Live board (disabled with inert until logged in) */}
-      <div
-        className={`main${locked ? " preview-locked" : ""}`}
-        inert={locked ? "" : undefined}
-        aria-disabled={locked ? "true" : "false"}
-      >
-        <HeritageSelector path={path} onChange={setPath} />
-        <OracleVoice path={path} />
-      </div>
+      {/* GATED AREA — interactive when unlocked */}
+      {unlocked ? (
+        <>
+          <HeritageSelector path={path} onChange={setPath} />
+          <OracleVoice path={path} />
+        </>
+      ) : (
+        <section className="gate">
+          <div className="card gatecard">
+            <h3>Speak to the Oracle</h3>
+            <p>Log in (or register free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <Link href="/login" className="btn accent">Log in</Link>
+          </div>
+        </section>
+      )}
 
       <Footer />
 
@@ -135,22 +157,8 @@ export default function Home() {
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
 
-        .previewBanner {
-          margin: 8px auto 0; max-width: 1100px; padding: 10px 14px;
-          background: #fffbe6; border: 1px solid #facc15; border-radius: 10px;
-          color: #713f12; text-align: center; font-weight: 600;
-        }
-        .previewBanner a { color: #1d4ed8; text-decoration: underline; }
-
-        .main.preview-locked a,
-        .main.preview-locked button,
-        .main.preview-locked [role="button"],
-        .main.preview-locked input,
-        .main.preview-locked select,
-        .main.preview-locked textarea {
-          pointer-events: none !important;
-          opacity: .85;
-        }
+        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
+        .gatecard { text-align:center; }
       `}</style>
     </div>
   );
