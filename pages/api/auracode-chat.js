@@ -7,6 +7,10 @@
 // Optional later: SUPABASE_URL, SUPABASE_SERVICE_KEY
 //
 // Frontend sends: { message, path, mode, topic, lang }
+// 2025-08-11 updates:
+// - Bias retrieval to tradition (e.g., Rambam/Maimonides for Jewish path)
+// - If user mentions Rambam/Maimonides, strongly prefer those quotes
+// - Small prompt tweak: if ungrammatical input, you may briefly restate it first (also handled client-side)
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -57,7 +61,7 @@ const TOPIC_PROMPTS = {
 };
 
 const ETHOS =
-  "Never provide medical, legal, or financial diagnosis. Encourage qualified help when needed. Do not promise outcomes. Keep paragraphs short.";
+  "Never provide medical, legal, or financial diagnosis. Encourage qualified help when needed. Do not promise outcomes. Keep paragraphs short. If the user's wording is unclear or ungrammatical, you may briefly restate it first for clarity.";
 
 /* ---------------- FREE web retrieval (no keys) ---------------- */
 
@@ -82,6 +86,34 @@ function pickPlainText(formats) {
   const keys = Object.keys(formats || {});
   const k = keys.find((x) => x.startsWith("text/plain")) || keys.find((x) => x.startsWith("text/html"));
   return k ? formats[k] : null;
+}
+
+// NEW: bias queries to tradition
+function biasQueryForPath(message, path) {
+  const m = String(message || "");
+  switch (path) {
+    case "Jewish":
+      return `${m} Rambam Maimonides "Mishneh Torah" "Guide for the Perplexed"`;
+    case "Muslim":
+      return `${m} Qur'an Hadith Ghazali`;
+    case "Christian":
+      return `${m} Gospel Augustine Aquinas`;
+    case "Eastern":
+      return `${m} Dhammapada "Tao Te Ching" Bhagavad Gita`;
+    default:
+      return m;
+  }
+}
+
+// Helper: filter to Rambam if explicitly requested
+function filterForRambamIfAsked(sources, message, path) {
+  const askRambam = /\b(rambam|maimonides|mishneh\s+torah|guide\s+for\s+the\s+perplexed)\b/i.test(message || "");
+  if (!askRambam && path !== "Jewish") return sources;
+  const pref = sources.filter((s) =>
+    /maimonides|mishneh|perplexed/i.test(`${s.author || ""} ${s.work || ""} ${s.quote || ""}`)
+  );
+  // if we found any Rambam sources, prefer them; otherwise fall back to originals
+  return pref.length ? pref.concat(sources.filter(x => !pref.includes(x))).slice(0, 8) : sources;
 }
 
 async function fetchGutenbergSnippets(query, topK = 6) {
@@ -226,9 +258,14 @@ export default async function handler(req, res) {
     let sources = [];
     // Supabase corpus (if you add it later)
     try { sources = sources.concat(await retrieveSupabase({ question: message, path, lang })); } catch {}
-    // Free web (always on, no keys)
-    try { sources = sources.concat(await fetchGutenbergSnippets(message, 6)); } catch {}
-    try { sources = sources.concat(await fetchOpenLibrarySnippets(message, 4)); } catch {}
+
+    // Free web, now biased to tradition
+    const biased = biasQueryForPath(message, path);
+    try { sources = sources.concat(await fetchGutenbergSnippets(biased, 6)); } catch {}
+    try { sources = sources.concat(await fetchOpenLibrarySnippets(biased, 4)); } catch {}
+
+    // Prefer Rambam when asked / Jewish path
+    sources = filterForRambamIfAsked(sources, message, path);
 
     // De-dup and cap
     const seen = new Set();
