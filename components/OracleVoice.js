@@ -1,11 +1,7 @@
 // FILE: /components/OracleVoice.js
 // Original layout preserved.
-// Changes:
-//  - Removed auto-send while typing (manual submit only).
-//  - Mic answers only when you press Stop.
-//  - Recognition restarts to keep listening on Android; no early answers.
-//  - No localStorage persistence (clean each mount).
-//  - Stricter min length to enable "Get Answer".
+// Behavior: clean slate on mount; NO auto-answer on typing; mic answers ONLY on Stop;
+// minimum length guard; sacred-text sources only (via APIs).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -88,7 +84,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const wasCancelledRef = useRef(false);
 
   const recRef = useRef(null);
-  const keepAliveRef = useRef(false);             // restart SR on Android
+  const keepAliveRef = useRef(false); // restart SR on Android
   const finalBufRef = useRef("");
   const interimRef = useRef("");
 
@@ -176,17 +172,13 @@ export default function OracleVoice({ path = "Universal" }) {
         else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
       }
       interimRef.current = interim;
-      const combined = [finalBufRef.current, interim].filter(Boolean).join(" ").trim();
-      setLiveText(combined);
-      // IMPORTANT: no auto-send here anymore
+      setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
+      // NO auto-send here anymore
     };
 
     rec.onend = () => {
-      if (keepAliveRef.current) {
-        try { rec.start(); } catch {}
-      } else {
-        setListening(false);
-      }
+      if (keepAliveRef.current) { try { rec.start(); } catch {} }
+      else setListening(false);
     };
     rec.onerror = () => {};
     recRef.current = rec; return rec;
@@ -209,10 +201,11 @@ export default function OracleVoice({ path = "Universal" }) {
   }
   function onStop() {
     keepAliveRef.current = false;
+    setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
     const text = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
-    if (text) sendForAnswer(text);        // answer only when user presses Stop
+    if (text) sendForAnswer(text);        // answer ONLY when user presses Stop
   }
 
   function stopAnswerVoice() {
@@ -236,15 +229,16 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   async function sendForAnswer(text) {
+    if (!text) return;
+    // ignore accidental 1–2 word inputs unless they end with punctuation
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length < 3 && !/[.?!]$/.test(text.trim())) return;
+
     setReplying(true);
     const isStyle = subject.startsWith("style:");
     const isTopic = subject.startsWith("topic:");
     const mode = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
-
-    // basic length guard (prevents 1-word triggers)
-    const words = text.trim().split(/\s+/).filter(Boolean);
-    if (words.length < 3 && !/[?.!]/.test(text)) { setReplying(false); return; }
 
     try {
       const quotes = await fetchGroundSources(text, path, chosenLang, 8);
@@ -297,8 +291,7 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   function onUserTyping(e) {
-    setLiveText(e.target.value);
-    // IMPORTANT: no auto-send on typing
+    setLiveText(e.target.value); // NO autosend on typing
   }
 
   useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
