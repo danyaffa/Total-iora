@@ -9,7 +9,7 @@ function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
   const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+  document.cookie = `${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
 export default function Home() {
@@ -93,7 +93,7 @@ export default function Home() {
               {locked ? (
                 <Link href="/login" className="btn accent" aria-disabled="true">Log in to Get Yours</Link>
               ) : (
-                <Link href="/get-your-aura" className="btn accent">Get Your Oracle Universe DNA</Link>
+                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
               )}
               <div className="disc">
                 Spiritual guidance only. No promises. No medical, legal, or financial advice.
