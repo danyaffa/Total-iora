@@ -61,7 +61,9 @@ export default function SacredSpace() {
       try {
         const r = await fetch("/api/auth/whoami", { credentials: "include" });
         setLocked(!r.ok);
-      } catch { setLocked(true); }
+      } catch { 
+        setLocked(true); 
+      }
     })();
   }, []);
 
