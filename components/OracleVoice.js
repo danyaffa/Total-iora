@@ -1,6 +1,7 @@
 // FILE: /components/OracleVoice.js
 // Answers ONLY when user clicks "Get Answer". Dictation stop does not send.
-// Clean, reliable sources list. Layout preserved.
+// Sources panel shows “Show sources & quotes (n)” with working links.
+// Layout preserved.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -12,6 +13,7 @@ const LANG_OPTIONS = [
   { value: "ar", label: "Arabic" },
   { value: "he", label: "Hebrew" },
 ];
+
 const SUBJECT_OPTIONS = [
   { value: "topic:general", label: "General" },
   { value: "style:gentle", label: "Gentle Guidance" },
@@ -38,6 +40,7 @@ function autoLangFromPath(path) {
     default: return "en-US";
   }
 }
+
 function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
@@ -50,7 +53,7 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-async function fetchGroundSources(query, path, lang, max = 6) {
+async function fetchGroundSources(query, path, lang, max = 8) {
   try {
     const r = await fetch("/api/ground-sources", {
       method: "POST",
@@ -62,7 +65,9 @@ async function fetchGroundSources(query, path, lang, max = 6) {
     return Array.isArray(js.quotes) ? js.quotes : [];
   } catch { return []; }
 }
-const splitIntoSentences = (t) => String(t||"").split(/(?<=[.!?])\s+/).filter(Boolean);
+
+const splitIntoSentences = (t) =>
+  String(t || "").split(/(?<=[.!?])\s+/).filter(Boolean);
 
 export default function OracleVoice({ path = "Universal" }) {
   const [listening, setListening] = useState(false);
@@ -81,10 +86,12 @@ export default function OracleVoice({ path = "Universal" }) {
   const interimRef = useRef("");
   const voiceRef = useRef(null);
   const canvasRef = useRef(null);
-  const audioRef = useRef({ ctx:null, analyser:null, animId:null, stream:null });
+  const audioRef = useRef({ ctx: null, analyser: null, animId: null, stream: null });
+
   const [sources, setSources] = useState([]);
   const [showSources, setShowSources] = useState(false);
-  const speakState = useRef({ parts:[], idx:0 });
+
+  const speakState = useRef({ parts: [], idx: 0 });
   const wasCancelledRef = useRef(false);
 
   const persona = useMemo(() => (
@@ -96,7 +103,7 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
 
-  // voice
+  // Voice assignment
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
     const assign = () => (voiceRef.current = pickVoice(chosenLang));
@@ -105,12 +112,14 @@ export default function OracleVoice({ path = "Universal" }) {
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [chosenLang]);
 
-  // canvas
+  // Canvas setup
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
-    const w=220,h=220; cnv.width=w*dpr; cnv.height=h*dpr; cnv.style.width=`${w}px`; cnv.style.height=`${h}px`;
-    cnv.getContext("2d").scale(dpr,dpr);
+    const w = 220, h = 220;
+    cnv.width = w * dpr; cnv.height = h * dpr;
+    cnv.style.width = `${w}px`; cnv.style.height = `${h}px`;
+    cnv.getContext("2d").scale(dpr, dpr);
   }, []);
 
   async function startMicViz() {
@@ -122,23 +131,25 @@ export default function OracleVoice({ path = "Universal" }) {
     const c = canvasRef.current.getContext("2d");
     const draw = () => {
       analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a,b)=>a+b,0)/data.length;
-      const radius = 32 + (avg/255)*40;
-      c.clearRect(0,0,220,220);
-      const g = c.createRadialGradient(110,110,radius*.25,110,110,radius);
-      g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
-      c.fillStyle=g; c.beginPath(); c.arc(110,110,radius,0,Math.PI*2); c.fill();
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      const radius = 32 + (avg / 255) * 40;
+      c.clearRect(0, 0, 220, 220);
+      const g = c.createRadialGradient(110, 110, radius * .25, 110, 110, radius);
+      g.addColorStop(0, "rgba(124,58,237,.95)");
+      g.addColorStop(1, "rgba(124,58,237,0)");
+      c.fillStyle = g; c.beginPath(); c.arc(110, 110, radius, 0, Math.PI * 2); c.fill();
       audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
     audioRef.current = { ctx, analyser, animId: audioRef.current.animId, stream };
   }
+
   function stopMicViz() {
     cancelAnimationFrame(audioRef.current.animId || 0);
     try { audioRef.current.ctx && audioRef.current.ctx.close(); } catch {}
-    try { audioRef.current.stream?.getTracks?.().forEach((t)=>t.stop()); } catch {}
-    audioRef.current = { ctx:null, analyser:null, animId:null, stream:null };
-    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0,0,220,220);
+    try { audioRef.current.stream?.getTracks?.().forEach((t) => t.stop()); } catch {}
+    audioRef.current = { ctx: null, analyser: null, animId: null, stream: null };
+    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0, 0, 220, 220);
   }
 
   function ensureRecognizer() {
@@ -151,12 +162,12 @@ export default function OracleVoice({ path = "Universal" }) {
 
     rec.onresult = (e) => {
       let interim = "";
-      for (let i=e.resultIndex; i<e.results.length; i++) {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
         const t = (r[0]?.transcript || "").trim();
         if (!t) continue;
-        if (r.isFinal) finalBufRef.current = (finalBufRef.current+" "+t).replace(/\s+/g," ").trim();
-        else interim = (interim+" "+t).replace(/\s+/g," ").trim();
+        if (r.isFinal) finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
+        else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
       }
       interimRef.current = interim;
       setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
@@ -167,7 +178,8 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   async function onStart() {
-    finalBufRef.current=""; interimRef.current=""; setReply(""); setSources([]); setShowSources(false);
+    finalBufRef.current = ""; interimRef.current = "";
+    setReply(""); setSources([]); setShowSources(false);
     keepAliveRef.current = true;
     try {
       await startMicViz();
@@ -181,30 +193,36 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  // ⛔️ No auto-send here anymore.
+  // Stop listening but DO NOT send; user must click Get Answer.
   async function onStop() {
     keepAliveRef.current = false; setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
     const text = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
-    setLiveText(text); // keep text so the user can correct it
-    // Wait for explicit click on “Get Answer”
+    setLiveText(text);
   }
 
-  function stopAnswerVoice() { try { window.speechSynthesis.cancel(); } catch {}; setSpeaking(false); }
+  function stopAnswerVoice() {
+    try { window.speechSynthesis.cancel(); } catch {}
+    setSpeaking(false);
+  }
+
   function speakFrom(i) {
     const parts = speakState.current.parts; if (!parts[i]) { setSpeaking(false); return; }
     const u = new SpeechSynthesisUtterance(parts[i]);
     const v = pickVoice(chosenLang); if (v) u.voice = v;
     u.lang = chosenLang || "en-US";
     u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-    u.onend = () => { if (wasCancelledRef.current) { wasCancelledRef.current=false; return; } speakState.current.idx=i+1; speakFrom(i+1); };
+    u.onend = () => {
+      if (wasCancelledRef.current) { wasCancelledRef.current = false; return; }
+      speakState.current.idx = i + 1; speakFrom(i + 1);
+    };
     setSpeaking(true);
     try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
   }
 
   async function sendForAnswer(text) {
-    const payload = String(text||"").trim();
+    const payload = String(text || "").trim();
     if (!payload) return;
 
     setReplying(true);
@@ -214,24 +232,28 @@ export default function OracleVoice({ path = "Universal" }) {
     const topic = isTopic ? subject.slice(6) : "general";
 
     try {
+      // 1) Sacred quotes (server filters CIA/.gov/junk)
       const quotes = await fetchGroundSources(payload, path, chosenLang, 8);
       const contextBlock = quotes.length
         ? "\n\nSourced quotes:\n" + quotes.map((s, i) => `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}\n${s.text}`).join("\n\n")
         : "";
 
+      // 2) Ask backend for the answer (grounded)
       const guard = "IMPORTANT: Do not instruct the user to write another question. Answer directly.";
       const message = (polish
         ? `Please restate the user's input in clear English (fix grammar, keep meaning). Then answer directly.\n${guard}\nUser input: """${payload}"""`
         : `${guard}\n${payload}`) + (contextBlock ? `\n\n---\n${contextBlock}` : "");
 
       const r = await fetch("/api/auracode-chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, path, mode, topic, lang: chosenLang }),
       });
       const data = await r.json().catch(() => ({}));
       const msg = data?.reply || "";
       setReply(msg);
 
+      // 3) Merge any sources returned by chat + our ground-sources
       const srv = Array.isArray(data?.sources) ? data.sources : [];
       const merged = [
         ...srv.map(s => ({ work: s.work, author: s.author, url: s.url, pos: s.pos, quote: s.quote })),
@@ -252,8 +274,13 @@ export default function OracleVoice({ path = "Universal" }) {
     const v = parseFloat(e.target.value || "1");
     const clamped = isNaN(v) ? 1 : Math.max(0, Math.min(1, v));
     setVolume(clamped);
-    if (speaking) { wasCancelledRef.current = true; window.speechSynthesis.cancel(); setTimeout(() => speakFrom(speakState.current.idx), 120); }
+    if (speaking) {
+      wasCancelledRef.current = true;
+      window.speechSynthesis.cancel();
+      setTimeout(() => speakFrom(speakState.current.idx), 120);
+    }
   }
+
   function onUserTyping(e) { setLiveText(e.target.value); }
 
   useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
@@ -281,7 +308,9 @@ export default function OracleVoice({ path = "Universal" }) {
             <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
           </label>
         </div>
-        <div className="hint" aria-live="polite">I only answer after you press <strong>Get Answer</strong>. Finish typing or dictating first.</div>
+        <div className="hint" aria-live="polite">
+          I only answer after you press <strong>Get Answer</strong>. Finish typing or dictating first.
+        </div>
       </header>
 
       <div className="body">
@@ -318,25 +347,32 @@ export default function OracleVoice({ path = "Universal" }) {
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
 
-            {sources?.length > 0 && (
-              <div className="sources">
-                <button className="link" onClick={() => setShowSources(v => !v)}>
-                  {showSources ? "Hide sources" : "Show sources & quotes"}
-                </button>
-                {showSources && (
-                  <ul className="srcList">
-                    {sources.map((s, i) => (
-                      <li key={i}>
-                        <div className="srcTitle">
-                          [#{i+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{s.pos != null ? ` (pos ${s.pos})` : ""} {s.url ? <a href={s.url} target="_blank" rel="noreferrer">source</a> : null}
-                        </div>
-                        {s.quote ? <blockquote className="quote">“{s.quote}”</blockquote> : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
+            <div className="sources">
+              {sources.length > 0 ? (
+                <>
+                  <button className="link" onClick={() => setShowSources(v => !v)}>
+                    {showSources ? "Hide sources" : `Show sources & quotes (${sources.length})`}
+                  </button>
+                  {showSources && (
+                    <ul className="srcList">
+                      {sources.map((s, i) => (
+                        <li key={i}>
+                          <div className="srcTitle">
+                            [#{i+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{typeof s.pos === "number" ? ` (pos ${s.pos})` : ""}{" "}
+                            {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">source</a> : null}
+                          </div>
+                          {(s.quote || s.text) ? (
+                            <blockquote className="quote">“{(s.quote || s.text).slice(0, 900)}”</blockquote>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <small className="muted">No sacred sources matched this exact question.</small>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -365,7 +401,8 @@ export default function OracleVoice({ path = "Universal" }) {
         .orb.spirit { background: radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0)); border-color: rgba(14,165,233,.25); }
         .orb.spirit.on { box-shadow:0 0 0 10px rgba(14,165,233,.08), 0 0 50px rgba(14,165,233,.22) inset; }
         .orb.spirit .halo { position:absolute; inset:-18%; border-radius:999px; background: conic-gradient(from 0deg, rgba(14,165,233,.25), rgba(124,58,237,.15), rgba(14,165,233,.25)); filter: blur(12px); animation: spin 3.6s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } } @keyframes slowspin { to { transform: rotate(-360deg); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
         .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
@@ -382,6 +419,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .srcList { list-style:none; padding:0; margin:8px 0 0; display:grid; gap:10px; }
         .srcTitle { font-weight:700; color:#334155; }
         .quote { margin:6px 0 0; padding-left:10px; border-left:3px solid #c7d2fe; color:#475569; }
+        .muted { color:#94a3b8; }
       `}</style>
     </section>
   );
