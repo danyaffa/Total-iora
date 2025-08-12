@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 /* ---------- small utils ---------- */
-const clamp = (s, n = 900) => String(s || "").slice(0, n);
+const clamp = (s, n = 700) => String(s || "").slice(0, n);
 const asText = (v) => (typeof v === "string" ? v : JSON.stringify(v || ""));
 const isOK = (s) => !!(s && String(s).trim());
 
@@ -34,7 +34,7 @@ const GUIDANCE = {
 
 const ETHOS = [
   "Answer directly. Do NOT instruct the user to ask, write, or reformulate another question.",
-  "No platform instructions, no meta talk (no 'as an AI').",
+  "No platform instructions, no meta talk.",
   "No medical, legal, or financial diagnosis. Offer supportive, general guidance only.",
   "Keep paragraphs short and clear. 6–10 sentences unless the user asks for more."
 ].join(" ");
@@ -54,8 +54,7 @@ function htmlToPlain(raw){
        .replace(/<script[\s\S]*?<\/script>/gi," ")
        .replace(/<style[\s\S]*?<\/style>/gi," ")
        .replace(/<nav[\s\S]*?<\/nav>/gi," ")
-       .replace(/<footer[\s\S]*?<\/footer>/gi," ")
-       .replace(//g," "); // This is the corrected line
+       .replace(/<footer[\s\S]*?<\/footer>/gi," ");
   s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n")
        .replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n");
   s = s.replace(/<[^>]+>/g," ");
@@ -184,6 +183,7 @@ export default async function handler(req, res) {
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
+    // sacred-first source plan
     const tasks = [];
     if (path === "Jewish") tasks.push(fetchSefariaSnippets(message, 6));
     if (path === "Muslim") tasks.push(fetchQuranSnippets(message, 6));
@@ -205,6 +205,7 @@ export default async function handler(req, res) {
     let sources = [];
     for (const r of settled) if (r.status === "fulfilled" && Array.isArray(r.value)) sources = sources.concat(r.value);
 
+    // de-dupe + cap
     const seen = new Set();
     sources = sources.filter((s) => {
       if (!s || !s.work) return false;
@@ -212,67 +213,53 @@ export default async function handler(req, res) {
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    }).slice(0, Math.max(1, Math.min(Number(maxSources) || 8, 12)));
+    }).slice(0, Math.max(1, Number(maxSources) || 8));
 
-    const persona =
-      path === "Jewish" ? "Rabbi" :
-      path === "Christian" ? "Priest" :
-      path === "Muslim" ? "Imam" :
-      path === "Eastern" ? "Monk" : "Sage";
+    const sourceBlock = sources.map((s, i) => {
+      const head = `[${i + 1}] ${s.work}${s.author ? ` — ${s.author}` : ""}`;
+      return `${head}\n${clamp(s.quote, 500)}`;
+    }).join("\n\n");
 
     const system = [
-      `You are a ${persona} offering concise, compassionate guidance grounded in respected sacred texts.`,
+      `You are the Total-iora Guide for the "${path}" room.`,
       GUIDANCE[path] || GUIDANCE.Universal,
       ETHOS,
-      `Style: ${mode}. Topic: ${topic}.`,
-      `Reply in ${targetLanguage}.`,
-      sources.length
-        ? "Prefer the approved sources provided. If quoting, keep wording faithful and name the work with [#n]."
-        : "No approved snippets matched; answer in your own words from tradition without inventing citations."
+      `Answer in ${targetLanguage}.`,
+      `If a relevant SOURCE EXCERPT is provided, you may quote a short line from it (with [n]). Do not invent sources.`
     ].join(" ");
 
-    const contextBlock = sources.length
-      ? "\n\nAPPROVED SOURCES:\n" + sources.map((s, i) =>
-          `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${typeof s.pos === "number" ? ` (pos ${s.pos})` : ""}\n${clamp(s.quote, 900)}`
-        ).join("\n\n")
-      : "";
+    const userMsg = [
+      `USER QUESTION: ${asText(message)}`,
+      sources.length ? `\n\nSOURCE EXCERPTS:\n${sourceBlock}` : ""
+    ].join("");
 
-    const payload = {
-      model,
-      temperature: 0.6,
-      max_tokens: 520,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: String(message).trim() + contextBlock }
-      ],
-      response_format: { type: "text" }
-    };
-
-    const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), 25000);
-    const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
+    // OpenAI call
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: ac.signal
-    }).catch((e) => ({ ok: false, status: 502, text: async () => String(e?.message || e) }));
-    clearTimeout(t);
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.6,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: userMsg }
+        ]
+      })
+    });
 
-    if (!upstream.ok) {
-      const detail = await (upstream.text?.() || Promise.resolve("Unknown upstream error"));
-      return res.status(502).json({ error: "Upstream error", detail });
+    if (!aiRes.ok) {
+      const errTxt = await aiRes.text().catch(() => "");
+      return res.status(502).json({ error: "Upstream error", detail: errTxt, sources });
     }
 
-    const data = await upstream.json().catch(() => ({}));
-    const reply = data?.choices?.[0]?.message?.content?.trim();
-    if (!reply) return res.status(502).json({ error: "No content returned from model." });
+    const data = await aiRes.json().catch(() => ({}));
+    const reply = data?.choices?.[0]?.message?.content?.trim() || "I’m here with you.";
 
-    const outSources = sources.map((s, i) => ({
-      i: i + 1, work: s.work, author: s.author || null, pos: s.pos ?? 0, url: s.url || null, quote: s.quote || ""
-    }));
-
-    return res.status(200).json({ reply, ...(outSources.length ? { sources: outSources } : {}) });
-  } catch (err) {
-    return res.status(500).json({ error: "Server error", detail: asText(err?.message || err) });
+    return res.status(200).json({ reply, sources });
+  } catch (e) {
+    return res.status(500).json({ error: "Server error", detail: String(e?.message || e) });
   }
 }
