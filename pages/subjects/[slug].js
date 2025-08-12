@@ -10,32 +10,59 @@ import { SUBJECT_INDEX } from "../../lib/subjects-catalog";
 export default function SubjectPage() {
   const router = useRouter();
   const { slug } = router.query;
-  const meta = SUBJECT_INDEX[String(slug||"")] || { label:"Subject", seeds:[] };
+
+  // Guard: avoid flashing "Subject" before router is ready
+  const isReady = router.isReady;
+  const meta = isReady && SUBJECT_INDEX[String(slug || "")] ? SUBJECT_INDEX[String(slug)] : { label: "Subject", seeds: [] };
 
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [quotes, setQuotes] = useState([]);
+  const [error, setError] = useState("");
 
   // Optional: read ?path=Jewish|Muslim|Christian|Eastern|Universal
   const path = useMemo(() => {
     const p = typeof router.query.path === "string" ? router.query.path : "Universal";
-    return ["Jewish","Muslim","Christian","Eastern","Universal"].includes(p) ? p : "Universal";
+    return ["Jewish", "Muslim", "Christian", "Eastern", "Universal"].includes(p) ? p : "Universal";
   }, [router.query.path]);
 
-  useEffect(() => { setQ(meta.seeds?.[0] || ""); }, [slug]);
+  // Seed the input when the slug changes (after router is ready)
+  useEffect(() => {
+    if (!isReady) return;
+    setQ(meta.seeds?.[0] || "");
+    setQuotes([]);
+    setError("");
+  }, [isReady, slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function runSearch() {
-    const query = q.trim(); if (!query) return;
-    setLoading(true); setQuotes([]);
+    const query = q.trim();
+    if (!query) return;
+    setLoading(true);
+    setQuotes([]);
+    setError("");
     try {
       const r = await fetch("/api/subjects/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query, path, max: 8 })
       });
-      const js = await r.json().catch(()=>({}));
+      const js = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(js?.error || "Search failed");
       setQuotes(js?.quotes || []);
-    } finally { setLoading(false); }
+    } catch (e) {
+      setError(String(e?.message || e) || "Search failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!isReady) {
+    return (
+      <main className="wrap">
+        <div className="empty">Loading…</div>
+        <style jsx>{`.wrap{max-width:1100px;margin:16px auto;padding:12px}.empty{color:#64748b}`}</style>
+      </main>
+    );
   }
 
   return (
@@ -50,25 +77,32 @@ export default function SubjectPage() {
           <input
             className="box"
             value={q}
-            onChange={(e)=>setQ(e.target.value)}
-            placeholder={`Search sacred texts about ${meta.label.toLowerCase()}…`}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
+            placeholder={`Search sacred texts about ${String(meta.label || "this topic").toLowerCase()}…`}
+            aria-label="Search sacred texts"
           />
-          <button className="btn" onClick={runSearch} disabled={loading}>{loading ? "Searching…" : "Search"}</button>
+          <button className="btn" onClick={runSearch} disabled={loading}>
+            {loading ? "Searching…" : "Search"}
+          </button>
         </div>
         <div className="help">
-          Try: {(meta.seeds||[]).slice(0,3).map((s,i)=>(
-            <button key={i} className="chip" onClick={()=>setQ(s)}>{s}</button>
+          Try: {(meta.seeds || []).slice(0, 3).map((s, i) => (
+            <button key={i} className="chip" onClick={() => setQ(s)}>{s}</button>
           ))}
         </div>
+        {error ? <div className="err" role="alert">{error}</div> : null}
       </section>
 
-      <section className="results">
-        {!loading && quotes.length === 0 ? <div className="empty">No quotes yet. Search above.</div> : null}
-        {quotes.map((q,i)=>(
+      <section className="results" aria-live="polite">
+        {!loading && !error && quotes.length === 0 ? <div className="empty">No quotes yet. Search above.</div> : null}
+        {quotes.map((q, i) => (
           <article key={i} className="card">
             <div className="src">{q.work}</div>
             <div className="text">{q.text}</div>
-            <a className="link" href={q.url} target="_blank" rel="noreferrer">Open source ↗</a>
+            {q.url ? (
+              <a className="link" href={q.url} target="_blank" rel="noopener noreferrer">Open source ↗</a>
+            ) : null}
           </article>
         ))}
       </section>
@@ -77,8 +111,8 @@ export default function SubjectPage() {
         <section className="resources">
           <h2>Trusted resources</h2>
           <ul>
-            {meta.resources.map((r,i)=>(
-              <li key={i}><a href={r.url} target="_blank" rel="noreferrer">{r.title}</a></li>
+            {meta.resources.map((r, i) => (
+              <li key={i}><a href={r.url} target="_blank" rel="noopener noreferrer">{r.title}</a></li>
             ))}
           </ul>
         </section>
@@ -98,6 +132,7 @@ export default function SubjectPage() {
         .btn{padding:12px 16px;border-radius:12px;font-weight:800;border:1px solid rgba(15,23,42,.12);background:#fff}
         .help{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
         .chip{padding:6px 10px;border:1px solid #e2e8f0;border-radius:999px;background:#fff}
+        .err{margin-top:8px;color:#b91c1c}
         .results{margin-top:14px;display:grid;gap:10px}
         .empty{color:#64748b}
         .card{background:#fff;border:1px solid rgba(2,6,23,.08);border-radius:14px;padding:12px}
