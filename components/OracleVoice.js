@@ -1,6 +1,9 @@
+// FILE: /components/OracleVoice.js
+// Update: keep layout, restore Sources toggle, and show live captions while speaking.
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
-/* Options (unchanged) */
+/* ---------- Options (kept) ---------- */
 const LANG_OPTIONS = [
   { value: "auto", label: "Auto (by room)" },
   { value: "en-US", label: "English (US)" },
@@ -16,7 +19,7 @@ const SUBJECT_OPTIONS = [
   { value: "style:practical", label: "Practical Steps" },
   { value: "style:comfort", label: "Comfort & Healing" },
 
-    // Core spiritual themes
+  // Core spiritual themes
   { value: "topic:prayer", label: "Prayer & Meditation" },
   { value: "topic:faith", label: "Faith & Belief" },
   { value: "topic:doubt", label: "Spiritual Doubt" },
@@ -64,6 +67,7 @@ const SUBJECT_OPTIONS = [
   { value: "topic:scripture", label: "Scripture Study" }
 ];
 
+/* ---------- Helpers ---------- */
 function autoLangFromPath(path) {
   switch (path) {
     case "Jewish": return "he";
@@ -77,15 +81,16 @@ function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
     if (!voices.length) return null;
-    let v = voices.find((x) => x.lang === lang) || voices.find((x)=>x.lang?.startsWith((lang||"").split("-")[0]));
-    return v || voices[0];
+    return (
+      voices.find(v => v.lang === lang) ||
+      voices.find(v => v.lang?.startsWith((lang || "").split("-")[0])) ||
+      voices[0]
+    );
   } catch { return null; }
 }
-
-/* Helpers */
 const isSecure = () =>
   typeof window !== "undefined" &&
-  (window.isSecureContext || /^https:$/i.test(location.protocol) || /^http:\/\/localhost/.test(location.href));
+  (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
 
 async function sttUpload(blob, mime, lang) {
   const buf = await blob.arrayBuffer();
@@ -101,16 +106,22 @@ async function sttUpload(blob, mime, lang) {
   return js?.text || "";
 }
 const supportsSR = () => typeof window !== "undefined" && (window.webkitSpeechRecognition || window.SpeechRecognition);
+const supportsMediaRecorder = () => typeof window !== "undefined" && typeof window.MediaRecorder === "function";
 
-/* Component */
+/* ---------- Component ---------- */
 export default function OracleVoice({ path = "Universal" }) {
+  // UI state
   const [listening, setListening] = useState(false);
   const [replying, setReplying] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [status, setStatus] = useState("");
 
-  const [liveText, setLiveText] = useState(""); // progressively updated
+  const [liveText, setLiveText] = useState(""); // progressive text
   const [reply, setReply] = useState("");
+
+  // NEW: sources toggle
+  const [sources, setSources] = useState([]);
+  const [showSrc, setShowSrc] = useState(false);
 
   const [lang, setLang] = useState("auto");
   const [subject, setSubject] = useState("topic:general");
@@ -125,15 +136,15 @@ export default function OracleVoice({ path = "Universal" }) {
   ), [path]);
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
 
-  /* TTS */
-  const voiceRef = useRef(null);
+  /* ---------- TTS ---------- */
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
-    const assign = () => (voiceRef.current = pickVoice(chosenLang));
+    const assign = () => {};
     window.speechSynthesis.onvoiceschanged = assign;
     setTimeout(assign, 150);
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [chosenLang]);
+
   function speak(text) {
     if (!text) return;
     try { window.speechSynthesis.cancel(); } catch {}
@@ -146,23 +157,18 @@ export default function OracleVoice({ path = "Universal" }) {
     try { window.speechSynthesis.speak(u); } catch {}
   }
 
-  /* ====== LIVE CAPTIONS PIPELINE ======
-     A) If SpeechRecognition exists -> show near-instant interim text.
-     B) Always run MediaRecorder in parallel and POST 500ms chunks to /api/stt.
-        Append each chunk’s transcript as it arrives (progressive fallback).
-  */
+  /* ---------- Live captions (SR + streaming STT) ---------- */
   const srRef = useRef(null);
   const interimRef = useRef("");
   const finalRef = useRef("");
+  const manualEditingRef = useRef(false);
 
   const canvasRef = useRef(null);
   const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"audio/webm", ctx:null, analyser:null, anim:0 });
-  const chunkQueueRef = useRef([]);          // {idx, blob}
+  const chunkQueueRef = useRef([]);
   const processingRef = useRef(false);
   const chunkIdxRef = useRef(0);
-  const manualEditingRef = useRef(false);
 
-  // canvas size
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -198,17 +204,17 @@ export default function OracleVoice({ path = "Universal" }) {
       interimRef.current = interim;
       if (!manualEditingRef.current) {
         const combined = [finalRef.current, interim].filter(Boolean).join(" ").trim();
-        setLiveText(combined);                 // near-instant interim text
+        setLiveText(combined);
       }
+      setStatus("Live captions on.");
     };
     rec.onerror = () => setStatus("Live captions (browser) error — fallback active.");
-    srRef.current = rec;
-    return rec;
+    srRef.current = rec; return rec;
   }
 
   async function startRecorder() {
     if (!isSecure()) { setStatus("Microphone requires HTTPS (or localhost)."); return false; }
-    if (!navigator.mediaDevices?.getUserMedia) { setStatus("Microphone API not available."); return false; }
+    if (!navigator.mediaDevices?.getUserMedia || !supportsMediaRecorder()) { setStatus("Microphone not available."); return false; }
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -218,8 +224,8 @@ export default function OracleVoice({ path = "Universal" }) {
     const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
 
     const mime =
-      (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus") && "audio/webm;codecs=opus") ||
-      (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/ogg;codecs=opus") && "audio/ogg;codecs=opus") ||
+      (MediaRecorder.isTypeSupported("audio/webm;codecs=opus") && "audio/webm;codecs=opus") ||
+      (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus") && "audio/ogg;codecs=opus") ||
       "audio/webm";
 
     const rec = new MediaRecorder(stream, { mimeType: mime });
@@ -227,10 +233,10 @@ export default function OracleVoice({ path = "Universal" }) {
       if (e.data && e.data.size) {
         const idx = chunkIdxRef.current++;
         chunkQueueRef.current.push({ idx, blob: e.data, mime });
-        processChunkQueue();                   // progressive server captions
+        processChunkQueue();
       }
     };
-    rec.start(500); // ~0.5s chunks -> low latency progressive text
+    rec.start(500); // ~0.5s chunks
 
     // mic viz
     const data = new Uint8Array(analyser.frequencyBinCount);
@@ -256,24 +262,20 @@ export default function OracleVoice({ path = "Universal" }) {
     processingRef.current = true;
     try {
       while (chunkQueueRef.current.length) {
-        const { idx, blob, mime } = chunkQueueRef.current.shift();
+        const { blob, mime } = chunkQueueRef.current.shift();
         try {
           const text = await sttUpload(blob, mime, chosenLang);
           if (!text) continue;
-          // append nicely; simple overlap guard
           setLiveText((prev) => {
-            if (manualEditingRef.current) return prev; // don't override while user edits
+            if (manualEditingRef.current) return prev;
             const p = String(prev || "");
             const add = text.replace(/\s+/g, " ").trim();
             if (!p) return add;
-            // If last word repeats at boundary, avoid duplication
             const last = p.split(/\s+/).slice(-3).join(" ");
             if (add.startsWith(last)) return p + " " + add.slice(last.length).trim();
             return p.endsWith(" ") ? p + add : p + " " + add;
           });
-        } catch {
-          // ignore chunk errors, continue
-        }
+        } catch { /* ignore chunk errors */ }
       }
     } finally {
       processingRef.current = false;
@@ -281,34 +283,22 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   async function onStart() {
-    setReply(""); setStatus(""); setListening(true);
-    finalRef.current = ""; interimRef.current = ""; // reset SR buffers
+    setReply(""); setStatus(""); setListening(true); setShowSrc(false); setSources([]);
+    finalRef.current = ""; interimRef.current = "";
 
-    // A) Start browser SR for instant interim (if available)
-    if (supportsSR()) {
-      const rec = setupSR(); if (rec) { try { rec.start(); setStatus("Live captions on."); } catch {} }
-    } else {
-      setStatus("Live captions via server.");
-    }
+    if (supportsSR()) { const rec = setupSR(); if (rec) { try { rec.start(); setStatus("Live captions on."); } catch {} } }
+    else { setStatus("Recording… (words will appear as you speak)"); }
 
-    // B) Start recorder for universal progressive captions
     try {
       const ok = await startRecorder();
-      if (!ok) { setListening(false); }
-      else if (!supportsSR()) setStatus("Recording… (words will appear as you speak)");
-    } catch {
-      setListening(false); setStatus("Mic unavailable.");
-    }
+      if (!ok) setListening(false);
+    } catch { setListening(false); setStatus("Mic unavailable."); }
   }
 
   async function onStop() {
     setListening(false);
     try { srRef.current && srRef.current.stop(); } catch {}
-
-    const r = recRef.current.rec;
-    if (r) { try { r.stop(); r.requestData && r.requestData(); } catch {} }
-    // allow last chunk to flush & be processed
-    setTimeout(() => { /* no-op */ }, 200);
+    try { recRef.current.rec && recRef.current.rec.stop(); recRef.current.rec?.requestData?.(); } catch {}
   }
 
   async function sendForAnswer(text) {
@@ -317,6 +307,9 @@ export default function OracleVoice({ path = "Universal" }) {
     if (clean.split(/\s+/).length < 3 && !/[.?!]/.test(clean)) return;
 
     setReplying(true);
+    setShowSrc(false);
+    setSources([]);
+
     try {
       const isStyle = subject.startsWith("style:");
       const isTopic = subject.startsWith("topic:");
@@ -336,32 +329,22 @@ export default function OracleVoice({ path = "Universal" }) {
       const data = await r.json().catch(()=>({}));
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
-      if (msg) {
-        try { window.speechSynthesis.cancel(); } catch {}
-        const u = new SpeechSynthesisUtterance(msg);
-        const v = pickVoice(chosenLang); if (v) u.voice = v;
-        u.lang = chosenLang || "en-US";
-        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-        u.onend = () => setSpeaking(false);
-        setSpeaking(true); try { window.speechSynthesis.speak(u); } catch {}
-      }
+      setSources(Array.isArray(data?.sources) ? data.sources : []);
+
+      if (msg) speak(msg);
     } finally { setReplying(false); }
   }
 
-  useEffect(() => {
-    // cleanup
-    return () => { try { srRef.current && srRef.current.stop(); } catch {}; clearViz(); };
-  }, []);
+  useEffect(() => () => { try { srRef.current && srRef.current.stop(); } catch {}; clearViz(); }, []);
 
   function onUserTyping(e) {
     manualEditingRef.current = true;
     setLiveText(e.target.value);
-    // release the editing lock shortly after typing stops
     clearTimeout(onUserTyping.tid);
     onUserTyping.tid = setTimeout(() => { manualEditingRef.current = false; }, 600);
   }
 
-  /* UI (layout preserved) */
+  /* ---------- UI (layout preserved) ---------- */
   return (
     <section className="oracle">
       <header className="head">
@@ -425,6 +408,29 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className="log">
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
+
+            {/* Sources toggle */}
+            {sources && sources.length > 0 && (
+              <div className="sources">
+                <button className="linkbtn" onClick={()=>setShowSrc(s => !s)} aria-expanded={showSrc}>
+                  {showSrc ? "Hide sources" : `Show sources (${sources.length})`}
+                </button>
+                {showSrc && (
+                  <ul className="srclist">
+                    {sources.map((s, i) => (
+                      <li key={`${s.i || i}-${s.url || s.work}`}>
+                        <div className="sline">
+                          <span className="work">{s.work}</span>
+                          {s.author ? <span className="author"> — {s.author}</span> : null}
+                          {s.url ? <a href={s.url} target="_blank" rel="noreferrer">open ↗</a> : null}
+                        </div>
+                        {s.quote ? <div className="quote">“{s.quote}”</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -466,6 +472,15 @@ export default function OracleVoice({ path = "Universal" }) {
         .btn.stop{color:#fff;background:#111827;border:none;}
         .btn.ghost{background:#fff;}
         .btn.danger{color:#fff;background:#b91c1c;border:none;}
+
+        /* Sources */
+        .sources{margin-top:8px}
+        .linkbtn{border:none;background:transparent;color:#1d4ed8;font-weight:700;cursor:pointer;padding:6px 0}
+        .srclist{margin:6px 0 0;padding-left:16px;display:grid;gap:8px}
+        .sline{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
+        .work{font-weight:700;color:#0f172a}
+        .author{color:#475569}
+        .quote{color:#334155;margin-top:2px;white-space:pre-wrap}
       `}</style>
     </section>
   );
