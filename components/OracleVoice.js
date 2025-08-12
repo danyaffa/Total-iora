@@ -71,7 +71,6 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-// feature checks
 const hasSR = () => (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
 const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
 const isSecure = () =>
@@ -81,11 +80,27 @@ const isSecure = () =>
 function bestMime() {
   if (!hasRecorder()) return "";
   const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // iOS/Safari
-  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
   if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
-  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";  // Firefox
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
   return "";
+}
+
+// small helper: append text without echo duplicates (fixes mobile SR loops)
+function mergeNoDupe(base, addition) {
+  const a = (base || "").trim();
+  const b = (addition || "").trim();
+  if (!b) return a;
+  if (!a) return b;
+  // If 'a' already ends with 'b' (or the last ~10 tokens), don't add it again
+  const atoks = a.split(/\s+/);
+  const btoks = b.split(/\s+/);
+  const windowSize = Math.min(10, btoks.length);
+  const tail = atoks.slice(-windowSize).join(" ");
+  const head = btoks.slice(0, windowSize).join(" ");
+  if (tail === head || a.endsWith(b)) return a;
+  return (a + " " + b).replace(/\s+/g, " ").trim();
 }
 
 async function sttUpload(blob, mime, lang) {
@@ -114,13 +129,18 @@ export default function OracleVoice({ path = "Universal" }) {
   const [volume, setVolume]         = useState(1);
   const [polish, setPolish]         = useState(false);
 
-  const [sources, setSources]       = useState([]);
+  // Auto-citations (used) and source pool (context)
+  const [citations, setCitations]   = useState([]); // [{index, work, author, url, quote, reason}]
+  const [sources, setSources]       = useState([]); // [{work, author, url, quote, source}]
   const [showSrc, setShowSrc]       = useState(false);
+  const [showCites, setShowCites]   = useState(true);
 
   const canvasRef      = useRef(null);
   const srRef = useRef(null);
   const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
   const usingRef = useRef(null); // "sr" | "rec"
+  const finalRef = useRef("");   // for SR
+  const interimRef = useRef("");
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -143,8 +163,9 @@ export default function OracleVoice({ path = "Universal" }) {
   async function onStart() {
     setReply(""); setStatus(""); setListening(true);
     usingRef.current = null;
+    finalRef.current = ""; interimRef.current = "";
 
-    // try SR first for live captions
+    // Prefer native SR for live captions
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
@@ -152,28 +173,32 @@ export default function OracleVoice({ path = "Universal" }) {
         rec.lang = chosenLang || "en-US";
         rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
 
-        let finalBuf = "";
         rec.onresult = (e) => {
-          let interim = "";
+          let interimLocal = "";
           for (let i = e.resultIndex; i < e.results.length; i++) {
-            const r = e.results[i]; const t = (r[0]?.transcript || "").trim();
+            const r = e.results[i];
+            const t = (r[0]?.transcript || "").trim();
             if (!t) continue;
-            if (r.isFinal) finalBuf = (finalBuf + " " + t).replace(/\s+/g, " ").trim();
-            else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
+            if (r.isFinal) {
+              finalRef.current = mergeNoDupe(finalRef.current, t);
+            } else {
+              interimLocal = mergeNoDupe("", t); // keep only latest interim chunk
+            }
           }
-          setLiveText([finalBuf, interim].filter(Boolean).join(" ").trim());
+          interimRef.current = interimLocal;
+          setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
         };
-        rec.onend   = () => { if (usingRef.current === "sr") { setListening(false); setStatus("Stopped."); } };
+        rec.onend = () => { if (usingRef.current === "sr") { setListening(false); setStatus("Stopped."); } };
 
         srRef.current = rec;
         rec.start();
         usingRef.current = "sr";
         setStatus("Listening (live captions)...");
         return;
-      } catch { /* fall through to recorder */ }
+      } catch { /* fallback to recorder */ }
     }
 
-    // fallback: recorder (text after Stop)
+    // Fallback recorder (text after Stop)
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
@@ -247,7 +272,8 @@ export default function OracleVoice({ path = "Universal" }) {
       try {
         const blob = new Blob(chunks, { type: mime || "audio/webm" });
         const text = await sttUpload(blob, mime || "audio/webm", chosenLang);
-        setLiveText(prev => prev ? `${prev.trim()} ${text}` : (text || ""));
+        finalRef.current = mergeNoDupe(finalRef.current, text);
+        setLiveText(finalRef.current);
         setStatus("Ready.");
       } catch (e) {
         setStatus(String(e?.message || e));
@@ -261,8 +287,8 @@ export default function OracleVoice({ path = "Universal" }) {
     if (!clean || clean.split(/\s+/).length < 2) return;
 
     setReplying(true);
-    setShowSrc(false);
-    setSources([]);
+    setShowSrc(false); setShowCites(true);
+    setCitations([]); setSources([]);
 
     try {
       const isStyle = subject.startsWith("style:");
@@ -275,15 +301,17 @@ export default function OracleVoice({ path = "Universal" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: clean,
-          path, mode, topic, lang: chosenLang
+          path, mode, topic, lang: chosenLang,
+          polish // forwarded for future use if your API wants it
         }),
       });
       const data = await r.json().catch(()=> ({}));
 
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
+      setCitations(Array.isArray(data?.citations) ? data.citations : []); // <-- NEW
       setSources(Array.isArray(data?.sources) ? data.sources : []);
-
+      // Speak
       if (msg) {
         try { window.speechSynthesis.cancel(); } catch {}
         const u = new SpeechSynthesisUtterance(msg);
@@ -302,7 +330,7 @@ export default function OracleVoice({ path = "Universal" }) {
   return (
     <section className="oracle">
       <header className="head">
-        <div className="persona">{persona}</div>
+        <div className="persona">{path === "Jewish" ? "Rabbi" : path === "Christian" ? "Priest" : path === "Muslim" ? "Imam" : path === "Eastern" ? "Monk" : "Sage"}</div>
         <h2>Write or Speak to the Oracle</h2>
         <div className="bar">
           <label>Language:
@@ -363,11 +391,36 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className="log">
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
-            
-            {sources && sources.length > 0 && (
+
+            {/* Citations actually used by the Oracle */}
+            {Array.isArray(citations) && citations.length > 0 && (
               <div className="sources">
+                <button className="linkbtn" onClick={()=>setShowCites(s => !s)} aria-expanded={showCites}>
+                  {showCites ? "Hide citations" : `Show citations (${citations.length})`}
+                </button>
+                {showCites && (
+                  <ul className="srclist">
+                    {citations.map((c,i)=>(
+                      <li key={`c-${c.index}-${i}`}>
+                        <div className="sline">
+                          <span className="work">{c.work}</span>
+                          {c.author ? <span className="author"> — {c.author}</span> : null}
+                          {c.url ? <a href={c.url} target="_blank" rel="noreferrer">open ↗</a> : null}
+                        </div>
+                        {c.quote ? <div className="quote">“{c.quote}”</div> : null}
+                        {c.reason ? <div className="reason" style={{color:"#64748b", fontSize:".9rem"}}>{c.reason}</div> : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {/* Full source pool offered to the model (optional) */}
+            {sources && sources.length > 0 && (
+              <div className="sources" style={{marginTop:8}}>
                 <button className="linkbtn" onClick={()=>setShowSrc(s => !s)} aria-expanded={showSrc}>
-                  {showSrc ? "Hide sources" : `Show sources (${sources.length})`}
+                  {showSrc ? "Hide source pool" : `Show source pool (${sources.length})`}
                 </button>
                 {showSrc && (
                   <ul className="srclist">
