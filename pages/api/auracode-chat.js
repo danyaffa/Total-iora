@@ -2,7 +2,7 @@
 // Purpose: Answer a user message, grounded ONLY in approved sacred sources.
 // Sources allowed: Sefaria (Tanakh/Talmud), alquran.cloud (Qur’an), Gutenberg (KJV Bible, Tao Te Ching, Bhagavad Gita, Dhammapada).
 // Filters out government/.gov/FOIA/CIA/etc. Cleans Gutenberg paras to avoid TOCs and junk.
-// NOTE: This updates your EXISTING page in-place (no new files).
+// NOTE: Updated to fix "garbage" HTML snippets from Gutenberg (force English, prefer plain text, strip HTML if needed).
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -45,17 +45,39 @@ function allowSource(s) {
   return !banned.test(all);
 }
 function keepEnglishBooks(list) { return (list || []).filter(b => (b.languages || []).includes("en")); }
+function isHTML(s){ return /<\s*html[\s>]/i.test(String(s||"")); }
+function htmlToPlain(raw){
+  let s = String(raw||"");
+  s = s.replace(/<head[\s\S]*?<\/head>/gi," ")
+       .replace(/<script[\s\S]*?<\/script>/gi," ")
+       .replace(/<style[\s\S]*?<\/style>/gi," ")
+       .replace(/<nav[\s\S]*?<\/nav>/gi," ")
+       .replace(/<footer[\s\S]*?<\/footer>/gi," ")
+       .replace(/<!--[\s\S]*?-->/g," ");
+  s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n")
+       .replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n");
+  s = s.replace(/<[^>]+>/g," ");
+  s = s.replace(/project\s+gutenberg[\s\S]*$/i," ");
+  s = s.replace(/\r/g,"").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/[ \t]{2,}/g," ").trim();
+  return s;
+}
 function cleanPara(p) {
   const s = String(p || "").trim();
   if (s.length < 120) return "";
-  if (/^\s*(contents|chapter|book|part|section|introduction|foreword|preface|index)\b/i.test(s)) return "";
+  if (/^\s*(contents|table of contents|chapter|book|part|section|introduction|foreword|preface|index|license)\b/i.test(s)) return "";
   if (/[A-Z\s]{18,}/.test(s) && !/[a-z]/.test(s)) return ""; // all-caps headings/TOC
+  if (/project\s+gutenberg/i.test(s)) return "";
   return s;
 }
 const splitParas = (txt) => String(txt || "").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
 const pickPlainText = (fmts) => {
   const f = fmts || {};
-  return f["text/plain; charset=utf-8"] || f["text/plain"] || f["text/html"] || null;
+  const pick = (k) => (f[k] && !/\.zip$/i.test(f[k])) ? f[k] : null;
+  return pick("text/plain; charset=utf-8")
+      || pick("text/plain")
+      || pick("text/html; charset=utf-8")
+      || pick("text/html")
+      || null;
 };
 
 /* ---------- fetch helpers with timeout ---------- */
@@ -123,20 +145,31 @@ async function fetchQuranSnippets(query, topK = 6) {
 
 async function fetchGutenbergTitleSnippets(title, topK = 4) {
   try {
-    const js = await getJSON(`https://gutendex.com/books/?search=${encodeURIComponent(title)}`);
-    const list = keepEnglishBooks(js?.results || []);
-    const book = list[0] || (js?.results || [])[0]; if (!book) return [];
+    // Force English results
+    const js = await getJSON(`https://gutendex.com/books/?languages=en&search=${encodeURIComponent(title)}`);
+    const results = js?.results || [];
+    if (!results.length) return [];
+
+    // Prefer an exact/near title match
+    const want = new RegExp(title.replace(/\s+/g, ".*"), "i");
+    results.sort((a,b) => (want.test(a.title||"")?0:1) - (want.test(b.title||"")?0:1));
+
+    const book = results[0]; if (!book) return [];
     const url = pickPlainText(book.formats || {}); if (!url) return [];
+
     const raw = await getTEXT(url);
-    const paras = splitParas(raw).map(cleanPara).filter(Boolean);
-    return paras.slice(0, topK).map((p, i) => ({
+    const plain = isHTML(raw) ? htmlToPlain(raw) : raw;
+
+    const paras = splitParas(plain).map(cleanPara).filter(Boolean);
+    const out = paras.slice(0, topK).map((p, i) => ({
       work: book.title || title,
       author: (book.authors?.[0]?.name) || null,
       pos: i,
       quote: clamp(p, 900),
       url,
       source: "gutenberg"
-    })).filter(allowSource);
+    }));
+    return out.filter(allowSource);
   } catch { return []; }
 }
 
