@@ -15,6 +15,53 @@ const SUBJECT_OPTIONS = [
   { value: "style:wisdom", label: "Ancient Wisdom" },
   { value: "style:practical", label: "Practical Steps" },
   { value: "style:comfort", label: "Comfort & Healing" },
+
+    // Core spiritual themes
+  { value: "topic:prayer", label: "Prayer & Meditation" },
+  { value: "topic:faith", label: "Faith & Belief" },
+  { value: "topic:doubt", label: "Spiritual Doubt" },
+  { value: "topic:purpose", label: "Purpose & Meaning" },
+  { value: "topic:gratitude", label: "Gratitude" },
+  { value: "topic:forgiveness", label: "Forgiveness" },
+  { value: "topic:hope", label: "Hope & Resilience" },
+
+  // Life situations
+  { value: "topic:relationships", label: "Relationships & Love" },
+  { value: "topic:family", label: "Family & Parenting" },
+  { value: "topic:friendship", label: "Friendship" },
+  { value: "topic:conflict", label: "Conflict Resolution" },
+  { value: "topic:loneliness", label: "Loneliness" },
+  { value: "topic:grief", label: "Grief & Loss" },
+  { value: "topic:anxiety", label: "Anxiety & Fear" },
+  { value: "topic:health", label: "Health & Illness" },
+  { value: "topic:addiction", label: "Addictions & Recovery" },
+
+  // Work & practical life
+  { value: "topic:work", label: "Work & Purpose" },
+  { value: "topic:career", label: "Career Decisions" },
+  { value: "topic:money", label: "Money & Stewardship" },
+  { value: "topic:ethics", label: "Ethical Dilemmas" },
+  { value: "topic:decisions", label: "Decision-Making" },
+  { value: "topic:habits", label: "Habits & Discipline" },
+  { value: "topic:study", label: "Study & Learning" },
+  { value: "topic:creativity", label: "Creativity" },
+
+  // Community & world
+  { value: "topic:community", label: "Community & Service" },
+  { value: "topic:justice", label: "Justice & Compassion" },
+  { value: "topic:nature", label: "Nature & Environment" },
+  { value: "topic:travel", label: "Travel & Pilgrimage" },
+  { value: "topic:rituals", label: "Rituals & Holidays" },
+
+  // Life stages
+  { value: "topic:youth", label: "Youth & Teens" },
+  { value: "topic:marriage", label: "Marriage" },
+  { value: "topic:aging", label: "Elders & Aging" },
+  { value: "topic:endoflife", label: "End of Life" },
+
+  // Special topics
+  { value: "topic:dreams", label: "Dreams & Symbols" },
+  { value: "topic:scripture", label: "Scripture Study" }
 ];
 
 function autoLangFromPath(path) {
