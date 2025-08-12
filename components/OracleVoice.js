@@ -1,6 +1,4 @@
 // FILE: /components/OracleVoice.js
-// Answers ONLY after clicking “Get Answer”. Dictation stop never sends.
-// Spellcheck (red underlines) enabled; “Sources (n)” always visible with live links.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -67,6 +65,31 @@ async function fetchGroundSources(query, path, lang, max = 8) {
 
 const splitIntoSentences = (t) => String(t||"").split(/(?<=[.!?])\s+/).filter(Boolean);
 
+function sacredNormalize(s) {
+  return s
+    .replace(/\bgoods\b/gi, 'Gods')
+    .replace(/\bgood\b(?=\s+is\b)/gi, 'God')
+    .replace(/\balla?h\b/gi, 'Allah')
+    .replace(/\bkabbalah?\b/gi, 'Kabbalah')
+    .replace(/\brambam\b/gi, 'Rambam');
+}
+
+function buildTextFile(q, a, srcs=[]) {
+  const body = [
+    "Write or Speak to the Oracle",
+    "",
+    "Question:",
+    q || "(none)",
+    "",
+    "Answer:",
+    a || "(no answer)",
+    "",
+    srcs.length ? "Sources:" : "Sources: (none)",
+    ...srcs.map((s,i)=>`[#${i+1}] ${s.work}${s.author?` — ${s.author}`:""} ${s.url?`\n${s.url}`:""}`)
+  ].join("\n");
+  return new Blob([body], { type: "text/plain;charset=utf-8" });
+}
+
 export default function OracleVoice({ path = "Universal" }) {
   const [listening, setListening]   = useState(false);
   const [speaking, setSpeaking]     = useState(false);
@@ -101,7 +124,6 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
 
-  // voice
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
     const assign = () => (voiceRef.current = pickVoice(chosenLang));
@@ -110,7 +132,6 @@ export default function OracleVoice({ path = "Universal" }) {
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, [chosenLang]);
 
-  // canvas
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -188,13 +209,12 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  // ⛔️ Stop never sends; user must click Get Answer.
   async function onStop() {
     keepAliveRef.current = false; setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
-    const text = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
-    setLiveText(text); // keep text so the user can correct it (with red underlines)
+    const finalizedText = sacredNormalize([finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim());
+    setLiveText(finalizedText);
   }
 
   function stopAnswerVoice() { try { window.speechSynthesis.cancel(); } catch {}; setSpeaking(false); }
@@ -210,41 +230,30 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   async function sendForAnswer(text) {
-    const payload = String(text||"").trim();
-    if (!payload) return;
+    const rawText = String(text||"").trim();
+    if (!rawText) return;
     setReplying(true);
 
     const isStyle = subject.startsWith("style:");
     const isTopic = subject.startsWith("topic:");
     const mode  = isStyle ? subject.slice(6) : "gentle";
     const topic = isTopic ? subject.slice(6) : "general";
+    
+    const payload = polish
+      ? `Please restate the user's input in clear ${chosenLang?.startsWith("en") ? "English" : "language"} (fix grammar only, keep meaning). Then answer directly.\n\n${rawText}`
+      : rawText;
 
     try {
-      // sacred quotes (server filters junk)
-      const quotes = await fetchGroundSources(payload, path, chosenLang, 8);
-      const contextBlock = quotes.length
-        ? "\n\nSourced quotes:\n" + quotes.map((s, i) => `[#${i+1}] ${s.work}${s.author ? " — " + s.author : ""}\n${s.text}`).join("\n\n")
-        : "";
-
-      const guard = "IMPORTANT: Do not instruct the user to write another question. Answer directly.";
-      const message = (polish
-        ? `Please restate the user's input in clear ${chosenLang?.startsWith("en") ? "English" : "language"} (fix grammar, keep meaning). Then answer directly.\n${guard}\nUser input: """${payload}"""`
-        : `${guard}\n${payload}`) + (contextBlock ? `\n\n---\n${contextBlock}` : "");
-
       const r = await fetch("/api/auracode-chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, path, mode, topic, lang: chosenLang }),
+        body: JSON.stringify({ message: payload, path, mode, topic, lang: chosenLang }),
       });
       const data = await r.json().catch(() => ({}));
-      const msg  = data?.reply || "";
+      const msg  = data?.reply || "I apologize, but I couldn't formulate a response. Please try rephrasing your question.";
       setReply(msg);
 
       const srv = Array.isArray(data?.sources) ? data.sources : [];
-      const merged = [
-        ...srv.map(s => ({ work: s.work, author: s.author, url: s.url, pos: s.pos, quote: s.quote })),
-        ...quotes.map(s => ({ work: s.work, author: s.author, url: s.url, pos: s.pos, quote: s.text }))
-      ];
-      setSources(merged);
+      setSources(srv);
 
       if (msg) {
         speakState.current = { parts: splitIntoSentences(msg), idx: 0 };
@@ -259,14 +268,46 @@ export default function OracleVoice({ path = "Universal" }) {
     setVolume(clamped);
     if (speaking) { wasCancelledRef.current = true; window.speechSynthesis.cancel(); setTimeout(() => speakFrom(speakState.current.idx), 120); }
   }
+  
   function onUserTyping(e) { setLiveText(e.target.value); }
 
-  useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); }, []);
+  function downloadTxt() {
+    const blob = buildTextFile(liveText, reply, sources);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "oracle-answer.txt";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
+  function printView() {
+    const w = window.open("", "_blank");
+    w.document.write(`
+      <html><head><title>Oracle Answer</title>
+      <style>
+        body{font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding:24px; line-height:1.6;}
+        h1{margin:0 0 12px;font-size:20px} h2{margin:24px 0 8px;}
+        p{margin:0;}
+        blockquote{margin:8px 0;border-left:3px solid #cbd5e1;padding-left:10px;color:#334155}
+        .src{margin-top:12px} a{color:#0b57d0;}
+      </style></head><body>
+      <h1>Write or Speak to the Oracle</h1>
+      <h2>Question</h2><p>${(liveText||"").replaceAll("&","&amp;").replaceAll("<","&lt;")}</p>
+      <h2>Answer</h2><div>${(reply||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll("\n","<br>")}</div>
+      ${sources?.length ? `<h2>Sources</h2>` : `<h2>Sources</h2><p>(none)</p>`}
+      ${sources.map((s,i)=>`<div class="src">[#${i+1}] <strong>${s.work}</strong>${s.author?` — ${s.author}`:""} ${s.url?`<br><a href="${s.url}" target="_blank">${s.url}</a>`:""}</div>`).join("")}
+      <script>setTimeout(() => window.print(), 500);</script></body></html>`);
+    w.document.close();
+  }
+
+  useEffect(() => () => { try { recRef.current && recRef.current.stop(); } catch {}; stopMicViz(); stopAnswerVoice(); }, []);
 
   return (
     <section className="oracle">
       <header className="head">
-        <div className="persona">{path === "Jewish" ? "Rabbi" : path === "Christian" ? "Priest" : path === "Muslim" ? "Imam" : path === "Eastern" ? "Monk" : "Sage"}</div>
+        <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
         <div className="bar">
           <label>Language:
@@ -303,8 +344,8 @@ export default function OracleVoice({ path = "Universal" }) {
               value={liveText}
               onChange={onUserTyping}
               placeholder="Type or speak here…"
-              lang={chosenLang || "en"}          // <-- helps native spellcheck pick the right dictionary
-              spellCheck={true}                  // <-- red squiggles for misspellings
+              lang={chosenLang || "en"}
+              spellCheck={true}
               autoCorrect="on"
               autoCapitalize="sentences"
             />
@@ -314,10 +355,11 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              {/* Always visible */}
-              <button className="btn ghost" onClick={() => sendForAnswer(liveText)} disabled={replying}>
+              <button className="btn ghost" onClick={() => sendForAnswer(liveText)} disabled={replying || !liveText}>
                 {replying ? "Thinking…" : "Get Answer ⟶"}
               </button>
+              <button className="btn" onClick={downloadTxt} disabled={!reply}>Download</button>
+              <button className="btn" onClick={printView} disabled={!reply}>Print</button>
               {speaking && <button className="btn danger" onClick={stopAnswerVoice}>🔇 Stop Answer</button>}
             </div>
           </div>
@@ -331,7 +373,6 @@ export default function OracleVoice({ path = "Universal" }) {
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
 
-            {/* Sources control: always shown; disabled at 0 */}
             <div className="sources">
               <button
                 className="link"
@@ -349,7 +390,7 @@ export default function OracleVoice({ path = "Universal" }) {
                   {sources.map((s, i) => (
                     <li key={i}>
                       <div className="srcTitle">
-                        [#{i+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{typeof s.pos === "number" ? ` (pos ${s.pos})` : ""}{" "}
+                        [#{s.i || i+1}] {s.work}{s.author ? ` — ${s.author}` : ""}{" "}
                         {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">source</a> : null}
                       </div>
                       {(s.quote || s.text) ? <blockquote className="quote">“{(s.quote || s.text).slice(0, 900)}”</blockquote> : null}
@@ -361,7 +402,6 @@ export default function OracleVoice({ path = "Universal" }) {
           </div>
         </div>
       </div>
-
       <style jsx>{`
         .oracle { position:relative; max-width:1100px; margin:16px auto; padding:18px 12px; border-radius:24px;
                   background: radial-gradient(1200px 600px at 5% -10%, #eef2ff 0%, transparent 60%),
@@ -390,11 +430,12 @@ export default function OracleVoice({ path = "Universal" }) {
         @keyframes slowspin { to { transform: rotate(-360deg); } }
         .log { flex:1; min-width:0; }
         .label { font-size:.86rem; color:#64748b; margin-bottom:6px; }
-        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; }
+        .bubble { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; min-height:44px; white-space:pre-wrap; }
         .bubble.guide { background:#eef6ff; border-color:#dbeafe; }
         .edit { width:100%; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; font-size:1rem; min-height:120px; }
         .row { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
-        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); touch-action:manipulation; }
+        .btn { padding:12px 18px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); touch-action:manipulation; cursor:pointer; }
+        .btn:disabled { background-color:#f1f5f9; color:#94a3b8; cursor:not-allowed; }
         .btn.start { color:#fff; background: linear-gradient(135deg, #7c3aed, #14b8a6); border:none; }
         .btn.stop  { color:#fff; background:#111827; border:none; }
         .btn.ghost { background:#fff; }
