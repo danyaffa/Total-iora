@@ -1,8 +1,4 @@
 // FILE: /pages/api/auracode-chat.js
-// Purpose: Answer a user message, grounded ONLY in approved sacred sources.
-// Sources allowed: Sefaria (Tanakh/Talmud), alquran.cloud (Qur’an), Gutenberg (KJV Bible, Tao Te Ching, Bhagavad Gita, Dhammapada).
-// Filters out government/.gov/FOIA/CIA/etc. Cleans Gutenberg paras to avoid TOCs and junk.
-
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -10,6 +6,12 @@ export const maxDuration = 30;
 const clamp = (s, n = 900) => String(s || "").slice(0, n);
 const asText = (v) => (typeof v === "string" ? v : JSON.stringify(v || ""));
 const isOK = (s) => !!(s && String(s).trim());
+
+const SRC_LINK = {
+  sefaria: (ref) => `https://www.sefaria.org/${encodeURIComponent(ref)}?lang=bi`,
+  quran:   (surahNum, ayahNum) => `https://quran.com/${surahNum}/${ayahNum}`,
+  gutenberg: (bookId) => `https://www.gutenberg.org/ebooks/${bookId}`,
+};
 
 function langName(lang) {
   const s = String(lang || "");
@@ -43,8 +45,9 @@ function allowSource(s) {
   const banned = /(central intelligence agency|cia|foia|world factbook|\.gov\b|whitehouse|nsa|fbi)/i;
   return !banned.test(all);
 }
-function keepEnglishBooks(list) { return (list || []).filter(b => (b.languages || []).includes("en")); }
+
 function isHTML(s){ return /<\s*html[\s>]/i.test(String(s||"")); }
+
 function htmlToPlain(raw){
   let s = String(raw||"");
   s = s.replace(/<head[\s\S]*?<\/head>/gi," ")
@@ -52,7 +55,7 @@ function htmlToPlain(raw){
        .replace(/<style[\s\S]*?<\/style>/gi," ")
        .replace(/<nav[\s\S]*?<\/nav>/gi," ")
        .replace(/<footer[\s\S]*?<\/footer>/gi," ")
-       .replace(/<!--[\s\S]*?-->/g," ");
+       .replace(//g," "); // ✅ strip comments
   s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n")
        .replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n");
   s = s.replace(/<[^>]+>/g," ");
@@ -60,6 +63,7 @@ function htmlToPlain(raw){
   s = s.replace(/\r/g,"").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/[ \t]{2,}/g," ").trim();
   return s;
 }
+
 function cleanPara(p) {
   const s = String(p || "").trim();
   if (s.length < 120) return "";
@@ -68,16 +72,6 @@ function cleanPara(p) {
   if (/project\s+gutenberg/i.test(s)) return "";
   return s;
 }
-const splitParas = (txt) => String(txt || "").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-const pickPlainText = (fmts) => {
-  const f = fmts || {};
-  const pick = (k) => (f[k] && !/\.zip$/i.test(f[k])) ? f[k] : null;
-  return pick("text/plain; charset=utf-8")
-      || pick("text/plain")
-      || pick("text/html; charset=utf-8")
-      || pick("text/html")
-      || null;
-};
 
 /* ---------- fetch helpers with timeout ---------- */
 async function withTimeout(run, ms = 12000) {
@@ -118,8 +112,8 @@ async function fetchSefariaSnippets(query, topK = 6) {
         author: "Sefaria",
         pos: 0,
         quote,
-        url: `https://www.sefaria.org/${encodeURIComponent(ref)}`,
-        source: "sefaria"
+        url: SRC_LINK.sefaria(ref),
+        source: "sefaria",
       });
       if (out.length >= topK) break;
     }
@@ -127,7 +121,7 @@ async function fetchSefariaSnippets(query, topK = 6) {
   } catch { return []; }
 }
 
-async function fetchQuranSnippets(query, topK = 6) {
+async function fetchQuranSnippets(query, topK = 6){
   try {
     const js = await getJSON(`https://api.alquran.cloud/v1/search/${encodeURIComponent(query)}/all/en`);
     const matches = js?.data?.matches || [];
@@ -136,41 +130,46 @@ async function fetchQuranSnippets(query, topK = 6) {
       author: "Qur'an",
       pos: m.numberInSurah || 0,
       quote: clamp(m.text, 900),
-      url: `https://quran.com/${m.surah?.number || ""}/${m.numberInSurah || ""}`,
+      url: SRC_LINK.quran(m.surah?.number || "", m.numberInSurah || ""),
       source: "quran",
     })).filter(allowSource);
   } catch { return []; }
 }
 
-async function fetchGutenbergTitleSnippets(title, topK = 4) {
+async function fetchGutenbergTitleSnippets(title, topK = 4){
   try {
-    // Force English; avoid accidental German/other-language editions
     const js = await getJSON(`https://gutendex.com/books/?languages=en&search=${encodeURIComponent(title)}`);
     const results = js?.results || [];
     if (!results.length) return [];
 
-    // Prefer exact/near title match
     const want = new RegExp(title.replace(/\s+/g, ".*"), "i");
     results.sort((a,b) => (want.test(a.title||"")?0:1) - (want.test(b.title||"")?0:1));
-
     const book = results[0]; if (!book) return [];
-    const url = pickPlainText(book.formats || {}); if (!url) return [];
+    
+    const fmts = book.formats || {};
+    const rawURL =
+      (fmts["text/plain; charset=utf-8"] && !/\.zip$/i.test(fmts["text/plain; charset=utf-8"])) ? fmts["text/plain; charset=utf-8"] :
+      (fmts["text/plain"] && !/\.zip$/i.test(fmts["text/plain"])) ? fmts["text/plain"] :
+      (fmts["text/html; charset=utf-8"] && !/\.zip$/i.test(fmts["text/html; charset=utf-8"])) ? fmts["text/html; charset=utf-8"] :
+      (fmts["text/html"] && !/\.zip$/i.test(fmts["text/html"])) ? fmts["text/html"] : null;
+    if (!rawURL) return [];
 
-    const raw = await getTEXT(url);
+    const landingURL = SRC_LINK.gutenberg(book.id);
+    const raw = await getTEXT(rawURL);
     const plain = isHTML(raw) ? htmlToPlain(raw) : raw;
 
-    const paras = splitParas(plain).map(cleanPara).filter(Boolean);
-    const out = paras.slice(0, topK).map((p, i) => ({
+    const paras = String(plain||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).map(cleanPara).filter(Boolean);
+    return paras.slice(0, topK).map((p,i)=>({
       work: book.title || title,
-      author: (book.authors?.[0]?.name) || null,
-      pos: i,
+      author: (book.authors?.[0]?.name)||null,
+      pos:i,
       quote: clamp(p, 900),
-      url,
-      source: "gutenberg"
-    }));
-    return out.filter(allowSource);
+      url: landingURL,
+      source:"gutenberg",
+    })).filter(allowSource);
   } catch { return []; }
 }
+
 
 /* ---------- main handler ---------- */
 export default async function handler(req, res) {
@@ -186,7 +185,6 @@ export default async function handler(req, res) {
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
     const targetLanguage = langName(lang);
 
-    // Sacred-first plan (room-aware)
     const tasks = [];
     if (path === "Jewish") tasks.push(fetchSefariaSnippets(message, 6));
     if (path === "Muslim") tasks.push(fetchQuranSnippets(message, 6));
@@ -208,7 +206,6 @@ export default async function handler(req, res) {
     let sources = [];
     for (const r of settled) if (r.status === "fulfilled" && Array.isArray(r.value)) sources = sources.concat(r.value);
 
-    // de-dupe & cap
     const seen = new Set();
     sources = sources.filter((s) => {
       if (!s || !s.work) return false;
@@ -218,7 +215,6 @@ export default async function handler(req, res) {
       return true;
     }).slice(0, Math.max(1, Math.min(Number(maxSources) || 8, 12)));
 
-    // system + user prompt
     const persona =
       path === "Jewish" ? "Rabbi" :
       path === "Christian" ? "Priest" :
