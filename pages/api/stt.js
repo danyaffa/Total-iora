@@ -5,21 +5,22 @@ export const maxDuration = 30;
 export default async function handler(req, res){
   if (req.method !== "POST") return res.status(405).json({ error:"Method not allowed" });
   try {
-    const { b64 = "", mime = "audio/webm", lang = "en" } = (typeof req.body === "string" ? JSON.parse(req.body) : req.body) || {};
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+    const { b64 = "", mime = "audio/webm", lang = "en" } = body;
     if (!b64) return res.status(400).json({ error:"Missing audio" });
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     if (!OPENAI_API_KEY) return res.status(503).json({ error:"Missing OPENAI_API_KEY" });
 
     const buf = Buffer.from(b64, "base64");
-    const blob = new Blob([buf], { type: mime || "audio/webm" });
+    const blob = new Blob([buf], { type: mime });
 
     const bias = [
       "God, LORD, Allah, Qur'an, Quran, Koran, Hadith, Sunnah",
       "Gospel, Jesus, Christ, Trinity, Father, Son, Holy Spirit",
       "Torah, Tanakh, Talmud, Psalms, Kabbalah, Maimonides, Rambam, Mussar",
       "Bhagavad Gita, Krishna, Arjuna, Dharma, Dhammapada, Buddha, Tao, Laozi",
-      "Sufi, dhikr, muraqabah, mitzvah, halacha, shema, shalom",
+      "Sufi, dhikr, muraqabah, mitzvah, halacha, shema, shalom"
     ].join("; ");
 
     const fd = new FormData();
