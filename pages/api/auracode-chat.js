@@ -2,7 +2,6 @@
 // Purpose: Answer a user message, grounded ONLY in approved sacred sources.
 // Sources allowed: Sefaria (Tanakh/Talmud), alquran.cloud (Qur’an), Gutenberg (KJV Bible, Tao Te Ching, Bhagavad Gita, Dhammapada).
 // Filters out government/.gov/FOIA/CIA/etc. Cleans Gutenberg paras to avoid TOCs and junk.
-// NOTE: Updated to fix "garbage" HTML snippets from Gutenberg (force English, prefer plain text, strip HTML if needed).
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -65,7 +64,7 @@ function cleanPara(p) {
   const s = String(p || "").trim();
   if (s.length < 120) return "";
   if (/^\s*(contents|table of contents|chapter|book|part|section|introduction|foreword|preface|index|license)\b/i.test(s)) return "";
-  if (/[A-Z\s]{18,}/.test(s) && !/[a-z]/.test(s)) return ""; // all-caps headings/TOC
+  if (/[A-Z\s]{18,}/.test(s) && !/[a-z]/.test(s)) return "";
   if (/project\s+gutenberg/i.test(s)) return "";
   return s;
 }
@@ -145,12 +144,12 @@ async function fetchQuranSnippets(query, topK = 6) {
 
 async function fetchGutenbergTitleSnippets(title, topK = 4) {
   try {
-    // Force English results
+    // Force English; avoid accidental German/other-language editions
     const js = await getJSON(`https://gutendex.com/books/?languages=en&search=${encodeURIComponent(title)}`);
     const results = js?.results || [];
     if (!results.length) return [];
 
-    // Prefer an exact/near title match
+    // Prefer exact/near title match
     const want = new RegExp(title.replace(/\s+/g, ".*"), "i");
     results.sort((a,b) => (want.test(a.title||"")?0:1) - (want.test(b.title||"")?0:1));
 
