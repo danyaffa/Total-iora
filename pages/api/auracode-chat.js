@@ -1,6 +1,6 @@
 // FILE: /pages/api/auracode-chat.js
 // Sacred-text whitelist only + filtered paragraphs. Adds Fathers/Saints for Christian.
-// Returns sources that match your room labels.
+// Returns sources aligned with room labels and a grounded reply.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -20,7 +20,7 @@ const GUIDANCE = {
   Christian: "Draw gently from the Gospels and early/medieval saints (Augustine, Kempis); keep it pastoral.",
   Jewish: "Draw gently from Torah, Psalms, and sages (Rambam/Mussar) for life-skills.",
   Eastern: "Draw gently from Dhammapada, Tao Te Ching, and Bhagavad Gita.",
-  Universal: "Draw gently from humanist ethics and contemplative practice."
+  Universal: "Draw gently from humanist ethics and contemplative practice with sacred quotes for light grounding.",
 };
 const ETHOS = [
   "Never tell the user to write another question — always answer directly.",
@@ -33,7 +33,6 @@ const pickPlainText = (fmts) => {
   const t = k.find(x=>x.startsWith("text/plain")) || k.find(x=>x.startsWith("text/html"));
   return t ? fmts[t] : null;
 };
-
 function looksLikeLicense(text="") {
   const t = text.toLowerCase();
   return (
@@ -133,10 +132,12 @@ export default async function handler(req, res) {
       tasks.push(fetchGutenbergTitle("Dhammapada", 4));
     }
     if (path === "Universal") {
+      tasks.push(fetchQuran(message, 3));                              // Qur’an
+      tasks.push(fetchSefaria(message, 3));                            // Sefaria
+      tasks.push(fetchGutenbergTitle("King James Bible", 2));          // Gospels/Bible
       tasks.push(fetchGutenbergTitle("Tao Te Ching", 2));
       tasks.push(fetchGutenbergTitle("Bhagavad Gita", 2));
       tasks.push(fetchGutenbergTitle("Dhammapada", 2));
-      tasks.push(fetchSefaria(message, 2));
     }
 
     const results = await Promise.allSettled(tasks);
