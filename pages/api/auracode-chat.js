@@ -2,7 +2,9 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-/* ---------- utils ---------- */
+import { searchSacredFirst } from "../../lib/sacred-sourcehub.js";
+
+/* ---------- tiny utils ---------- */
 const clip = (s, n = 900) => String(s || "").trim().slice(0, n);
 const asText = (v) => (typeof v === "string" ? v : JSON.stringify(v || ""));
 const ok = (s) => !!(s && String(s).trim());
@@ -46,11 +48,17 @@ async function getTEXT(url, ms = 12000) {
 function isHTML(s){ return /<\s*html[\s>]/i.test(String(s||"")); }
 function htmlToPlain(raw){
   let s = String(raw||"");
-  s = s.replace(/<head[\s\S]*?<\/head>/gi," ").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ")
-       .replace(/<nav[\s\S]*?<\/nav>/gi," ").replace(/<footer[\s\S]*?<\/footer>/gi," ");
-  s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n").replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n")
-       .replace(/<[^>]+>/g," ").replace(/project\s+gutenberg[\s\S]*$/i," ").replace(/\r/g,"")
-       .replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/[ \t]{2,}/g," ").trim();
+  s = s.replace(/<head[\s\S]*?<\/head>/gi," ")
+       .replace(/<script[\s\S]*?<\/script>/gi," ")
+       .replace(/<style[\s\S]*?<\/style>/gi," ")
+       .replace(/<nav[\s\S]*?<\/nav>/gi," ")
+       .replace(/<footer[\s\S]*?<\/footer>/gi," ");
+  s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n")
+       .replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n")
+       .replace(/<[^>]+>/g," ")
+       .replace(/project\s+gutenberg[\s\S]*$/i," ")
+       .replace(/\r/g,"").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/[ \t]{2,}/g," ")
+       .trim();
   return s;
 }
 function cleanPara(p) {
@@ -130,20 +138,14 @@ export default async function handler(req, res){
     // 1) YOUR curated sources first
     let manifest = [];
     try {
-      const hub = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/subjects/search`, {
-        method:"POST", headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ query: message, path, max: maxSources })
-      }).catch(()=>null);
-      if (hub?.ok) {
-        const { quotes=[] } = await hub.json().catch(()=>({}));
-        manifest = quotes.map(q => ({
-          work: q.work || q.title || q.ref,
-          author: q.author || null,
-          url: q.url || "",
-          quote: clip(q.text || q.quote || q.chunk || "", 900),
-          source: q.source || "sacred"
-        })).filter(x => x.work && x.quote);
-      }
+      const { quotes = [] } = await searchSacredFirst({ query: message, path, max: maxSources }) || {};
+      manifest = quotes.map(q => ({
+        work: q.work || q.title || q.ref,
+        author: q.author || null,
+        url: q.url || "",
+        quote: clip(q.text || q.quote || q.chunk || "", 900),
+        source: q.source || "sacred"
+      })).filter(x => x.work && x.quote);
     } catch { /* ignore */ }
 
     // 2) Fallback to public sources if hub is empty
@@ -165,11 +167,11 @@ export default async function handler(req, res){
         const e = await fetchQuran(message, 2);
         pool = [...a, ...b, ...c, ...d, ...e];
       }
-      // de-dupe
       const seen = new Set();
       manifest = pool.filter(s => {
         const key = `${s.source||"x"}|${s.work}|${s.url}|${(s.quote||"").slice(0,80)}`;
-        if (seen.has(key)) return false; seen.add(key); return s.work && s.quote;
+        if (seen.has(key)) return false; seen.add(key);
+        return s.work && s.quote;
       }).slice(0, Math.max(1, Number(maxSources)||8));
     }
 
@@ -178,9 +180,9 @@ export default async function handler(req, res){
     }).join("\n\n");
 
     const system = [
-      `You are the Total-iora Guide for the "${path}" room.`,
-      `Answer in ${targetLanguage}. Keep it kind and concise.`,
-      `You are given SOURCE EXCERPTS, each numbered [n]. Only cite from them.`,
+      `You are the Total-iora Guide for the "${path}" room. Be kind and clear.`,
+      `Answer in ${targetLanguage}.`,
+      `Use ONLY the numbered SOURCE EXCERPTS when quoting.`,
       `Return STRICT JSON only: {"answer":"<120–180 words>","citations":[{"index":n,"exact_quote":"<≤120w>","reason":"<≤20w>"}]}`
     ].join(" ");
 
@@ -212,7 +214,7 @@ export default async function handler(req, res){
       parsed = JSON.parse(m ? m[0] : raw);
     } catch { parsed = { answer: raw, citations: [] }; }
 
-    const answer = String(parsed?.answer || raw || "I’m here with you.").trim();
+    const answer = String(parsed?.answer || raw || "—").trim();
 
     const citations = Array.isArray(parsed?.citations) ? parsed.citations.map((c) => {
       const idx = Number(c?.index);
