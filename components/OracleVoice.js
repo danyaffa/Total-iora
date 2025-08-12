@@ -9,47 +9,48 @@ const LANG_OPTIONS = [
   { value: "ar", label: "Arabic" },
   { value: "he", label: "Hebrew" },
 ];
+
 const SUBJECT_OPTIONS = [
-    { value: "topic:general", label: "General" },
-    { value: "style:gentle", label: "Gentle Guidance" },
-    { value: "style:wisdom", label: "Ancient Wisdom" },
-    { value: "style:practical", label: "Practical Steps" },
-    { value: "style:comfort", label: "Comfort & Healing" },
-    { value: "topic:prayer", label: "Prayer & Meditation" },
-    { value: "topic:faith", label: "Faith & Belief" },
-    { value: "topic:doubt", label: "Spiritual Doubt" },
-    { value: "topic:purpose", label: "Purpose & Meaning" },
-    { value: "topic:gratitude", label: "Gratitude" },
-    { value: "topic:forgiveness", label: "Forgiveness" },
-    { value: "topic:hope", label: "Hope & Resilience" },
-    { value: "topic:relationships", label: "Relationships & Love" },
-    { value: "topic:family", label: "Family & Parenting" },
-    { value: "topic:friendship", label: "Friendship" },
-    { value: "topic:conflict", label: "Conflict Resolution" },
-    { value: "topic:loneliness", label: "Loneliness" },
-    { value: "topic:grief", label: "Grief & Loss" },
-    { value: "topic:anxiety", label: "Anxiety & Fear" },
-    { value: "topic:health", label: "Health & Illness" },
-    { value: "topic:addiction", label: "Addictions & Recovery" },
-    { value: "topic:work", label: "Work & Purpose" },
-    { value: "topic:career", label: "Career Decisions" },
-    { value: "topic:money", label: "Money & Stewardship" },
-    { value: "topic:ethics", label: "Ethical Dilemmas" },
-    { value: "topic:decisions", label: "Decision-Making" },
-    { value: "topic:habits", label: "Habits & Discipline" },
-    { value: "topic:study", label: "Study & Learning" },
-    { value: "topic:creativity", label: "Creativity" },
-    { value: "topic:community", label: "Community & Service" },
-    { value: "topic:justice", label: "Justice & Compassion" },
-    { value: "topic:nature", label: "Nature & Environment" },
-    { value: "topic:travel", label: "Travel & Pilgrimage" },
-    { value: "topic:rituals", label: "Rituals & Holidays" },
-    { value: "topic:youth", label: "Youth & Teens" },
-    { value: "topic:marriage", label: "Marriage" },
-    { value: "topic:aging", label: "Elders & Aging" },
-    { value: "topic:endoflife", label: "End of Life" },
-    { value: "topic:dreams", label: "Dreams & Symbols" },
-    { value: "topic:scripture", label: "Scripture Study" }
+  { value: "topic:general", label: "General" },
+  { value: "style:gentle", label: "Gentle Guidance" },
+  { value: "style:wisdom", label: "Ancient Wisdom" },
+  { value: "style:practical", label: "Practical Steps" },
+  { value: "style:comfort", label: "Comfort & Healing" },
+  { value: "topic:prayer", label: "Prayer & Meditation" },
+  { value: "topic:faith", label: "Faith & Belief" },
+  { value: "topic:doubt", label: "Spiritual Doubt" },
+  { value: "topic:purpose", label: "Purpose & Meaning" },
+  { value: "topic:gratitude", label: "Gratitude" },
+  { value: "topic:forgiveness", label: "Forgiveness" },
+  { value: "topic:hope", label: "Hope & Resilience" },
+  { value: "topic:relationships", label: "Relationships & Love" },
+  { value: "topic:family", label: "Family & Parenting" },
+  { value: "topic:friendship", label: "Friendship" },
+  { value: "topic:conflict", label: "Conflict Resolution" },
+  { value: "topic:loneliness", label: "Loneliness" },
+  { value: "topic:grief", label: "Grief & Loss" },
+  { value: "topic:anxiety", label: "Anxiety & Fear" },
+  { value: "topic:health", label: "Health & Illness" },
+  { value: "topic:addiction", label: "Addictions & Recovery" },
+  { value: "topic:work", label: "Work & Purpose" },
+  { value: "topic:career", label: "Career Decisions" },
+  { value: "topic:money", label: "Money & Stewardship" },
+  { value: "topic:ethics", label: "Ethical Dilemmas" },
+  { value: "topic:decisions", label: "Decision-Making" },
+  { value: "topic:habits", label: "Habits & Discipline" },
+  { value: "topic:study", label: "Study & Learning" },
+  { value: "topic:creativity", label: "Creativity" },
+  { value: "topic:community", label: "Community & Service" },
+  { value: "topic:justice", label: "Justice & Compassion" },
+  { value: "topic:nature", label: "Nature & Environment" },
+  { value: "topic:travel", label: "Travel & Pilgrimage" },
+  { value: "topic:rituals", label: "Rituals & Holidays" },
+  { value: "topic:youth", label: "Youth & Teens" },
+  { value: "topic:marriage", label: "Marriage" },
+  { value: "topic:aging", label: "Elders & Aging" },
+  { value: "topic:endoflife", label: "End of Life" },
+  { value: "topic:dreams", label: "Dreams & Symbols" },
+  { value: "topic:scripture", label: "Scripture Study" },
 ];
 
 function autoLangFromPath(path) {
@@ -70,6 +71,7 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
+// feature checks
 const hasSR = () => (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
 const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
 const isSecure = () =>
@@ -79,10 +81,10 @@ const isSecure = () =>
 function bestMime() {
   if (!hasRecorder()) return "";
   const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";
-  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // iOS/Safari
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
   if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
-  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";  // Firefox
   return "";
 }
 
@@ -118,7 +120,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const canvasRef      = useRef(null);
   const srRef = useRef(null);
   const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
-  const usingRef = useRef(null);
+  const usingRef = useRef(null); // "sr" | "rec"
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -141,14 +143,15 @@ export default function OracleVoice({ path = "Universal" }) {
   async function onStart() {
     setReply(""); setStatus(""); setListening(true);
     usingRef.current = null;
-  
+
+    // try SR first for live captions
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
         const rec = new SR();
         rec.lang = chosenLang || "en-US";
         rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
-  
+
         let finalBuf = "";
         rec.onresult = (e) => {
           let interim = "";
@@ -160,9 +163,8 @@ export default function OracleVoice({ path = "Universal" }) {
           }
           setLiveText([finalBuf, interim].filter(Boolean).join(" ").trim());
         };
-        rec.onerror = () => { /* fall back below if start fails */ };
         rec.onend   = () => { if (usingRef.current === "sr") { setListening(false); setStatus("Stopped."); } };
-  
+
         srRef.current = rec;
         rec.start();
         usingRef.current = "sr";
@@ -170,12 +172,13 @@ export default function OracleVoice({ path = "Universal" }) {
         return;
       } catch { /* fall through to recorder */ }
     }
-  
+
+    // fallback: recorder (text after Stop)
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
     }
-  
+
     try {
       setStatus("Opening microphone…");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
@@ -183,7 +186,7 @@ export default function OracleVoice({ path = "Universal" }) {
       const ctx = new AC(); try { await ctx.resume(); } catch {}
       const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
       const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
-  
+
       const mime = bestMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
@@ -191,7 +194,8 @@ export default function OracleVoice({ path = "Universal" }) {
       rec.onstart = () => setStatus("Recording…");
       rec.onerror = () => setStatus("Recorder error.");
       rec.start(1000);
-  
+
+      // orb viz
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
       const draw = () => {
@@ -206,7 +210,7 @@ export default function OracleVoice({ path = "Universal" }) {
         recRef.current.anim = requestAnimationFrame(draw);
       };
       draw();
-  
+
       recRef.current = { stream, rec, chunks, mime: mime || "audio/webm", ctx, analyser, anim: recRef.current.anim };
       usingRef.current = "rec";
       setStatus("Recording… (text will appear after Stop)");
@@ -214,31 +218,31 @@ export default function OracleVoice({ path = "Universal" }) {
       setListening(false); setStatus("Mic permission denied or unavailable.");
     }
   }
-  
+
   async function onStop() {
     if (!listening) return;
     setListening(false);
-  
+
     if (usingRef.current === "sr") {
       try { srRef.current && srRef.current.stop(); } catch {}
       usingRef.current = null;
       return;
     }
-  
+
     if (usingRef.current === "rec") {
       const r = recRef.current.rec;
       try { r && r.stop(); r && r.requestData && r.requestData(); } catch {}
       await new Promise(res => setTimeout(res, 400));
-  
+
       cancelAnimationFrame(recRef.current.anim || 0);
       try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
       try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-  
+
       const { chunks, mime } = recRef.current;
       recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
-  
+
       if (!chunks.length) { setStatus("No audio captured."); usingRef.current = null; return; }
-  
+
       setStatus("Transcribing…");
       try {
         const blob = new Blob(chunks, { type: mime || "audio/webm" });
