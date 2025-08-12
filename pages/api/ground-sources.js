@@ -79,7 +79,6 @@ const isGeneric = (q="")=>{
 
 /* --------------- providers --------------- */
 
-// Sefaria by search
 async function sefariaSearch(query, take=6, opts={}) {
   try {
     const r = await fetch(`https://www.sefaria.org/api/search-wrap?q=${encodeURIComponent(query)}&size=${take}&type=Text`);
@@ -101,7 +100,6 @@ async function sefariaSearch(query, take=6, opts={}) {
   } catch { return []; }
 }
 
-// Sefaria curated refs (fallback)
 async function sefariaRefs(refs=[], opts={}) {
   const out=[];
   for (const ref of refs) {
@@ -118,7 +116,6 @@ async function sefariaRefs(refs=[], opts={}) {
   return out;
 }
 
-// Qur’an search
 async function quranSearch(query, take=6, opts={}) {
   try {
     const r = await fetch(`https://api.alquran.cloud/v1/search/${encodeURIComponent(query)}/all/en`);
@@ -136,7 +133,6 @@ async function quranSearch(query, take=6, opts={}) {
   } catch { return []; }
 }
 
-// Qur’an curated (fallback: Al-Ikhlāṣ etc.)
 async function quranFallback() {
   try {
     const r = await fetch(`https://api.alquran.cloud/v1/surah/112/en.sahih`);
@@ -154,7 +150,6 @@ async function quranFallback() {
   } catch { return []; }
 }
 
-// Gutenberg by title
 async function gutenbergTitle(title, take=6, opts={}) {
   try {
     const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(title)}`);
@@ -179,7 +174,6 @@ export default async function handler(req, res) {
       query = "",
       path = "Universal",
       max = 6,
-      lang = "en",
       strict = true,
       minChars = MIN,
       maxChars = MAX,
@@ -187,18 +181,15 @@ export default async function handler(req, res) {
 
     const limit = clamp(Number(max)||6,1,12);
     const opts  = { minChars, maxChars };
-
-    // Build tasks
     const tasks = [];
     const generic = isGeneric(query);
 
     if (path === "Jewish") {
       if (ok(query) && !generic) tasks.push(sefariaSearch(query, 6, opts));
-      // curate classic “Who is God?” refs
       tasks.push(sefariaRefs(["Genesis 1:1","Exodus 3:14","Psalms 23:1"], opts));
     } else if (path === "Muslim") {
       if (ok(query) && !generic) tasks.push(quranSearch(query.replace(/\bgod\b/gi,"Allah"), 6, opts));
-      tasks.push(quranFallback()); // Al-Ikhlāṣ
+      tasks.push(quranFallback());
     } else if (path === "Christian") {
       tasks.push(gutenbergTitle("King James Bible", 6, opts));
       tasks.push(gutenbergTitle("The Imitation of Christ", 2, opts));
@@ -207,7 +198,7 @@ export default async function handler(req, res) {
       tasks.push(gutenbergTitle("Tao Te Ching", 4, opts));
       tasks.push(gutenbergTitle("Bhagavad Gita", 4, opts));
       tasks.push(gutenbergTitle("Dhammapada", 4, opts));
-    } else { // Universal — blend, plus curated fallbacks
+    } else { // Universal
       if (ok(query) && !generic) {
         tasks.push(sefariaSearch(query, 2, opts));
         tasks.push(quranSearch(query.replace(/\bgod\b/gi,"Allah"), 2, opts));
@@ -220,17 +211,14 @@ export default async function handler(req, res) {
       tasks.push(gutenbergTitle("Dhammapada", 2, opts));
     }
 
-    // Run + collect
     const settled = await Promise.allSettled(tasks);
     let results = [];
     for (const s of settled) if (s.status==="fulfilled" && Array.isArray(s.value)) results = results.concat(s.value);
 
-    // Filter + dedupe + cap
     results = dedupe(results)
       .filter((q)=> allow(q, !!strict) && ok(q.text||q.quote))
       .map((q)=>({ work:q.work, author:q.author||null, text:norm(q.text||q.quote).slice(0, maxChars), url:q.url||null, pos:q.pos ?? 0 }));
 
-    // Mild shuffle for variety
     for (let i = results.length - 1; i > 0; i--) {
       const j = (i + (Date.now()>>6)) % (i+1);
       [results[i], results[j]] = [results[j], results[i]];
