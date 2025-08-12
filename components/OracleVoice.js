@@ -70,10 +70,41 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
+const hasSR = () => (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
+const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
+const isSecure = () =>
+  typeof window === "undefined" ? true :
+  (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
+
+function bestMime() {
+  if (!hasRecorder()) return "";
+  const M = window.MediaRecorder;
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
+  return "";
+}
+
+async function sttUpload(blob, mime, lang) {
+  const buf = await blob.arrayBuffer();
+  let b64 = ""; const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+  const r = await fetch("/api/stt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ b64: btoa(b64), mime: mime || "audio/webm", lang: (lang || "en") }),
+  });
+  const js = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
+  return js?.text || "";
+}
+
 export default function OracleVoice({ path = "Universal" }) {
   const [listening, setListening]   = useState(false);
   const [speaking, setSpeaking]     = useState(false);
   const [replying, setReplying]     = useState(false);
+  const [status, setStatus]         = useState("");
   const [liveText, setLiveText]     = useState("");
   const [reply, setReply]           = useState("");
   const [lang, setLang]             = useState("auto");
@@ -81,17 +112,13 @@ export default function OracleVoice({ path = "Universal" }) {
   const [volume, setVolume]         = useState(1);
   const [polish, setPolish]         = useState(false);
 
-  // State for sources panel
   const [sources, setSources]       = useState([]);
   const [showSrc, setShowSrc]       = useState(false);
 
-  const recRef         = useRef(null);
-  const keepAliveRef   = useRef(false);
-  const finalBufRef    = useRef("");
-  const interimRef     = useRef("");
-  const userEditingRef = useRef(false);
   const canvasRef      = useRef(null);
-  const audioRef       = useRef({ ctx:null, analyser:null, animId:null, stream:null });
+  const srRef = useRef(null);
+  const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
+  const usingRef = useRef(null);
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -111,104 +138,117 @@ export default function OracleVoice({ path = "Universal" }) {
     cnv.getContext("2d").scale(dpr, dpr);
   }, []);
 
-  useEffect(() => {
-    const rec = recRef.current;
-    if (!rec) return;
-    try {
-      rec.lang = chosenLang || "en-US";
-      if (listening) {
-        rec.stop();
-        setTimeout(() => { try { rec.start(); } catch {} }, 200);
-      }
-    } catch {}
-  }, [chosenLang, listening]);
-
-  async function startMicViz() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
-    const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const c = canvasRef.current.getContext("2d");
-    const draw = () => {
-      analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a,b)=>a+b,0)/data.length;
-      const radius = 32 + (avg/255)*40;
-      c.clearRect(0,0,220,220);
-      const g = c.createRadialGradient(110,110,radius*0.25,110,110,radius);
-      g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
-      c.fillStyle = g; c.beginPath(); c.arc(110,110,radius,0,Math.PI*2); c.fill();
-      audioRef.current.animId = requestAnimationFrame(draw);
-    };
-    draw();
-    audioRef.current = { ctx, analyser, animId: audioRef.current.animId, stream };
-  }
-
-  function stopMicViz() {
-    cancelAnimationFrame(audioRef.current.animId || 0);
-    try { audioRef.current.ctx && audioRef.current.ctx.close(); } catch {}
-    try { audioRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-    audioRef.current = { ctx:null, analyser:null, animId:null, stream:null };
-    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0,0,220,220);
-  }
-
-  function ensureRecognizer() {
-    if (recRef.current) return recRef.current;
-    const SR = (window.webkitSpeechRecognition || window.SpeechRecognition);
-    if (!SR) { alert("Voice recognition isn’t supported on this device."); return null; }
-    const rec = new SR();
-    rec.lang = chosenLang || "en-US";
-    rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
-
-    rec.onresult = (e) => {
-      if (userEditingRef.current) return;
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i]; const t = (r[0]?.transcript || "").trim();
-        if (!t) continue;
-        if (r.isFinal) finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
-        else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
-      }
-      interimRef.current = interim;
-      setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
-    };
-    rec.onend = () => { if (keepAliveRef.current) { try { rec.start(); } catch {} } else setListening(false); };
-    rec.onerror = () => {};
-    recRef.current = rec;
-    return rec;
-  }
-
   async function onStart() {
-    finalBufRef.current = ""; interimRef.current = "";
-    setReply(""); setSources([]); setShowSrc(false);
-    keepAliveRef.current = true;
-    userEditingRef.current = false;
+    setReply(""); setStatus(""); setListening(true);
+    usingRef.current = null;
+  
+    if (hasSR()) {
+      try {
+        const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
+        const rec = new SR();
+        rec.lang = chosenLang || "en-US";
+        rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+  
+        let finalBuf = "";
+        rec.onresult = (e) => {
+          let interim = "";
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const r = e.results[i]; const t = (r[0]?.transcript || "").trim();
+            if (!t) continue;
+            if (r.isFinal) finalBuf = (finalBuf + " " + t).replace(/\s+/g, " ").trim();
+            else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
+          }
+          setLiveText([finalBuf, interim].filter(Boolean).join(" ").trim());
+        };
+        rec.onerror = () => { /* fall back below if start fails */ };
+        rec.onend   = () => { if (usingRef.current === "sr") { setListening(false); setStatus("Stopped."); } };
+  
+        srRef.current = rec;
+        rec.start();
+        usingRef.current = "sr";
+        setStatus("Listening (live captions)...");
+        return;
+      } catch { /* fall through to recorder */ }
+    }
+  
+    if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
+    if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
+      setListening(false); setStatus("Dictation not supported on this device/browser."); return;
+    }
+  
     try {
-      await startMicViz();
-      const rec = ensureRecognizer(); if (!rec) return;
-      setListening(true);
-      try { rec.start(); } catch {}
+      setStatus("Opening microphone…");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC(); try { await ctx.resume(); } catch {}
+      const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+      const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
+  
+      const mime = bestMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstart = () => setStatus("Recording…");
+      rec.onerror = () => setStatus("Recorder error.");
+      rec.start(1000);
+  
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const c = canvasRef.current?.getContext?.("2d");
+      const draw = () => {
+        if (!c) return;
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a,b)=>a+b,0)/data.length;
+        const r = 32 + (avg/255)*40;
+        c.clearRect(0,0,220,220);
+        const g = c.createRadialGradient(110,110,r*0.25,110,110,r);
+        g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
+        c.fillStyle = g; c.beginPath(); c.arc(110,110,r,0,Math.PI*2); c.fill();
+        recRef.current.anim = requestAnimationFrame(draw);
+      };
+      draw();
+  
+      recRef.current = { stream, rec, chunks, mime: mime || "audio/webm", ctx, analyser, anim: recRef.current.anim };
+      usingRef.current = "rec";
+      setStatus("Recording… (text will appear after Stop)");
     } catch {
-      setListening(false); stopMicViz(); alert("Microphone permission denied.");
+      setListening(false); setStatus("Mic permission denied or unavailable.");
     }
   }
-
-  async function onStop() {
-    keepAliveRef.current = false;
-    setListening(false);
-    try { recRef.current && recRef.current.stop(); } catch {}
-    stopMicViz();
-    setLiveText([finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim());
-  }
   
-  function onUserTyping(e) {
-    userEditingRef.current = true;
-    setLiveText(e.target.value);
-    if (listening) {
-      keepAliveRef.current = false;
-      try { recRef.current && recRef.current.stop(); } catch {}
-      stopMicViz();
-      setListening(false);
+  async function onStop() {
+    if (!listening) return;
+    setListening(false);
+  
+    if (usingRef.current === "sr") {
+      try { srRef.current && srRef.current.stop(); } catch {}
+      usingRef.current = null;
+      return;
+    }
+  
+    if (usingRef.current === "rec") {
+      const r = recRef.current.rec;
+      try { r && r.stop(); r && r.requestData && r.requestData(); } catch {}
+      await new Promise(res => setTimeout(res, 400));
+  
+      cancelAnimationFrame(recRef.current.anim || 0);
+      try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
+      try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
+  
+      const { chunks, mime } = recRef.current;
+      recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
+  
+      if (!chunks.length) { setStatus("No audio captured."); usingRef.current = null; return; }
+  
+      setStatus("Transcribing…");
+      try {
+        const blob = new Blob(chunks, { type: mime || "audio/webm" });
+        const text = await sttUpload(blob, mime || "audio/webm", chosenLang);
+        setLiveText(prev => prev ? `${prev.trim()} ${text}` : (text || ""));
+        setStatus("Ready.");
+      } catch (e) {
+        setStatus(String(e?.message || e));
+      }
+      usingRef.current = null;
     }
   }
 
@@ -278,6 +318,7 @@ export default function OracleVoice({ path = "Universal" }) {
             <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar
           </label>
         </div>
+        {status && <div style={{textAlign:"center", color:"#334155", fontWeight:700, marginTop:6}}>{status}</div>}
       </header>
 
       <div className="body">
@@ -292,7 +333,7 @@ export default function OracleVoice({ path = "Universal" }) {
               className="edit"
               rows={5}
               value={liveText}
-              onChange={onUserTyping}
+              onChange={(e) => setLiveText(e.target.value)}
               placeholder="Type or speak here, then press Get Answer."
               autoCorrect="off"
               autoCapitalize="off"
