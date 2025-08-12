@@ -1,4 +1,7 @@
-// FILE: /components/OracleVoice.js  (answers on first click/stop; no auto-send; layout preserved)
+// FILE: /components/OracleVoice.js
+// Answers ONLY when user clicks "Get Answer". Dictation stop does not send.
+// Clean, reliable sources list. Layout preserved.
+
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const LANG_OPTIONS = [
@@ -10,11 +13,11 @@ const LANG_OPTIONS = [
   { value: "he", label: "Hebrew" },
 ];
 const SUBJECT_OPTIONS = [
+  { value: "topic:general", label: "General" },
   { value: "style:gentle", label: "Gentle Guidance" },
   { value: "style:practical", label: "Practical Steps" },
   { value: "style:wisdom", label: "Ancient Wisdom" },
   { value: "style:comfort", label: "Comfort & Healing" },
-  { value: "topic:general", label: "General" },
   { value: "topic:healthy", label: "Healthy living" },
   { value: "topic:relationships", label: "Human to human" },
   { value: "topic:skills", label: "Life skills (practical)" },
@@ -177,12 +180,15 @@ export default function OracleVoice({ path = "Universal" }) {
       alert("Microphone permission denied or unavailable.");
     }
   }
+
+  // ⛔️ No auto-send here anymore.
   async function onStop() {
     keepAliveRef.current = false; setListening(false);
     try { recRef.current && recRef.current.stop(); } catch {}
     stopMicViz();
     const text = String([finalBufRef.current, interimRef.current, liveText].filter(Boolean).join(" ").trim());
-    await sendForAnswer(text, { force: true });   // answer on first stop
+    setLiveText(text); // keep text so the user can correct it
+    // Wait for explicit click on “Get Answer”
   }
 
   function stopAnswerVoice() { try { window.speechSynthesis.cancel(); } catch {}; setSpeaking(false); }
@@ -197,13 +203,9 @@ export default function OracleVoice({ path = "Universal" }) {
     try { window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); } catch {}
   }
 
-  async function sendForAnswer(text, { force=false } = {}) {
+  async function sendForAnswer(text) {
     const payload = String(text||"").trim();
     if (!payload) return;
-    if (!force) {
-      const w = payload.split(/\s+/).filter(Boolean);
-      if (w.length < 2 && !/[.!?]$/.test(payload)) return; // prevent stray 1-word sends
-    }
 
     setReplying(true);
     const isStyle = subject.startsWith("style:");
@@ -279,6 +281,7 @@ export default function OracleVoice({ path = "Universal" }) {
             <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
           </label>
         </div>
+        <div className="hint" aria-live="polite">I only answer after you press <strong>Get Answer</strong>. Finish typing or dictating first.</div>
       </header>
 
       <div className="body">
@@ -299,7 +302,7 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              <button className="btn ghost" onClick={() => sendForAnswer(liveText, { force:true })} disabled={replying}>
+              <button className="btn ghost" onClick={() => sendForAnswer(liveText)} disabled={replying}>
                 {replying ? "Thinking…" : "Get Answer ⟶"}
               </button>
               {speaking && <button className="btn danger" onClick={stopAnswerVoice}>🔇 Stop Answer</button>}
@@ -350,6 +353,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .bar { margin-top:6px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; color:#475569; font-size:.95rem; }
         .bar select { margin-left:6px; padding:8px 10px; border-radius:10px; border:1px solid #e2e8f0; background:#fff; }
         .bar input[type="range"] { vertical-align:middle; width:140px; margin-left:8px; }
+        .hint { margin-top:6px; color:#1f2937; font-weight:700; }
         .body { display:grid; gap:12px; grid-template-columns:1fr; margin-top:10px; padding:0 6px; }
         @media (min-width:860px){ .body { grid-template-columns:1fr 1fr; } }
         .pane { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:12px; display:flex; gap:12px; align-items:flex-start; }
