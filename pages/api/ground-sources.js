@@ -1,13 +1,7 @@
 // FILE: /pages/api/ground-sources.js
-// Grounded quotes for Oracle — with strong fallbacks for generic prompts like “Who is God?”
-// - Strict allowlist (Sefaria, Quran.com/alQuran, Gutenberg)
-// - Room-specific curated fallbacks so Sources never comes back empty
-// - Randomized paragraph sampling + de-dup
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 28;
-
-/* ---------------- utils ---------------- */
 
 const ok = (s) => !!(s && String(s).trim());
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -76,8 +70,6 @@ const isGeneric = (q="")=>{
   if (words.length <= 3) return true;
   return /(who|what)\s+is\s+(god|allah)\b/.test(t);
 };
-
-/* --------------- providers --------------- */
 
 async function sefariaSearch(query, take=6, opts={}) {
   try {
@@ -164,8 +156,6 @@ async function gutenbergTitle(title, take=6, opts={}) {
   } catch { return []; }
 }
 
-/* --------------- handler --------------- */
-
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -174,6 +164,7 @@ export default async function handler(req, res) {
       query = "",
       path = "Universal",
       max = 6,
+      lang = "en",
       strict = true,
       minChars = MIN,
       maxChars = MAX,
@@ -181,6 +172,7 @@ export default async function handler(req, res) {
 
     const limit = clamp(Number(max)||6,1,12);
     const opts  = { minChars, maxChars };
+
     const tasks = [];
     const generic = isGeneric(query);
 
@@ -198,7 +190,7 @@ export default async function handler(req, res) {
       tasks.push(gutenbergTitle("Tao Te Ching", 4, opts));
       tasks.push(gutenbergTitle("Bhagavad Gita", 4, opts));
       tasks.push(gutenbergTitle("Dhammapada", 4, opts));
-    } else { // Universal
+    } else {
       if (ok(query) && !generic) {
         tasks.push(sefariaSearch(query, 2, opts));
         tasks.push(quranSearch(query.replace(/\bgod\b/gi,"Allah"), 2, opts));
