@@ -1,25 +1,18 @@
 // FILE: /pages/api/auracode-chat.js
-// Scripture-first chat: answers are grounded in sacred sources with mandatory citations.
-// Sources used:
-//   - Jewish: Sefaria (refs + search)
-//   - Muslim: alquran.cloud (ayah/surah)
-//   - Christian: bible-api.com (KJV verses) + Gutenberg Fathers/Saints
-//   - Eastern: Tao Te Ching / Bhagavad Gita / Dhammapada (Gutenberg)
-// Strictly filters out .gov/CIA/etc and Gutenberg license text.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-/* ------------------------ utils ------------------------ */
 
 const ok = (s) => !!(s && String(s).trim());
 const norm = (s) => String(s || "").trim().replace(/\s+/g, " ");
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
 const BAN = /(central intelligence agency|cia|foia|world factbook|\.gov\b|whitehouse|nsa|fbi)/i;
+
 const ALLOWED = new Set([
   "sefaria.org","www.sefaria.org",
   "api.alquran.cloud",
+  "quran.com","www.quran.com",
   "bible-api.com","www.bible-api.com",
   "gutendex.com","www.gutendex.com",
   "gutenberg.org","www.gutenberg.org",
@@ -57,8 +50,6 @@ function langName(lang) {
   return "English";
 }
 
-/* -------------------- Jewish (Sefaria) -------------------- */
-
 async function sefariaRef(ref) {
   try {
     const r = await fetch(`https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?context=0&commentary=0`);
@@ -87,8 +78,6 @@ async function sefariaSearch(q, topK = 4) {
     return out;
   } catch { return []; }
 }
-
-/* --------------------- Muslim (Qur'an) --------------------- */
 
 async function quranAyah(surah, ayah) {
   try {
@@ -125,9 +114,6 @@ async function quranSearch(q, topK = 6) {
   } catch { return []; }
 }
 
-/* ------------------ Christian (Bible + Fathers) ------------------ */
-
-// Precise KJV verses via bible-api.com
 async function kjvVerse(ref) {
   try {
     const r = await fetch(`https://bible-api.com/${encodeURIComponent(ref)}?translation=kjv`);
@@ -148,7 +134,6 @@ async function kjvVerse(ref) {
   } catch { return null; }
 }
 
-// Fathers/Saints via Gutenberg
 async function gutenbergByTitle(title, take = 2) {
   try {
     const r = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(title)}`);
@@ -177,17 +162,6 @@ async function gutenbergByTitle(title, take = 2) {
   } catch { return []; }
 }
 
-/* ---------------------- Eastern (classics) ---------------------- */
-
-async function easternClassics(takeEach = 2) {
-  const Tao = await gutenbergByTitle("Tao Te Ching", takeEach);
-  const Gita = await gutenbergByTitle("Bhagavad Gita", takeEach);
-  const Dham = await gutenbergByTitle("Dhammapada", takeEach);
-  return [...Tao, ...Gita, ...Dham];
-}
-
-/* ------------------- routing & composition ------------------- */
-
 const GUIDANCE = {
   Muslim: "Answer with compassion. Cite verses (e.g., Qur'an 112:1–4, 2:255) and classical wisdom. Avoid legal rulings.",
   Christian: "Answer pastorally. Cite the Gospels/NT where relevant (KJV) and optionally Fathers/Saints.",
@@ -207,122 +181,81 @@ function wantsGodConcept(message = "") {
   return /\bwho\s+is\s+(god|allah)\b/.test(t) || /\bwhat\s+is\s+(god|allah)\b/.test(t);
 }
 
-async function collectSources(message, path, maxPer = 6) {
+async function collectSources(message, path) {
   let out = [];
+  const generic = wantsGodConcept(message);
+  const q = message.replace(/\bgod\b/gi, "Allah");
 
   if (path === "Muslim") {
-    // Strong verses for “Who is God?”
-    if (wantsGodConcept(message)) {
-      const picks = await Promise.all([
-        quranAyah(112, 1), quranAyah(112, 2), quranAyah(112, 3), quranAyah(112, 4), // Al-Ikhlas
-        quranAyah(2, 255),  // Ayat al-Kursi
-        quranAyah(57, 3),   // The First and the Last…
-      ]);
+    if (generic) {
+      const picks = await Promise.all([ quranAyah(112, 1), quranAyah(112, 2), quranAyah(112, 3), quranAyah(112, 4), quranAyah(2, 255), quranAyah(57, 3) ]);
       out = out.concat(picks.filter(Boolean));
     }
-    // Query-based
-    const q = message.replace(/\bgod\b/gi, "Allah");
-    out = out.concat(await quranSearch(q, maxPer));
-  }
-
-  if (path === "Jewish") {
-    if (wantsGodConcept(message)) {
-      const picks = await Promise.all([
-        sefariaRef("Genesis 1:1"),
-        sefariaRef("Exodus 3:14"),
-        sefariaRef("Deuteronomy 6:4"),
-        sefariaRef("Psalms 23:1"),
-      ]);
+    if (message) out = out.concat(await quranSearch(q, 6));
+  } else if (path === "Jewish") {
+    if (generic) {
+      const picks = await Promise.all([ sefariaRef("Genesis 1:1"), sefariaRef("Exodus 3:14"), sefariaRef("Deuteronomy 6:4"), sefariaRef("Psalms 23:1") ]);
       out = out.concat(picks.filter(Boolean));
     }
-    out = out.concat(await sefariaSearch(message, 4));
-  }
-
-  if (path === "Christian") {
-    // Clear KJV verses
-    const keyRefs = wantsGodConcept(message)
-      ? ["John 1:1", "John 4:24", "1 John 4:8", "Revelation 1:8"]
-      : [];
-    const verses = await Promise.all(keyRefs.map(kjvVerse));
-    out = out.concat(verses.filter(Boolean));
-    // Gospels/NT via KJV (if none yet)
-    if (!out.length) {
-      const more = await Promise.all(["John 1:1", "Colossians 1:15-17"].map(kjvVerse));
-      out = out.concat(more.filter(Boolean));
-    }
-    // Fathers/Saints
+    if (message) out = out.concat(await sefariaSearch(message, 4));
+  } else if (path === "Christian") {
+    const keyRefs = generic ? ["John 1:1", "John 4:24", "1 John 4:8", "Revelation 1:8"] : [];
+    if (keyRefs.length) out = out.concat((await Promise.all(keyRefs.map(kjvVerse))).filter(Boolean));
+    if (!out.length && message) out = out.concat((await Promise.all(["John 1:1", "Colossians 1:15-17"].map(kjvVerse))).filter(Boolean));
     out = out.concat(await gutenbergByTitle("The Imitation of Christ", 2));
     out = out.concat(await gutenbergByTitle("Confessions of Saint Augustine", 2));
-  }
-
-  if (path === "Eastern") {
-    out = out.concat(await easternClassics(2));
-  }
-
-  if (path === "Universal") {
-    // Blend of the above; prefer concept hits if asked
-    if (wantsGodConcept(message)) {
-      const picks = await Promise.all([
-        // Jewish
-        sefariaRef("Exodus 3:14"),
-        // Muslim
-        quranAyah(112, 1),
-        // Christian
-        kjvVerse("John 1:1"),
-      ]);
+  } else if (path === "Eastern") {
+    out = out.concat(await gutenbergByTitle("Tao Te Ching", 2));
+    out = out.concat(await gutenbergByTitle("Bhagavad Gita", 2));
+    out = out.concat(await gutenbergByTitle("Dhammapada", 2));
+  } else {
+    if (generic) {
+      const picks = await Promise.all([ sefariaRef("Exodus 3:14"), quranAyah(112, 1), kjvVerse("John 1:1") ]);
       out = out.concat(picks.filter(Boolean));
     }
-    out = out.concat(await quranSearch(message.replace(/\bgod\b/gi, "Allah"), 2));
-    out = out.concat(await sefariaSearch(message, 2));
+    if (message) {
+      out = out.concat(await quranSearch(q, 2));
+      out = out.concat(await sefariaSearch(message, 2));
+    }
     out = out.concat(await gutenbergByTitle("Tao Te Ching", 2));
     out = out.concat(await gutenbergByTitle("Bhagavad Gita", 2));
     out = out.concat(await gutenbergByTitle("Dhammapada", 2));
   }
 
-  // Clean, dedupe, cap
   const seen = new Set();
   out = out
-    .filter((s) => s && allow(s) && ok(s.quote))
-    .filter((s) => !looksLicense(s.quote))
-    .filter((s) => {
-      const key = `${s.source || "x"}|${s.work}|${s.pos || 0}|${s.url || ""}`;
+    .filter(s => s && allow(s) && ok(s.quote) && !looksLicense(s.quote))
+    .filter(s => {
+      const key = `${s.source || "x"}|${s.work}|${s.pos || 0}|${(s.quote || "").slice(0,40)}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 
-  // Prefer 3–8 items
-  const cap = clamp(out.length ? out.length : 0, 3, 8);
+  const cap = clamp(out.length, 3, 8);
   return out.slice(0, cap);
 }
-
-/* ------------------------ handler ------------------------ */
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { message, path = "Universal", mode = "general", topic = "general", lang = "en-US" } = req.body || {};
+    const { message, path = "Universal", lang = "en-US" } = req.body || {};
     if (!ok(message)) return res.status(400).json({ error: "Missing message" });
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
     const model = process.env.NEXT_PUBLIC_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
     if (!OPENAI_API_KEY) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
 
-    // 1) Gather scripture sources first
     const sources = await collectSources(message, path);
 
-    // If still nothing, say so (don’t hallucinate)
     if (!sources.length) {
       return res.status(200).json({
-        reply:
-          "I wasn’t able to find a suitable passage for that phrasing right now. " +
-          "Try naming a specific book or verse (e.g., “Qur’an 112”, “Exodus 3:14”, “John 1:1”).",
+        reply: "I wasn’t able to find a suitable passage for that phrasing. Try naming a specific book, verse, or topic (e.g., “Qur’an 112”, “Exodus 3:14”, “love and compassion”).",
         sources: [],
       });
     }
 
-    // 2) Build strict instruction: answer must cite given sources [#1], [#2], …
     const targetLanguage = langName(lang);
     const sys = [
       `You are a calm, humane spiritual guide for the ${path} room.`,
@@ -330,20 +263,13 @@ export default async function handler(req, res) {
       ETHOS,
       `Reply in ${targetLanguage}.`,
       "You MUST ground your answer ONLY in the sources provided. Do not invent citations.",
-      "When using a source, add a bracket like [#1] where it’s used.",
-      "Keep 2–5 concise paragraphs.",
+      "When using a source, add a bracket citation like [#1] where it’s used.",
+      "Keep the reply to 2–5 concise paragraphs.",
     ].join(" ");
 
-    const contextBlock =
-      "\n\nSources:\n" +
-      sources
-        .map(
-          (s, i) =>
-            `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}${
-              typeof s.pos === "number" ? ` (pos ${s.pos})` : ""
-            }\n${s.quote.slice(0, 900)}`
-        )
-        .join("\n\n");
+    const contextBlock = "\n\nSources:\n" + sources.map((s, i) =>
+        `[#${i + 1}] ${s.work}${s.author ? " — " + s.author : ""}\n${s.quote.slice(0, 900)}`
+      ).join("\n\n");
 
     const payload = {
       model,
