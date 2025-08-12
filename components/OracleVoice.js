@@ -99,7 +99,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const [lang, setLang]             = useState("auto");
   const [subject, setSubject]       = useState("topic:general");
   const [volume, setVolume]         = useState(1);
-  const [polish, setPolish]         = useState(true);
+  const [polish, setPolish]         = useState(false); // default OFF so nothing rewrites the user
 
   const recRef         = useRef(null);
   const keepAliveRef   = useRef(false);
@@ -108,6 +108,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const voiceRef       = useRef(null);
   const canvasRef      = useRef(null);
   const audioRef       = useRef({ ctx:null, analyser:null, animId:null, stream:null });
+  const userEditingRef = useRef(false); // NEW: stop recognizer from overwriting manual edits
 
   const [sources, setSources]       = useState([]);
   const [showSources, setShowSources] = useState(false);
@@ -177,6 +178,8 @@ export default function OracleVoice({ path = "Universal" }) {
     rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
 
     rec.onresult = (e) => {
+      // If the user has started typing, do NOT touch the textbox anymore
+      if (userEditingRef.current) return;
       let interim = "";
       for (let i=e.resultIndex; i<e.results.length; i++) {
         const r = e.results[i];
@@ -197,6 +200,7 @@ export default function OracleVoice({ path = "Universal" }) {
     finalBufRef.current=""; interimRef.current="";
     setReply(""); setSources([]); setShowSources(false);
     keepAliveRef.current = true;
+    userEditingRef.current = false; // reset: recognizer can write until user types
     try {
       await startMicViz();
       const rec = ensureRecognizer(); if (!rec) return;
@@ -269,7 +273,17 @@ export default function OracleVoice({ path = "Universal" }) {
     if (speaking) { wasCancelledRef.current = true; window.speechSynthesis.cancel(); setTimeout(() => speakFrom(speakState.current.idx), 120); }
   }
   
-  function onUserTyping(e) { setLiveText(e.target.value); }
+  function onUserTyping(e) {
+    // The moment the user types, freeze dictation output and stop mic to prevent overwrites
+    userEditingRef.current = true;
+    setLiveText(e.target.value);
+    if (listening) {
+      keepAliveRef.current = false;
+      try { recRef.current && recRef.current.stop(); } catch {}
+      stopMicViz();
+      setListening(false);
+    }
+  }
 
   function downloadTxt() {
     const blob = buildTextFile(liveText, reply, sources);
