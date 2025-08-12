@@ -87,13 +87,12 @@ function bestMime() {
   return "";
 }
 
-// small helper: append text without echo duplicates (fixes mobile SR loops)
+// Prevent duplicate loops from mobile SR
 function mergeNoDupe(base, addition) {
   const a = (base || "").trim();
   const b = (addition || "").trim();
   if (!b) return a;
   if (!a) return b;
-  // If 'a' already ends with 'b' (or the last ~10 tokens), don't add it again
   const atoks = a.split(/\s+/);
   const btoks = b.split(/\s+/);
   const windowSize = Math.min(10, btoks.length);
@@ -129,7 +128,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const [volume, setVolume]         = useState(1);
   const [polish, setPolish]         = useState(false);
 
-  // Auto-citations (used) and source pool (context)
+  // Auto-citations used + full source pool
   const [citations, setCitations]   = useState([]); // [{index, work, author, url, quote, reason}]
   const [sources, setSources]       = useState([]); // [{work, author, url, quote, source}]
   const [showSrc, setShowSrc]       = useState(false);
@@ -139,8 +138,9 @@ export default function OracleVoice({ path = "Universal" }) {
   const srRef = useRef(null);
   const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
   const usingRef = useRef(null); // "sr" | "rec"
-  const finalRef = useRef("");   // for SR
+  const finalRef = useRef("");
   const interimRef = useRef("");
+  const citesRef = useRef(null);
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -165,7 +165,6 @@ export default function OracleVoice({ path = "Universal" }) {
     usingRef.current = null;
     finalRef.current = ""; interimRef.current = "";
 
-    // Prefer native SR for live captions
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
@@ -182,7 +181,7 @@ export default function OracleVoice({ path = "Universal" }) {
             if (r.isFinal) {
               finalRef.current = mergeNoDupe(finalRef.current, t);
             } else {
-              interimLocal = mergeNoDupe("", t); // keep only latest interim chunk
+              interimLocal = mergeNoDupe("", t);
             }
           }
           interimRef.current = interimLocal;
@@ -195,10 +194,9 @@ export default function OracleVoice({ path = "Universal" }) {
         usingRef.current = "sr";
         setStatus("Listening (live captions)...");
         return;
-      } catch { /* fallback to recorder */ }
+      } catch { /* fallback */ }
     }
 
-    // Fallback recorder (text after Stop)
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
@@ -220,7 +218,6 @@ export default function OracleVoice({ path = "Universal" }) {
       rec.onerror = () => setStatus("Recorder error.");
       rec.start(1000);
 
-      // orb viz
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
       const draw = () => {
@@ -282,6 +279,83 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
+  function buildExportText() {
+    const lines = [];
+    lines.push(`Total-iora Oracle — ${new Date().toLocaleString()}`);
+    lines.push(`Room: ${path} | Subject: ${subject}`);
+    lines.push("");
+    lines.push("Question:");
+    lines.push(liveText || "(none)");
+    lines.push("");
+    lines.push("Answer:");
+    lines.push(reply || "(none)");
+    if (Array.isArray(citations) && citations.length) {
+      lines.push("");
+      lines.push("Citations:");
+      citations.forEach((c, i) => {
+        lines.push(
+          `[${c.index ?? i+1}] ${c.work}${c.author ? " — " + c.author : ""}${c.url ? " <" + c.url + ">" : ""}`
+        );
+        if (c.quote) lines.push(`“${c.quote}”`);
+        if (c.reason) lines.push(`Reason: ${c.reason}`);
+        lines.push("");
+      });
+    }
+    return lines.join("\n");
+  }
+
+  function onDownload() {
+    const text = buildExportText();
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `total-iora-answer-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function onPrint() {
+    const text = buildExportText().replace(/\n/g, "<br/>");
+    const w = window.open("", "_blank", "noopener,noreferrer");
+    if (!w) return;
+    w.document.write(`
+      <html>
+        <head>
+          <title>Total-iora — Print</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <style>
+            body{font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#0f172a; padding:24px;}
+            h1{font-size:20px;margin:0 0 12px}
+            .box{border:1px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff}
+            @media print { @page { margin: 14mm; } }
+          </style>
+        </head>
+        <body>
+          <h1>Total-iora Oracle</h1>
+          <div class="box">${text}</div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    w.document.close();
+  }
+
+  function onSourceButton() {
+    if (Array.isArray(citations) && citations.length) {
+      setShowCites(true);
+      setTimeout(() => {
+        try { citesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+      }, 0);
+    } else if (Array.isArray(sources) && sources.length) {
+      setShowSrc(true);
+      setTimeout(() => {
+        try { citesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+      }, 0);
+    }
+  }
+
   async function sendForAnswer(text) {
     const clean = String(text || "").trim();
     if (!clean || clean.split(/\s+/).length < 2) return;
@@ -302,16 +376,16 @@ export default function OracleVoice({ path = "Universal" }) {
         body: JSON.stringify({
           message: clean,
           path, mode, topic, lang: chosenLang,
-          polish // forwarded for future use if your API wants it
+          polish
         }),
       });
       const data = await r.json().catch(()=> ({}));
 
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
-      setCitations(Array.isArray(data?.citations) ? data.citations : []); // <-- NEW
+      setCitations(Array.isArray(data?.citations) ? data.citations : []);
       setSources(Array.isArray(data?.sources) ? data.sources : []);
-      // Speak
+
       if (msg) {
         try { window.speechSynthesis.cancel(); } catch {}
         const u = new SpeechSynthesisUtterance(msg);
@@ -383,10 +457,28 @@ export default function OracleVoice({ path = "Universal" }) {
               </button>
               {speaking && <button className="btn danger" onClick={()=>{try{window.speechSynthesis.cancel();}catch{}; setSpeaking(false);}}>🔇 Stop Answer</button>}
             </div>
+
+            {/* Action buttons you asked for */}
+            <div className="row" style={{marginTop:8}}>
+              <button
+                className="btn ghost"
+                onClick={onSourceButton}
+                disabled={!citations?.length && !sources?.length}
+                title="Show the sources for this answer"
+              >
+                📚 Source
+              </button>
+              <button className="btn ghost" onClick={onDownload} disabled={!reply}>
+                ⬇️ Download
+              </button>
+              <button className="btn ghost" onClick={onPrint} disabled={!reply}>
+                🖨️ Print
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="pane">
+        <div className="pane" ref={citesRef}>
           <div className={`orb spirit ${replying || speaking ? "on" : ""}`}><div className="halo" /></div>
           <div className="log">
             <div className="label">Guide</div>
@@ -401,7 +493,7 @@ export default function OracleVoice({ path = "Universal" }) {
                 {showCites && (
                   <ul className="srclist">
                     {citations.map((c,i)=>(
-                      <li key={`c-${c.index}-${i}`}>
+                      <li key={`c-${c.index ?? i}`}>
                         <div className="sline">
                           <span className="work">{c.work}</span>
                           {c.author ? <span className="author"> — {c.author}</span> : null}
