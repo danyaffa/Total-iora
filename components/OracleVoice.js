@@ -80,10 +80,10 @@ const isSecure = () =>
 function bestMime() {
   if (!hasRecorder()) return "";
   const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";
-  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // iOS/Safari
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
   if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
-  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";  // Firefox
   return "";
 }
 
@@ -141,6 +141,8 @@ export default function OracleVoice({ path = "Universal" }) {
   const finalRef = useRef("");
   const interimRef = useRef("");
   const citesRef = useRef(null);
+  const listeningRef = useRef(false);
+  const restartRef = useRef(0);
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -150,6 +152,8 @@ export default function OracleVoice({ path = "Universal" }) {
   ), [path]);
 
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
+
+  useEffect(() => { listeningRef.current = listening; }, [listening]);
 
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
@@ -161,10 +165,11 @@ export default function OracleVoice({ path = "Universal" }) {
   }, []);
 
   async function onStart() {
-    setReply(""); setStatus(""); setListening(true);
+    setReply(""); setStatus(""); setListening(true); listeningRef.current = true;
     usingRef.current = null;
     finalRef.current = ""; interimRef.current = "";
 
+    // Prefer SR for live captions
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
@@ -187,16 +192,27 @@ export default function OracleVoice({ path = "Universal" }) {
           interimRef.current = interimLocal;
           setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
         };
-        rec.onend = () => { if (usingRef.current === "sr") { setListening(false); setStatus("Stopped."); } };
+        rec.onend = () => {
+          // Auto-restart while user is still "listening" (mobile SR stability)
+          if (usingRef.current === "sr" && listeningRef.current) {
+            clearTimeout(restartRef.current);
+            restartRef.current = setTimeout(() => {
+              try { rec.start(); setStatus("Listening (live captions)…"); } catch { setListening(false); }
+            }, 200);
+          } else {
+            setListening(false); setStatus("Stopped.");
+          }
+        };
 
         srRef.current = rec;
         rec.start();
         usingRef.current = "sr";
         setStatus("Listening (live captions)...");
         return;
-      } catch { /* fallback */ }
+      } catch { /* fall through to recorder */ }
     }
 
+    // Fallback recorder (text after Stop)
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
@@ -243,7 +259,7 @@ export default function OracleVoice({ path = "Universal" }) {
 
   async function onStop() {
     if (!listening) return;
-    setListening(false);
+    setListening(false); listeningRef.current = false;
 
     if (usingRef.current === "sr") {
       try { srRef.current && srRef.current.stop(); } catch {}
@@ -293,9 +309,7 @@ export default function OracleVoice({ path = "Universal" }) {
       lines.push("");
       lines.push("Citations:");
       citations.forEach((c, i) => {
-        lines.push(
-          `[${c.index ?? i+1}] ${c.work}${c.author ? " — " + c.author : ""}${c.url ? " <" + c.url + ">" : ""}`
-        );
+        lines.push(`[${c.index ?? i+1}] ${c.work}${c.author ? " — " + c.author : ""}${c.url ? " <" + c.url + ">" : ""}`);
         if (c.quote) lines.push(`“${c.quote}”`);
         if (c.reason) lines.push(`Reason: ${c.reason}`);
         lines.push("");
@@ -303,7 +317,6 @@ export default function OracleVoice({ path = "Universal" }) {
     }
     return lines.join("\n");
   }
-
   function onDownload() {
     const text = buildExportText();
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
@@ -315,44 +328,27 @@ export default function OracleVoice({ path = "Universal" }) {
     a.remove();
     URL.revokeObjectURL(a.href);
   }
-
   function onPrint() {
     const text = buildExportText().replace(/\n/g, "<br/>");
     const w = window.open("", "_blank", "noopener,noreferrer");
     if (!w) return;
     w.document.write(`
-      <html>
-        <head>
-          <title>Total-iora — Print</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <style>
-            body{font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial; color:#0f172a; padding:24px;}
-            h1{font-size:20px;margin:0 0 12px}
-            .box{border:1px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff}
-            @media print { @page { margin: 14mm; } }
-          </style>
-        </head>
-        <body>
-          <h1>Total-iora Oracle</h1>
-          <div class="box">${text}</div>
-          <script>window.print();</script>
-        </body>
-      </html>
+      <html><head><title>Total-iora — Print</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <style>body{font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#0f172a;padding:24px}
+      h1{font-size:20px;margin:0 0 12px}.box{border:1px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff}
+      @media print { @page { margin: 14mm; } }</style></head>
+      <body><h1>Total-iora Oracle</h1><div class="box">${text}</div><script>window.print()</script></body></html>
     `);
     w.document.close();
   }
-
   function onSourceButton() {
     if (Array.isArray(citations) && citations.length) {
       setShowCites(true);
-      setTimeout(() => {
-        try { citesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
-      }, 0);
+      setTimeout(() => { try { citesRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }); } catch {} }, 0);
     } else if (Array.isArray(sources) && sources.length) {
       setShowSrc(true);
-      setTimeout(() => {
-        try { citesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
-      }, 0);
+      setTimeout(() => { try { citesRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }); } catch {} }, 0);
     }
   }
 
@@ -401,10 +397,25 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
+  // Live volume: re-speak current reply at new loudness (debounced)
+  useEffect(() => {
+    if (!speaking || !reply) return;
+    const t = setTimeout(() => {
+      try { window.speechSynthesis.cancel(); } catch {}
+      const u = new SpeechSynthesisUtterance(reply);
+      const v = pickVoice(chosenLang); if (v) u.voice = v;
+      u.lang = chosenLang || "en-US";
+      u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+      u.onend = () => setSpeaking(false);
+      try { window.speechSynthesis.speak(u); } catch {}
+    }, 150);
+    return () => clearTimeout(t);
+  }, [volume]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <section className="oracle">
       <header className="head">
-        <div className="persona">{path === "Jewish" ? "Rabbi" : path === "Christian" ? "Priest" : path === "Muslim" ? "Imam" : path === "Eastern" ? "Monk" : "Sage"}</div>
+        <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
         <div className="bar">
           <label>Language:
@@ -458,22 +469,10 @@ export default function OracleVoice({ path = "Universal" }) {
               {speaking && <button className="btn danger" onClick={()=>{try{window.speechSynthesis.cancel();}catch{}; setSpeaking(false);}}>🔇 Stop Answer</button>}
             </div>
 
-            {/* Action buttons you asked for */}
             <div className="row" style={{marginTop:8}}>
-              <button
-                className="btn ghost"
-                onClick={onSourceButton}
-                disabled={!citations?.length && !sources?.length}
-                title="Show the sources for this answer"
-              >
-                📚 Source
-              </button>
-              <button className="btn ghost" onClick={onDownload} disabled={!reply}>
-                ⬇️ Download
-              </button>
-              <button className="btn ghost" onClick={onPrint} disabled={!reply}>
-                🖨️ Print
-              </button>
+              <button className="btn ghost" onClick={onSourceButton} disabled={!citations?.length && !sources?.length}>📚 Source</button>
+              <button className="btn ghost" onClick={onDownload} disabled={!reply}>⬇️ Download</button>
+              <button className="btn ghost" onClick={onPrint} disabled={!reply}>🖨️ Print</button>
             </div>
           </div>
         </div>
@@ -484,7 +483,6 @@ export default function OracleVoice({ path = "Universal" }) {
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
 
-            {/* Citations actually used by the Oracle */}
             {Array.isArray(citations) && citations.length > 0 && (
               <div className="sources">
                 <button className="linkbtn" onClick={()=>setShowCites(s => !s)} aria-expanded={showCites}>
@@ -508,7 +506,10 @@ export default function OracleVoice({ path = "Universal" }) {
               </div>
             )}
 
-            {/* Full source pool offered to the model (optional) */}
+            {showCites && (!citations?.length && !sources?.length) && (
+              <div className="text-slate-500">No sources were returned for this answer.</div>
+            )}
+
             {sources && sources.length > 0 && (
               <div className="sources" style={{marginTop:8}}>
                 <button className="linkbtn" onClick={()=>setShowSrc(s => !s)} aria-expanded={showSrc}>
