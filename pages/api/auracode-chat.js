@@ -55,7 +55,8 @@ function htmlToPlain(raw){
        .replace(/<style[\s\S]*?<\/style>/gi," ")
        .replace(/<nav[\s\S]*?<\/nav>/gi," ")
        .replace(/<footer[\s\S]*?<\/footer>/gi," ")
-      .replace(//g," ");
+       // ✅ FIX: The invalid empty regex `//g` is replaced with the correct one for HTML comments.
+       .replace(//g," ");
   s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n")
        .replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n");
   s = s.replace(/<[^>]+>/g," ");
