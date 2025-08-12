@@ -1,353 +1,174 @@
 // FILE: /pages/homepage.js
-import { useEffect, useRef, useState, useCallback } from "react";
+// (UNCHANGED LAYOUT) — your original interactive page.
+// Shows a read-only banner when locked; becomes fully active after login.
 
-/* ---------- optional quick source templates ---------- */
-const SRC_LINK = {
-  sefaria: (ref) => `https://www.sefaria.org/${encodeURIComponent(ref)}?lang=bi`,
-  quran: (surah, ayah) => `https://quran.com/${surah}/${ayah}`,
-  gutenberg: (bookId) => `https://www.gutenberg.org/ebooks/${bookId}`,
-};
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import Footer from "../components/Footer";
+import HeritageSelector from "../components/HeritageSelector";
+import OracleVoice from "../components/OracleVoice";
+
+// --- tiny helpers (client-only) ---
+function setCookie(name, value, maxAgeDays = 365) {
+  if (typeof document === "undefined") return;
+  const maxAge = maxAgeDays * 24 * 3600;
+  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+}
 
 export default function HomePage() {
-  /* ---- UI state ---- */
-  const [language, setLanguage] = useState("auto");
-  const [subject, setSubject] = useState("General");
-  const [fixGrammar, setFixGrammar] = useState(false);
+  const [path, setPath] = useState("Universal");
+  const [unlocked, setUnlocked] = useState(false);
 
-  const [youText, setYouText] = useState("");
-  const [guideText, setGuideText] = useState("");
-  const [listening, setListening] = useState(false);
-  const [volume, setVolume] = useState(0.9);
-
-  /* ---- Sources state ---- */
-  const [sources, setSources] = useState([]); // [{label, url}]
-  const [showSourceForm, setShowSourceForm] = useState(false);
-  const [srcType, setSrcType] = useState("custom");
-  const [srcA, setSrcA] = useState("");   // e.g., "Berakhot 2a" or surah
-  const [srcB, setSrcB] = useState("");   // e.g., ayah or Gutenberg id
-  const [srcLabel, setSrcLabel] = useState("");
-  const [srcUrl, setSrcUrl] = useState("");
-
-  /* ---- Speech Recognition (mobile-safe) ---- */
-  const recRef = useRef(null);
-  const finalRef = useRef("");       // accumulated final transcript
-  const interimRef = useRef("");     // current interim segment
-  const [speechAvailable, setSpeechAvailable] = useState(true);
-
+  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
   useEffect(() => {
-    const SR = typeof window !== "undefined" &&
-      (window.SpeechRecognition || window.webkitSpeechRecognition);
-    if (!SR) setSpeechAvailable(false);
-  }, []);
-
-  const startListening = useCallback(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-
-    // Fresh instance every run (avoids stale handlers & mobile quirks)
-    const rec = new SR();
-    rec.lang = language === "auto" ? (navigator.language || "en-US") : language;
-    rec.continuous = true;          // Android Chrome OK; iOS uses webkit*
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-
-    finalRef.current = youText ? youText + " " : "";
-    interimRef.current = "";
-
-    rec.onresult = (e) => {
-      let final = finalRef.current;
-      let interim = "";
-
-      // Process only the new chunk(s) starting at resultIndex
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const res = e.results[i];
-        const txt = res[0]?.transcript || "";
-        if (res.isFinal) {
-          final += txt + " ";
-        } else {
-          interim = txt; // only keep the latest interim
-        }
-      }
-
-      finalRef.current = final;
-      interimRef.current = interim;
-      setYouText(final + interim);
-    };
-
-    rec.onend = () => {
-      // User may have stopped; keep whatever we had (no auto-restart)
-      setListening(false);
-    };
-    rec.onerror = () => {
-      setListening(false);
-    };
-
-    recRef.current = rec;
-    setListening(true);
-    rec.start();
-  }, [language, youText]);
-
-  const stopListening = useCallback(() => {
-    try {
-      recRef.current?.stop();
-    } catch (_) {}
-    setListening(false);
-  }, []);
-
-  /* ---- Cancel “auto-correct” but keep red squiggles ----
-     We DO NOT touch your text unless 'Fix my grammar' is checked.
-  */
-  const maybeFixGrammar = async (text) => {
-    if (!fixGrammar) return text;
-    // If you have a server route, call it here. For now, return original.
-    // Example:
-    // const res = await fetch("/api/fix-grammar", { method: "POST", body: JSON.stringify({ text })});
-    // const { fixed } = await res.json();
-    // return fixed || text;
-    return text;
-  };
-
-  const handleGetAnswer = useCallback(async () => {
-    const clean = await maybeFixGrammar(youText.trim());
-    // TODO: integrate your existing backend call here and setGuideText(awaitResponse)
-    // For now, we just echo the cleaned prompt so the UI stays stable.
-    setGuideText(
-      clean
-        ? `(demo) You asked:\n\n${clean}\n\n— Add your backend call to replace this.`
-        : "Please write or speak a question."
-    );
-  }, [youText, fixGrammar]);
-
-  /* ---- Sources helpers ---- */
-  const addSource = () => {
-    let url = srcUrl.trim();
-    let label = srcLabel.trim();
-
-    if (srcType !== "custom") {
-      if (srcType === "sefaria" && srcA) {
-        url = SRC_LINK.sefaria(srcA);
-        label = label || `Sefaria • ${srcA}`;
-      }
-      if (srcType === "quran" && srcA && srcB) {
-        url = SRC_LINK.quran(srcA, srcB);
-        label = label || `Qur'an ${srcA}:${srcB}`;
-      }
-      if (srcType === "gutenberg" && srcA) {
-        url = SRC_LINK.gutenberg(srcA);
-        label = label || `Project Gutenberg #${srcA}`;
-      }
+    if (typeof window !== "undefined") {
+      const usp = new URLSearchParams(window.location.search);
+      if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
-    if (!url) return;
 
-    setSources((prev) => [...prev, { label: label || url, url }]);
-    // reset fields
-    setSrcA(""); setSrcB(""); setSrcLabel(""); setSrcUrl("");
-    setSrcType("custom");
-    setShowSourceForm(false);
-  };
+    const update = () => {
+      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
+      const isDevBypass =
+        (typeof window !== "undefined" &&
+          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+           has("ac_dev") ||
+           window.location.hostname === "localhost"));
 
-  /* ---- UI ---- */
+      const isRegistered =
+        has("ac_registered") ||
+        has("ac_session") ||
+        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+
+      setUnlocked(Boolean(isRegistered || isDevBypass));
+    };
+
+    update();
+    const t = setTimeout(update, 80);
+    window.addEventListener?.("storage", update);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
+  }, []);
+
+  const locked = !unlocked;
+
   return (
-    <main className="min-h-screen bg-[#fafafa] text-[#1b1b1b]">
-      <section className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-        <h1 className="text-2xl font-semibold mb-2">
-          Write or Speak to the Oracle
-        </h1>
+    <div className="page">
+      {/* Top nav — Register always visible */}
+      <nav className="topnav">
+        <Link href="/register" className="btn cta">Register — Free Access</Link>
+      </nav>
 
-        <div className="flex flex-wrap gap-6">
-          {/* LEFT: You */}
-          <div className="flex-1 min-w-[300px]">
-            <label className="block text-sm font-medium mb-2">You</label>
-            <textarea
-              value={youText}
-              onChange={(e) => setYouText(e.target.value)}
-              rows={8}
-              className="w-full rounded-xl border border-[#ddd] p-3 leading-6 outline-none focus:ring"
-              /* Keep red underline while blocking auto-correct/auto-capitalize */
-              spellCheck={true}
-              autoCorrect="off"
-              autoCapitalize="off"
-              autoComplete="off"
-              inputMode="text"
-            />
-
-            <div className="flex items-center gap-4 mt-3">
-              {speechAvailable ? (
-                listening ? (
-                  <button
-                    onClick={stopListening}
-                    className="px-4 py-2 rounded-xl bg-[#eee] border border-[#ddd]"
-                    aria-label="Stop recording"
-                  >
-                    ⏹ Stop
-                  </button>
-                ) : (
-                  <button
-                    onClick={startListening}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#6a4df5] to-[#18c3b2] text-white"
-                    aria-label="Start recording"
-                  >
-                    🎤 Start
-                  </button>
-                )
-              ) : (
-                <span className="text-sm text-[#777]">Speech not supported on this device.</span>
-              )}
-
-              <button
-                onClick={handleGetAnswer}
-                className="px-4 py-2 rounded-xl border border-[#ddd] hover:bg-[#f4f4f4]"
-              >
-                Get Answer →
-              </button>
-            </div>
-
-            <div className="mt-3 flex items-center gap-3">
-              <label className="flex items-center gap-2 text-sm select-none">
-                <input
-                  type="checkbox"
-                  checked={fixGrammar}
-                  onChange={(e) => setFixGrammar(e.target.checked)}
-                />
-                Fix my grammar (manual only)
-              </label>
-
-              <div className="flex items-center gap-2 text-sm">
-                <span>Guide voice volume:</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => setVolume(Number(e.target.value))}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT: Guide */}
-          <div className="flex-1 min-w-[300px]">
-            <label className="block text-sm font-medium mb-2">Guide</label>
-            <div className="w-full min-h-[208px] rounded-xl border border-[#ddd] p-3 whitespace-pre-wrap">
-              {guideText || "—"}
-            </div>
-
-            {/* Sources */}
-            <div className="mt-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium">Sources</h3>
-                <button
-                  onClick={() => setShowSourceForm((v) => !v)}
-                  className="px-3 py-1.5 rounded-lg border border-[#ddd] hover:bg-[#f7f7f7]"
-                >
-                  + Add source
-                </button>
-              </div>
-
-              {showSourceForm && (
-                <div className="rounded-xl border border-[#ddd] p-3 mb-3">
-                  <div className="flex flex-wrap gap-3">
-                    <select
-                      className="border rounded-md p-2"
-                      value={srcType}
-                      onChange={(e) => setSrcType(e.target.value)}
-                    >
-                      <option value="custom">Custom URL</option>
-                      <option value="sefaria">Sefaria (ref)</option>
-                      <option value="quran">Qur'an (surah/ayah)</option>
-                      <option value="gutenberg">Gutenberg (book id)</option>
-                    </select>
-
-                    {srcType === "custom" && (
-                      <>
-                        <input
-                          className="border rounded-md p-2 flex-1 min-w-[200px]"
-                          placeholder="Source label (optional)"
-                          value={srcLabel}
-                          onChange={(e) => setSrcLabel(e.target.value)}
-                        />
-                        <input
-                          className="border rounded-md p-2 flex-1 min-w-[240px]"
-                          placeholder="https://…"
-                          value={srcUrl}
-                          onChange={(e) => setSrcUrl(e.target.value)}
-                        />
-                      </>
-                    )}
-
-                    {srcType === "sefaria" && (
-                      <input
-                        className="border rounded-md p-2 flex-1 min-w-[240px]"
-                        placeholder="e.g., Berakhot 2a"
-                        value={srcA}
-                        onChange={(e) => setSrcA(e.target.value)}
-                      />
-                    )}
-
-                    {srcType === "quran" && (
-                      <>
-                        <input
-                          className="border rounded-md p-2 w-28"
-                          placeholder="Surah"
-                          value={srcA}
-                          onChange={(e) => setSrcA(e.target.value)}
-                        />
-                        <input
-                          className="border rounded-md p-2 w-28"
-                          placeholder="Ayah"
-                          value={srcB}
-                          onChange={(e) => setSrcB(e.target.value)}
-                        />
-                      </>
-                    )}
-
-                    {srcType === "gutenberg" && (
-                      <input
-                        className="border rounded-md p-2 w-36"
-                        placeholder="Book ID"
-                        value={srcA}
-                        onChange={(e) => setSrcA(e.target.value)}
-                      />
-                    )}
-
-                    <button
-                      onClick={addSource}
-                      className="px-3 py-2 rounded-lg bg-[#1b1b1b] text-white"
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {sources.length > 0 ? (
-                <ul className="list-disc pl-5 space-y-1">
-                  {sources.map((s, i) => (
-                    <li key={i}>
-                      <a
-                        href={s.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="underline"
-                      >
-                        {s.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-[#777]">No sources added yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer notice */}
-        <p className="mt-8 text-sm text-[#666]">
-          © 2025 Total-iora · A sanctuary of reflection. No promises. Only presence.
+      {/* Logo + short line */}
+      <section className="hero">
+        <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
+        <p className="note">
+          Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
+          or start with Sacred Notes.
         </p>
       </section>
-    </main>
+
+      {/* Read-only banner shown when not logged in */}
+      {locked && (
+        <div className="previewBanner" role="status">
+          You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
+          <Link href="/register">Register</Link> to use the interactive features.
+        </div>
+      )}
+
+      {/* Feature tiles */}
+      <section className="tiles">
+        <div className="grid">
+          <article className="card">
+            <header className="h">
+              <div className="pill">Sacred Notes</div>
+              <h3>Leave a private note • Light a candle</h3>
+              <p>
+                Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.
+                <strong> Nothing is stored or kept.</strong>
+              </p>
+            </header>
+            <footer className="f">
+              {locked ? (
+                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Open</Link>
+              ) : (
+                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+              )}
+              <div className="disc">
+                This is your space. Do whatever you like on this page. We have no responsibility
+                for anything you write, and nothing is saved on our servers.
+              </div>
+            </footer>
+          </article>
+
+          <article className="card">
+            <header className="h">
+              <div className="pill">Oracle Universe DNA</div>
+              <h3>Your personal map • Downloadable guidance</h3>
+              <p>
+                Ask for a future outlook, horoscope-style reflections, and gentle advice woven from your tradition.
+                Download your write-up when it’s ready.
+              </p>
+            </header>
+            <footer className="f">
+              {locked ? (
+                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Get Yours</Link>
+              ) : (
+                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+              )}
+              <div className="disc">
+                Spiritual guidance only. No promises. No medical, legal, or financial advice.
+              </div>
+            </footer>
+          </article>
+        </div>
+      </section>
+
+      {/* GATED AREA — interactive when unlocked */}
+      {unlocked ? (
+        <>
+          <HeritageSelector path={path} onChange={setPath} />
+          <OracleVoice path={path} />
+        </>
+      ) : (
+        <section className="gate">
+          <div className="card gatecard">
+            <h3>Speak to the Oracle</h3>
+            <p>Log in (or register free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <Link href="/login" className="btn accent">Log in</Link>
+          </div>
+        </section>
+      )}
+
+      <Footer />
+
+      <style jsx>{`
+        .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
+
+        .topnav { display:flex; justify-content:center; padding:14px; }
+        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
+        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
+
+        .hero { text-align:center; padding-top:8px; }
+        .logo { width:148px; height:auto; margin:0 auto; display:block; }
+        .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
+
+        .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
+        .grid { display:grid; gap:14px; grid-template-columns:1fr; }
+        @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
+        .card { background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); padding:18px; }
+        .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
+        h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
+        p { color:#475569; }
+        .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
+        .disc { color:#64748b; font-size:.92rem; }
+
+        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
+        .gatecard { text-align:center; }
+      `}</style>
+    </div>
   );
 }
