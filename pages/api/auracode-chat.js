@@ -1,5 +1,6 @@
 // FILE: /pages/api/auracode-chat.js
-// Sacred-text whitelist only (no CIA/.gov/etc). Answers only; no instructions.
+// Sacred-text whitelist only + filtered paragraphs. Adds Fathers/Saints for Christian.
+// Returns sources that match your room labels.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -15,9 +16,9 @@ function langName(lang) {
   return "English";
 }
 const GUIDANCE = {
-  Muslim: "Draw gently from Qur’an; avoid legal rulings.",
-  Christian: "Draw gently from the Gospels and the wider Bible; keep it pastoral.",
-  Jewish: "Draw gently from Torah, Psalms, and sages; lean on Rambam/Mussar for life-skills.",
+  Muslim: "Draw gently from Qur’an and classical wisdom; avoid legal rulings.",
+  Christian: "Draw gently from the Gospels and early/medieval saints (Augustine, Kempis); keep it pastoral.",
+  Jewish: "Draw gently from Torah, Psalms, and sages (Rambam/Mussar) for life-skills.",
   Eastern: "Draw gently from Dhammapada, Tao Te Ching, and Bhagavad Gita.",
   Universal: "Draw gently from humanist ethics and contemplative practice."
 };
@@ -29,15 +30,24 @@ const ETHOS = [
 
 const pickPlainText = (fmts) => {
   const k = Object.keys(fmts || {});
-  return k.find(x=>x.startsWith("text/plain")) ? fmts[k.find(x=>x.startsWith("text/plain"))]
-       : k.find(x=>x.startsWith("text/html")) ? fmts[k.find(x=>x.startsWith("text/html"))]
-       : null;
+  const t = k.find(x=>x.startsWith("text/plain")) || k.find(x=>x.startsWith("text/html"));
+  return t ? fmts[t] : null;
 };
 
+function looksLikeLicense(text="") {
+  const t = text.toLowerCase();
+  return (
+    t.includes("project gutenberg") || t.includes("gutenberg license") || t.includes("this ebook is for the use of anyone") ||
+    t.includes("you may copy it") || t.includes("*** start of this") || t.includes("*** end of this") ||
+    t.includes("release date:") || t.includes("language:") || t.includes("credits:")
+  );
+}
 function allowSource(s) {
-  const all = `${s.work||""} ${s.author||""} ${s.url||""}`.toLowerCase();
+  const all = `${s.work||""} ${s.author||""} ${s.url||""} ${s.quote||""}`.toLowerCase();
   const banned = /(central intelligence agency|cia|foia|world factbook|\.gov\b|whitehouse|nsa|fbi)/i;
-  return !banned.test(all);
+  if (banned.test(all)) return false;
+  if (looksLikeLicense(all)) return false;
+  return true;
 }
 
 async function fetchSefaria(query, topK=6) {
@@ -85,8 +95,14 @@ async function fetchGutenbergTitle(title, topK=6){
     const url = pickPlainText(book.formats || {}); if (!url) return [];
     const tr = await fetch(url); if (!tr.ok) return [];
     const raw = await tr.text();
-    const paras = String(raw||"").split(/\n{2,}/).map(s=>s.trim()).filter(Boolean).slice(0, topK);
-    return paras.map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, pos:i, quote: p.slice(0,900), url, source:"gutenberg" })).filter(allowSource);
+    const paras = String(raw||"").split(/\n{2,}/)
+      .map(s=>s.trim())
+      .filter(Boolean)
+      .filter(p => !looksLikeLicense(p))
+      .filter(p => p.length > 80 && /[a-z]/i.test(p))
+      .slice(0, topK);
+    return paras.map((p,i)=>({ work: book.title || title, author: (book.authors?.[0]?.name)||null, pos:i, quote: p.slice(0,900), url, source:"gutenberg" }))
+      .filter(allowSource);
   } catch { return []; }
 }
 
@@ -106,7 +122,11 @@ export default async function handler(req, res) {
     const tasks = [];
     if (path === "Jewish") tasks.push(fetchSefaria(message, 6));
     if (path === "Muslim") tasks.push(fetchQuran(message, 6));
-    if (path === "Christian") tasks.push(fetchGutenbergTitle("King James Bible", 6));
+    if (path === "Christian") {
+      tasks.push(fetchGutenbergTitle("King James Bible", 4));                 // Gospels/Bible
+      tasks.push(fetchGutenbergTitle("The Imitation of Christ", 2));          // Saints
+      tasks.push(fetchGutenbergTitle("Confessions of Saint Augustine", 2));   // Fathers
+    }
     if (path === "Eastern") {
       tasks.push(fetchGutenbergTitle("Tao Te Ching", 4));
       tasks.push(fetchGutenbergTitle("Bhagavad Gita", 4));
@@ -123,12 +143,12 @@ export default async function handler(req, res) {
     let sources = [];
     for (const r of results) if (r.status === "fulfilled" && Array.isArray(r.value)) sources = sources.concat(r.value);
 
-    // dedupe
+    // dedupe + cap
     const seen = new Set();
     sources = sources.filter((s) => {
       const key = `${s.source||"x"}|${s.work}|${s.pos||0}|${s.author||""}`;
       if (seen.has(key)) return false; seen.add(key); return true;
-    }).slice(0, 8);
+    }).filter(allowSource).slice(0, 8);
 
     const system = [
       `You are a calm, humane spiritual guide (${path}).`,
