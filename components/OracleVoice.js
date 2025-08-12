@@ -1,9 +1,6 @@
 // FILE: /components/OracleVoice.js
-// Update: keep layout, restore Sources toggle, and show live captions while speaking.
-
 import { useEffect, useMemo, useRef, useState } from "react";
 
-/* ---------- Options (kept) ---------- */
 const LANG_OPTIONS = [
   { value: "auto", label: "Auto (by room)" },
   { value: "en-US", label: "English (US)" },
@@ -13,61 +10,48 @@ const LANG_OPTIONS = [
   { value: "he", label: "Hebrew" },
 ];
 const SUBJECT_OPTIONS = [
-  { value: "topic:general", label: "General" },
-  { value: "style:gentle", label: "Gentle Guidance" },
-  { value: "style:wisdom", label: "Ancient Wisdom" },
-  { value: "style:practical", label: "Practical Steps" },
-  { value: "style:comfort", label: "Comfort & Healing" },
-
-  // Core spiritual themes
-  { value: "topic:prayer", label: "Prayer & Meditation" },
-  { value: "topic:faith", label: "Faith & Belief" },
-  { value: "topic:doubt", label: "Spiritual Doubt" },
-  { value: "topic:purpose", label: "Purpose & Meaning" },
-  { value: "topic:gratitude", label: "Gratitude" },
-  { value: "topic:forgiveness", label: "Forgiveness" },
-  { value: "topic:hope", label: "Hope & Resilience" },
-
-  // Life situations
-  { value: "topic:relationships", label: "Relationships & Love" },
-  { value: "topic:family", label: "Family & Parenting" },
-  { value: "topic:friendship", label: "Friendship" },
-  { value: "topic:conflict", label: "Conflict Resolution" },
-  { value: "topic:loneliness", label: "Loneliness" },
-  { value: "topic:grief", label: "Grief & Loss" },
-  { value: "topic:anxiety", label: "Anxiety & Fear" },
-  { value: "topic:health", label: "Health & Illness" },
-  { value: "topic:addiction", label: "Addictions & Recovery" },
-
-  // Work & practical life
-  { value: "topic:work", label: "Work & Purpose" },
-  { value: "topic:career", label: "Career Decisions" },
-  { value: "topic:money", label: "Money & Stewardship" },
-  { value: "topic:ethics", label: "Ethical Dilemmas" },
-  { value: "topic:decisions", label: "Decision-Making" },
-  { value: "topic:habits", label: "Habits & Discipline" },
-  { value: "topic:study", label: "Study & Learning" },
-  { value: "topic:creativity", label: "Creativity" },
-
-  // Community & world
-  { value: "topic:community", label: "Community & Service" },
-  { value: "topic:justice", label: "Justice & Compassion" },
-  { value: "topic:nature", label: "Nature & Environment" },
-  { value: "topic:travel", label: "Travel & Pilgrimage" },
-  { value: "topic:rituals", label: "Rituals & Holidays" },
-
-  // Life stages
-  { value: "topic:youth", label: "Youth & Teens" },
-  { value: "topic:marriage", label: "Marriage" },
-  { value: "topic:aging", label: "Elders & Aging" },
-  { value: "topic:endoflife", label: "End of Life" },
-
-  // Special topics
-  { value: "topic:dreams", label: "Dreams & Symbols" },
-  { value: "topic:scripture", label: "Scripture Study" }
+    { value: "topic:general", label: "General" },
+    { value: "style:gentle", label: "Gentle Guidance" },
+    { value: "style:wisdom", label: "Ancient Wisdom" },
+    { value: "style:practical", label: "Practical Steps" },
+    { value: "style:comfort", label: "Comfort & Healing" },
+    { value: "topic:prayer", label: "Prayer & Meditation" },
+    { value: "topic:faith", label: "Faith & Belief" },
+    { value: "topic:doubt", label: "Spiritual Doubt" },
+    { value: "topic:purpose", label: "Purpose & Meaning" },
+    { value: "topic:gratitude", label: "Gratitude" },
+    { value: "topic:forgiveness", label: "Forgiveness" },
+    { value: "topic:hope", label: "Hope & Resilience" },
+    { value: "topic:relationships", label: "Relationships & Love" },
+    { value: "topic:family", label: "Family & Parenting" },
+    { value: "topic:friendship", label: "Friendship" },
+    { value: "topic:conflict", label: "Conflict Resolution" },
+    { value: "topic:loneliness", label: "Loneliness" },
+    { value: "topic:grief", label: "Grief & Loss" },
+    { value: "topic:anxiety", label: "Anxiety & Fear" },
+    { value: "topic:health", label: "Health & Illness" },
+    { value: "topic:addiction", label: "Addictions & Recovery" },
+    { value: "topic:work", label: "Work & Purpose" },
+    { value: "topic:career", label: "Career Decisions" },
+    { value: "topic:money", label: "Money & Stewardship" },
+    { value: "topic:ethics", label: "Ethical Dilemmas" },
+    { value: "topic:decisions", label: "Decision-Making" },
+    { value: "topic:habits", label: "Habits & Discipline" },
+    { value: "topic:study", label: "Study & Learning" },
+    { value: "topic:creativity", label: "Creativity" },
+    { value: "topic:community", label: "Community & Service" },
+    { value: "topic:justice", label: "Justice & Compassion" },
+    { value: "topic:nature", label: "Nature & Environment" },
+    { value: "topic:travel", label: "Travel & Pilgrimage" },
+    { value: "topic:rituals", label: "Rituals & Holidays" },
+    { value: "topic:youth", label: "Youth & Teens" },
+    { value: "topic:marriage", label: "Marriage" },
+    { value: "topic:aging", label: "Elders & Aging" },
+    { value: "topic:endoflife", label: "End of Life" },
+    { value: "topic:dreams", label: "Dreams & Symbols" },
+    { value: "topic:scripture", label: "Scripture Study" }
 ];
 
-/* ---------- Helpers ---------- */
 function autoLangFromPath(path) {
   switch (path) {
     case "Jewish": return "he";
@@ -81,93 +65,42 @@ function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
     if (!voices.length) return null;
-    return (
-      voices.find(v => v.lang === lang) ||
-      voices.find(v => v.lang?.startsWith((lang || "").split("-")[0])) ||
-      voices[0]
-    );
+    let v = voices.find((x) => x.lang === lang) || voices.find((x) => x.lang?.startsWith((lang||"").split("-")[0]));
+    return v || voices[0];
   } catch { return null; }
 }
-const isSecure = () =>
-  typeof window !== "undefined" &&
-  (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
 
-async function sttUpload(blob, mime, lang) {
-  const buf = await blob.arrayBuffer();
-  let b64 = ""; const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
-  const r = await fetch("/api/stt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ b64: btoa(b64), mime: mime || "audio/webm", lang: (lang || "en") }),
-  });
-  const js = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
-  return js?.text || "";
-}
-const supportsSR = () => typeof window !== "undefined" && (window.webkitSpeechRecognition || window.SpeechRecognition);
-const supportsMediaRecorder = () => typeof window !== "undefined" && typeof window.MediaRecorder === "function";
-
-/* ---------- Component ---------- */
 export default function OracleVoice({ path = "Universal" }) {
-  // UI state
-  const [listening, setListening] = useState(false);
-  const [replying, setReplying] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [status, setStatus] = useState("");
+  const [listening, setListening]   = useState(false);
+  const [speaking, setSpeaking]     = useState(false);
+  const [replying, setReplying]     = useState(false);
+  const [liveText, setLiveText]     = useState("");
+  const [reply, setReply]           = useState("");
+  const [lang, setLang]             = useState("auto");
+  const [subject, setSubject]       = useState("topic:general");
+  const [volume, setVolume]         = useState(1);
+  const [polish, setPolish]         = useState(false);
 
-  const [liveText, setLiveText] = useState(""); // progressive text
-  const [reply, setReply] = useState("");
+  // State for sources panel
+  const [sources, setSources]       = useState([]);
+  const [showSrc, setShowSrc]       = useState(false);
 
-  // NEW: sources toggle
-  const [sources, setSources] = useState([]);
-  const [showSrc, setShowSrc] = useState(false);
-
-  const [lang, setLang] = useState("auto");
-  const [subject, setSubject] = useState("topic:general");
-  const [volume, setVolume] = useState(1);
-  const [polish, setPolish] = useState(false);
+  const recRef         = useRef(null);
+  const keepAliveRef   = useRef(false);
+  const finalBufRef    = useRef("");
+  const interimRef     = useRef("");
+  const userEditingRef = useRef(false);
+  const canvasRef      = useRef(null);
+  const audioRef       = useRef({ ctx:null, analyser:null, animId:null, stream:null });
 
   const persona = useMemo(() => (
-    path === "Jewish" ? "Rabbi" :
+    path === "Jewish"    ? "Rabbi"  :
     path === "Christian" ? "Priest" :
-    path === "Muslim" ? "Imam" :
-    path === "Eastern" ? "Monk" : "Sage"
+    path === "Muslim"    ? "Imam"   :
+    path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
+
   const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
-
-  /* ---------- TTS ---------- */
-  useEffect(() => {
-    if (!("speechSynthesis" in window)) return;
-    const assign = () => {};
-    window.speechSynthesis.onvoiceschanged = assign;
-    setTimeout(assign, 150);
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
-  }, [chosenLang]);
-
-  function speak(text) {
-    if (!text) return;
-    try { window.speechSynthesis.cancel(); } catch {}
-    const u = new SpeechSynthesisUtterance(text);
-    const v = pickVoice(chosenLang); if (v) u.voice = v;
-    u.lang = chosenLang || "en-US";
-    u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-    u.onend = () => setSpeaking(false);
-    setSpeaking(true);
-    try { window.speechSynthesis.speak(u); } catch {}
-  }
-
-  /* ---------- Live captions (SR + streaming STT) ---------- */
-  const srRef = useRef(null);
-  const interimRef = useRef("");
-  const finalRef = useRef("");
-  const manualEditingRef = useRef(false);
-
-  const canvasRef = useRef(null);
-  const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"audio/webm", ctx:null, analyser:null, anim:0 });
-  const chunkQueueRef = useRef([]);
-  const processingRef = useRef(false);
-  const chunkIdxRef = useRef(0);
 
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
@@ -178,67 +111,23 @@ export default function OracleVoice({ path = "Universal" }) {
     cnv.getContext("2d").scale(dpr, dpr);
   }, []);
 
-  function clearViz() {
-    cancelAnimationFrame(recRef.current.anim || 0);
-    try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
-    try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-    recRef.current = { stream:null, rec:null, chunks:[], mime:"audio/webm", ctx:null, analyser:null, anim:0 };
-    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0,0,220,220);
-  }
-
-  function setupSR() {
-    const SR = (window.webkitSpeechRecognition || window.SpeechRecognition);
-    if (!SR) return null;
-    const rec = new SR();
-    rec.lang = chosenLang || "en-US";
-    rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
-
-    rec.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i]; const t = (r[0]?.transcript || "").trim();
-        if (!t) continue;
-        if (r.isFinal) finalRef.current = (finalRef.current + " " + t).replace(/\s+/g, " ").trim();
-        else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
+  useEffect(() => {
+    const rec = recRef.current;
+    if (!rec) return;
+    try {
+      rec.lang = chosenLang || "en-US";
+      if (listening) {
+        rec.stop();
+        setTimeout(() => { try { rec.start(); } catch {} }, 200);
       }
-      interimRef.current = interim;
-      if (!manualEditingRef.current) {
-        const combined = [finalRef.current, interim].filter(Boolean).join(" ").trim();
-        setLiveText(combined);
-      }
-      setStatus("Live captions on.");
-    };
-    rec.onerror = () => setStatus("Live captions (browser) error — fallback active.");
-    srRef.current = rec; return rec;
-  }
+    } catch {}
+  }, [chosenLang, listening]);
 
-  async function startRecorder() {
-    if (!isSecure()) { setStatus("Microphone requires HTTPS (or localhost)."); return false; }
-    if (!navigator.mediaDevices?.getUserMedia || !supportsMediaRecorder()) { setStatus("Microphone not available."); return false; }
-
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC(); try { await ctx.resume(); } catch {}
-
+  async function startMicViz() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
     const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
-
-    const mime =
-      (MediaRecorder.isTypeSupported("audio/webm;codecs=opus") && "audio/webm;codecs=opus") ||
-      (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus") && "audio/ogg;codecs=opus") ||
-      "audio/webm";
-
-    const rec = new MediaRecorder(stream, { mimeType: mime });
-    rec.ondataavailable = (e) => {
-      if (e.data && e.data.size) {
-        const idx = chunkIdxRef.current++;
-        chunkQueueRef.current.push({ idx, blob: e.data, mime });
-        processChunkQueue();
-      }
-    };
-    rec.start(500); // ~0.5s chunks
-
-    // mic viz
     const data = new Uint8Array(analyser.frequencyBinCount);
     const c = canvasRef.current.getContext("2d");
     const draw = () => {
@@ -249,62 +138,83 @@ export default function OracleVoice({ path = "Universal" }) {
       const g = c.createRadialGradient(110,110,radius*0.25,110,110,radius);
       g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
       c.fillStyle = g; c.beginPath(); c.arc(110,110,radius,0,Math.PI*2); c.fill();
-      recRef.current.anim = requestAnimationFrame(draw);
+      audioRef.current.animId = requestAnimationFrame(draw);
     };
     draw();
-
-    recRef.current = { stream, rec, chunks:[], mime, ctx, analyser, anim: recRef.current.anim };
-    return true;
+    audioRef.current = { ctx, analyser, animId: audioRef.current.animId, stream };
   }
 
-  async function processChunkQueue() {
-    if (processingRef.current) return;
-    processingRef.current = true;
-    try {
-      while (chunkQueueRef.current.length) {
-        const { blob, mime } = chunkQueueRef.current.shift();
-        try {
-          const text = await sttUpload(blob, mime, chosenLang);
-          if (!text) continue;
-          setLiveText((prev) => {
-            if (manualEditingRef.current) return prev;
-            const p = String(prev || "");
-            const add = text.replace(/\s+/g, " ").trim();
-            if (!p) return add;
-            const last = p.split(/\s+/).slice(-3).join(" ");
-            if (add.startsWith(last)) return p + " " + add.slice(last.length).trim();
-            return p.endsWith(" ") ? p + add : p + " " + add;
-          });
-        } catch { /* ignore chunk errors */ }
+  function stopMicViz() {
+    cancelAnimationFrame(audioRef.current.animId || 0);
+    try { audioRef.current.ctx && audioRef.current.ctx.close(); } catch {}
+    try { audioRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
+    audioRef.current = { ctx:null, analyser:null, animId:null, stream:null };
+    const c = canvasRef.current?.getContext?.("2d"); if (c) c.clearRect(0,0,220,220);
+  }
+
+  function ensureRecognizer() {
+    if (recRef.current) return recRef.current;
+    const SR = (window.webkitSpeechRecognition || window.SpeechRecognition);
+    if (!SR) { alert("Voice recognition isn’t supported on this device."); return null; }
+    const rec = new SR();
+    rec.lang = chosenLang || "en-US";
+    rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+
+    rec.onresult = (e) => {
+      if (userEditingRef.current) return;
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i]; const t = (r[0]?.transcript || "").trim();
+        if (!t) continue;
+        if (r.isFinal) finalBufRef.current = (finalBufRef.current + " " + t).replace(/\s+/g, " ").trim();
+        else interim = (interim + " " + t).replace(/\s+/g, " ").trim();
       }
-    } finally {
-      processingRef.current = false;
-    }
+      interimRef.current = interim;
+      setLiveText([finalBufRef.current, interim].filter(Boolean).join(" ").trim());
+    };
+    rec.onend = () => { if (keepAliveRef.current) { try { rec.start(); } catch {} } else setListening(false); };
+    rec.onerror = () => {};
+    recRef.current = rec;
+    return rec;
   }
 
   async function onStart() {
-    setReply(""); setStatus(""); setListening(true); setShowSrc(false); setSources([]);
-    finalRef.current = ""; interimRef.current = "";
-
-    if (supportsSR()) { const rec = setupSR(); if (rec) { try { rec.start(); setStatus("Live captions on."); } catch {} } }
-    else { setStatus("Recording… (words will appear as you speak)"); }
-
+    finalBufRef.current = ""; interimRef.current = "";
+    setReply(""); setSources([]); setShowSrc(false);
+    keepAliveRef.current = true;
+    userEditingRef.current = false;
     try {
-      const ok = await startRecorder();
-      if (!ok) setListening(false);
-    } catch { setListening(false); setStatus("Mic unavailable."); }
+      await startMicViz();
+      const rec = ensureRecognizer(); if (!rec) return;
+      setListening(true);
+      try { rec.start(); } catch {}
+    } catch {
+      setListening(false); stopMicViz(); alert("Microphone permission denied.");
+    }
   }
 
   async function onStop() {
+    keepAliveRef.current = false;
     setListening(false);
-    try { srRef.current && srRef.current.stop(); } catch {}
-    try { recRef.current.rec && recRef.current.rec.stop(); recRef.current.rec?.requestData?.(); } catch {}
+    try { recRef.current && recRef.current.stop(); } catch {}
+    stopMicViz();
+    setLiveText([finalBufRef.current, interimRef.current].filter(Boolean).join(" ").trim());
+  }
+  
+  function onUserTyping(e) {
+    userEditingRef.current = true;
+    setLiveText(e.target.value);
+    if (listening) {
+      keepAliveRef.current = false;
+      try { recRef.current && recRef.current.stop(); } catch {}
+      stopMicViz();
+      setListening(false);
+    }
   }
 
   async function sendForAnswer(text) {
     const clean = String(text || "").trim();
-    if (!clean) return;
-    if (clean.split(/\s+/).length < 3 && !/[.?!]/.test(clean)) return;
+    if (!clean || clean.split(/\s+/).length < 2) return;
 
     setReplying(true);
     setShowSrc(false);
@@ -320,37 +230,36 @@ export default function OracleVoice({ path = "Universal" }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: (polish
-            ? `Please restate the user's input in clear English (fix grammar, keep meaning). Then answer directly.\nIMPORTANT: Do not instruct the user to ask or write anything. Answer directly.\nUser input: """${clean}"""`
-            : `IMPORTANT: Do not instruct the user to ask or write anything. Answer directly.\n${clean}`),
+          message: clean,
           path, mode, topic, lang: chosenLang
         }),
       });
-      const data = await r.json().catch(()=>({}));
+      const data = await r.json().catch(()=> ({}));
+
       const msg = data?.reply || "I’m here with you.";
       setReply(msg);
       setSources(Array.isArray(data?.sources) ? data.sources : []);
 
-      if (msg) speak(msg);
-    } finally { setReplying(false); }
+      if (msg) {
+        try { window.speechSynthesis.cancel(); } catch {}
+        const u = new SpeechSynthesisUtterance(msg);
+        const v = pickVoice(chosenLang); if (v) u.voice = v;
+        u.lang = chosenLang || "en-US";
+        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+        u.onend = () => setSpeaking(false);
+        setSpeaking(true);
+        try { window.speechSynthesis.speak(u); } catch {}
+      }
+    } finally {
+      setReplying(false);
+    }
   }
 
-  useEffect(() => () => { try { srRef.current && srRef.current.stop(); } catch {}; clearViz(); }, []);
-
-  function onUserTyping(e) {
-    manualEditingRef.current = true;
-    setLiveText(e.target.value);
-    clearTimeout(onUserTyping.tid);
-    onUserTyping.tid = setTimeout(() => { manualEditingRef.current = false; }, 600);
-  }
-
-  /* ---------- UI (layout preserved) ---------- */
   return (
     <section className="oracle">
       <header className="head">
         <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
-
         <div className="bar">
           <label>Language:
             <select value={lang} onChange={(e)=>setLang(e.target.value)}>
@@ -366,11 +275,9 @@ export default function OracleVoice({ path = "Universal" }) {
             <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e)=>setVolume(parseFloat(e.target.value||"1"))} />
           </label>
           <label>
-            <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
+            <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar
           </label>
         </div>
-
-        {status && <div style={{textAlign:"center", color:"#334155", fontWeight:700, marginTop:6}}>{status}</div>}
       </header>
 
       <div className="body">
@@ -383,11 +290,14 @@ export default function OracleVoice({ path = "Universal" }) {
             <div className="label">You</div>
             <textarea
               className="edit"
-              rows={4}
+              rows={5}
               value={liveText}
               onChange={onUserTyping}
-              placeholder="Words appear here while you speak…"
-              autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              placeholder="Type or speak here, then press Get Answer."
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={true}
+              enterKeyHint="send"
             />
             <div className="row">
               {!listening ? (
@@ -395,7 +305,7 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              <button className="btn ghost" onClick={()=>sendForAnswer(liveText)} disabled={replying}>
+              <button className="btn ghost" onClick={()=>sendForAnswer(liveText)} disabled={replying || !liveText}>
                 {replying ? "Thinking…" : "Get Answer ⟶"}
               </button>
               {speaking && <button className="btn danger" onClick={()=>{try{window.speechSynthesis.cancel();}catch{}; setSpeaking(false);}}>🔇 Stop Answer</button>}
@@ -408,8 +318,7 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className="log">
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
-
-            {/* Sources toggle */}
+            
             {sources && sources.length > 0 && (
               <div className="sources">
                 <button className="linkbtn" onClick={()=>setShowSrc(s => !s)} aria-expanded={showSrc}>
@@ -467,20 +376,19 @@ export default function OracleVoice({ path = "Universal" }) {
         .bubble.guide{background:#eef6ff;border-color:#dbeafe;}
         .edit{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:1rem;min-height:120px;}
         .row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
-        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation;}
+        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation; cursor:pointer;}
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn.start{color:#fff;background:linear-gradient(135deg,#7c3aed,#14b8a6);border:none;}
         .btn.stop{color:#fff;background:#111827;border:none;}
         .btn.ghost{background:#fff;}
         .btn.danger{color:#fff;background:#b91c1c;border:none;}
-
-        /* Sources */
         .sources{margin-top:8px}
         .linkbtn{border:none;background:transparent;color:#1d4ed8;font-weight:700;cursor:pointer;padding:6px 0}
-        .srclist{margin:6px 0 0;padding-left:16px;display:grid;gap:8px}
+        .srclist{margin:6px 0 0;padding-left:16px;display:grid;gap:8px; list-style-type: none;}
         .sline{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
         .work{font-weight:700;color:#0f172a}
         .author{color:#475569}
-        .quote{color:#334155;margin-top:2px;white-space:pre-wrap}
+        .quote{color:#334155;margin-top:2px;white-space:pre-wrap; border-left: 3px solid #e2e8f0; padding-left: 8px;}
       `}</style>
     </section>
   );
