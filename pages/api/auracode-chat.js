@@ -55,7 +55,7 @@ function htmlToPlain(raw){
        .replace(/<style[\s\S]*?<\/style>/gi," ")
        .replace(/<nav[\s\S]*?<\/nav>/gi," ")
        .replace(/<footer[\s\S]*?<\/footer>/gi," ")
-       .replace(//g," "); // ✅ strip comments
+       .replace(//g," ");
   s = s.replace(/<\/(p|div|h[1-6]|li|section|br)>/gi,"\n\n")
        .replace(/<(p|div|h[1-6]|li|section|br)[^>]*>/gi,"\n");
   s = s.replace(/<[^>]+>/g," ");
@@ -169,7 +169,6 @@ async function fetchGutenbergTitleSnippets(title, topK = 4){
     })).filter(allowSource);
   } catch { return []; }
 }
-
 
 /* ---------- main handler ---------- */
 export default async function handler(req, res) {
