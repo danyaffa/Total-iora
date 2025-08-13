@@ -1,52 +1,98 @@
 // FILE: /pages/api/tts.js
+import { OpenAI } from 'openai';
+import CircuitBreaker from 'opossum';
+import pino from 'pino';
+
+// LOGGING: Initialize structured logger
+const logger = pino({ level: process.env.PINO_LOG_LEVEL |
+
+| 'info' });
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// CONFIG: Vercel deployment settings
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-import OpenAI from "openai";
+// RESILIENCE: Define the function that the circuit breaker will wrap.
+async function generateSpeech(text, model, voice, response_format) {
+  const ttsModel = model |
+
+| process.env.OPENAI_TTS_MODEL |
+| 'tts-1';
+  const speech = await openai.audio.speech.create({
+    model: ttsModel,
+    voice: voice |
+
+| 'alloy',
+    input: text,
+    response_format: response_format |
+
+| 'mp3',
+  });
+  return Buffer.from(await speech.arrayBuffer());
+}
+
+// RESILIENCE: Configure and instantiate the circuit breaker.
+const circuitBreakerOptions = {
+  timeout: 8000, // If the function takes longer than 8 seconds, trigger a failure.
+  errorThresholdPercentage: 50, // When 50% of requests fail, trip the circuit.
+  resetTimeout: 30000, // After 30 seconds, try again.
+};
+const breaker = new CircuitBreaker(generateSpeech, circuitBreakerOptions);
+
+// LOGGING: Log circuit breaker state changes for observability.
+breaker.on('open', () => logger.warn({ name: breaker.name }, 'Circuit breaker opened.'));
+breaker.on('close', () => logger.info({ name: breaker.name }, 'Circuit breaker closed.'));
+breaker.on('halfOpen', () => logger.info({ name: breaker.name }, 'Circuit breaker is half-open, next request is a test.'));
+breaker.on('fallback', () => logger.warn({ name: breaker.name }, 'TTS fallback triggered.'));
+
+// The breaker will now fast-fail if the TTS service is down.
+breaker.fallback(() => {
+  throw new Error('TTS service is currently unavailable.');
+});
 
 export default async function handler(req, res) {
-  // Allow CORS + all normal verbs
-  if (req.method === "OPTIONS") {
-    res.setHeader("Allow", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    return res.status(204).end();
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    return res.status(200).end();
   }
-  if (!["GET", "POST"].includes(req.method || "")) {
-    return res.status(405).json({ error: "Method not allowed" });
+  
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
+  const { text, model, voice, format, response_format, requestId } = {...req.query,...req.body };
+  const log = logger.child({ requestId });
+
+  if (!text) {
+    log.warn('Request received with no text for TTS.');
+    return res.status(400).json({ error: 'Text is required' });
   }
 
   try {
-    const text = req.method === "GET" ? String(req.query.text || "") : String(req.body?.text || "");
-    const voice = req.method === "GET" ? String(req.query.voice || "alloy") : String(req.body?.voice || "alloy");
-    if (!text.trim()) return res.status(400).json({ error: "Missing text" });
+    log.info({ textLength: text.length }, 'Processing TTS request.');
+    
+    // PATCH: Tolerate both `format` and `response_format` parameters.
+    const audioFormat = response_format |
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
+| format |
+| 'mp3';
+    
+    // Use the circuit breaker to fire the request.
+    const audioBuffer = await breaker.fire(text, model, voice, audioFormat);
 
-    const openai = new OpenAI({ apiKey });
-    const model = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
+    res.setHeader('Content-Type', `audio/${audioFormat}`);
+    res.status(200).send(audioBuffer);
+    log.info('TTS audio generated and sent successfully.');
 
-    // Some SDK builds require "format", others "response_format".
-    let out;
-    try {
-      out = await openai.audio.speech.create({
-        model, voice, input: text, format: "mp3",
-      });
-    } catch (e1) {
-      // Fallback parameter name
-      out = await openai.audio.speech.create({
-        model, voice, input: text, response_format: "mp3",
-      });
-    }
+  } catch (error) {
+    log.error({ err: error, breakerState: breaker.toJSON().state }, 'Error in TTS handler.');
+    res.status(500).json({ error: error.message |
 
-    const buf = Buffer.from(await out.arrayBuffer());
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    return res.status(200).send(buf);
-  } catch (err) {
-    console.error("TTS error:", err);
-    return res.status(500).json({ error: "tts_failed", detail: String(err?.message || err) });
+| 'Failed to generate speech.' });
   }
 }
