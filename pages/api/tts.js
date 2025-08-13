@@ -16,7 +16,6 @@ const openai = new OpenAI({
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// RESILIENCE: Define the function that the circuit breaker will wrap.
 async function generateSpeech(text, model, voice, response_format) {
   const ttsModel = model |
 
@@ -35,27 +34,19 @@ async function generateSpeech(text, model, voice, response_format) {
   return Buffer.from(await speech.arrayBuffer());
 }
 
-// RESILIENCE: Configure and instantiate the circuit breaker.
 const circuitBreakerOptions = {
-  timeout: 8000, // If the function takes longer than 8 seconds, trigger a failure.
-  errorThresholdPercentage: 50, // When 50% of requests fail, trip the circuit.
-  resetTimeout: 30000, // After 30 seconds, try again.
+  timeout: 8000, 
+  errorThresholdPercentage: 50, 
+  resetTimeout: 30000, 
 };
 const breaker = new CircuitBreaker(generateSpeech, circuitBreakerOptions);
 
-// LOGGING: Log circuit breaker state changes for observability.
 breaker.on('open', () => logger.warn({ name: breaker.name }, 'Circuit breaker opened.'));
 breaker.on('close', () => logger.info({ name: breaker.name }, 'Circuit breaker closed.'));
 breaker.on('halfOpen', () => logger.info({ name: breaker.name }, 'Circuit breaker is half-open, next request is a test.'));
-breaker.on('fallback', () => logger.warn({ name: breaker.name }, 'TTS fallback triggered.'));
-
-// The breaker will now fast-fail if the TTS service is down.
-breaker.fallback(() => {
-  throw new Error('TTS service is currently unavailable.');
-});
+breaker.fallback(() => { throw new Error('TTS service is currently unavailable.'); });
 
 export default async function handler(req, res) {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -76,13 +67,11 @@ export default async function handler(req, res) {
   try {
     log.info({ textLength: text.length }, 'Processing TTS request.');
     
-    // PATCH: Tolerate both `format` and `response_format` parameters.
     const audioFormat = response_format |
 
 | format |
 | 'mp3';
     
-    // Use the circuit breaker to fire the request.
     const audioBuffer = await breaker.fire(text, model, voice, audioFormat);
 
     res.setHeader('Content-Type', `audio/${audioFormat}`);
