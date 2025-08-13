@@ -1,46 +1,50 @@
 // FILE: /pages/api/auracode-chat.js
 import OpenAI from 'openai';
-import retry from 'async-retry';
-import pino from 'pino';
-import cld from 'cld';
 
-// LOGGING (fixed stray pipes)
-const logger = pino({ level: process.env.PINO_LOG_LEVEL || 'info' });
+// tiny console-based logger (keeps log calls; no pino needed)
+const logger = {
+  child: (meta) => ({
+    info: (msg, ...rest) => console.info('[auracode-chat]', meta, msg, ...rest),
+    warn: (msg, ...rest) => console.warn('[auracode-chat]', meta, msg, ...rest),
+    error: (msg, ...rest) => console.error('[auracode-chat]', meta, msg, ...rest),
+  }),
+  info: (...a) => console.info('[auracode-chat]', ...a),
+  warn: (...a) => console.warn('[auracode-chat]', ...a),
+  error: (...a) => console.error('[auracode-chat]', ...a),
+};
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Vercel hints
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-// OPTIONAL: source fetcher (kept but safe)
-async function fetchSources(query, lang) {
-  logger.info({ query, lang }, 'Fetching sources...');
-  await new Promise((r) => setTimeout(r, 200));
-  return []; // keep empty list to avoid .map on undefined
+// small retry helper (no async-retry dep)
+async function withRetry(fn, retries = 2, delayMs = 600, onRetry = () => {}) {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    try { return await fn(); }
+    catch (e) {
+      lastErr = e;
+      if (i < retries) {
+        await onRetry(e, i);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastErr;
 }
 
-// Detect language (kept + hardened)
-async function detectLanguage(lang, message) {
+// Language detection without cld
+function detectLanguage(lang, text) {
   const x = String(lang || 'auto').toLowerCase();
   if (x && x !== 'auto') {
     if (x.startsWith('ar')) return 'Arabic';
     if (x.startsWith('he')) return 'Hebrew';
     if (x.startsWith('en')) return 'English';
   }
-  try {
-    const result = await cld.detect(message);
-    if (result?.reliable && result.languages?.length > 0) {
-      const names = result.languages.map((l) => (l && l.name ? String(l.name).toLowerCase() : ''));
-      if (names.some((n) => n.includes('arabic'))) return 'Arabic';
-      if (names.some((n) => n.includes('hebrew'))) return 'Hebrew';
-    }
-  } catch (e) {
-    logger.warn({ err: e }, 'cld detect failed, using regex fallback');
-  }
-  if (/[؀-ۿ]/.test(message)) return 'Arabic';
-  if (/[א-ת]/.test(message)) return 'Hebrew';
-  if (/[\u4E00-\u9FFF]/.test(message)) return 'Chinese';
+  if (/[؀-ۿ]/.test(text)) return 'Arabic';
+  if (/[א-ת]/.test(text)) return 'Hebrew';
+  if (/[\u4E00-\u9FFF]/.test(text)) return 'Chinese';
   return 'English';
 }
 
@@ -51,29 +55,20 @@ export default async function handler(req, res) {
   const log = logger.child({ requestId });
 
   if (!message) {
-    log.warn('Request with no message');
+    log.warn('No message');
     return res.status(400).json({ error: 'Message is required' });
-    }
+  }
 
   try {
-    const targetLanguage = await detectLanguage(lang, message);
-    log.info({ clientLang: lang, detectedLang: targetLanguage }, 'Processing chat request');
-
-    const sources = await retry(
-      async () => fetchSources(message, targetLanguage),
-      { retries: 1, minTimeout: 300, onRetry: (err) => log.warn({ err }, 'Retrying source fetch') }
-    );
-
-    const sourceText = (sources || [])
-      .map((s) => `Source: ${s.source}\nText: ${s.text}`)
-      .join('\n\n');
+    const targetLanguage = detectLanguage(lang, message);
+    log.info({ message, clientLang: lang, detectedLang: targetLanguage }, 'Processing');
 
     const systemPrompt =
 `You are a helpful assistant.
-Provide citations from the sources when available.
-${sourceText ? `Use the following sources to answer the user's question:\n${sourceText}\n` : ''}IMPORTANT: You must respond exclusively in ${targetLanguage}.`;
+IMPORTANT: You must respond exclusively in ${targetLanguage}.
+If the user wrote in ${targetLanguage}, answer in ${targetLanguage}.`;
 
-    const completion = await retry(
+    const completion = await withRetry(
       async () => {
         const resp = await openai.chat.completions.create({
           model: 'gpt-4o',
@@ -82,19 +77,21 @@ ${sourceText ? `Use the following sources to answer the user's question:\n${sour
             { role: 'user', content: message }
           ]
         });
-        if (!resp?.choices || resp.choices.length === 0) throw new Error('OpenAI returned no choices');
+        if (!resp?.choices?.length) throw new Error('OpenAI returned no choices');
         return resp;
       },
-      { retries: 2, minTimeout: 800, onRetry: (err) => log.warn({ err }, 'Retrying OpenAI chat') }
+      2,
+      800,
+      (err, i) => log.warn({ attempt: i + 1, err: String(err) }, 'Retrying OpenAI')
     );
 
     const reply = completion.choices[0]?.message?.content || '';
     const citations = (reply.match(/\[\d+\]/g) || []).map(String);
 
-    log.info({ replyLength: reply.length }, 'Chat success');
-    return res.status(200).json({ reply, citations, sources });
+    log.info({ replyLength: reply.length }, 'Success');
+    return res.status(200).json({ reply, citations, sources: [] });
   } catch (error) {
-    log.error({ err: error }, 'auracode-chat error');
+    log.error({ err: String(error) }, 'auracode-chat error');
     return res.status(500).json({ error: 'Failed to process chat request.' });
   }
 }
