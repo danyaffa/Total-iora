@@ -19,17 +19,15 @@ export const maxDuration = 30;
 
 // FAKE SOURCE FETCHERS (placeholders for Sefaria/Qur'an/Gutenberg)
 async function fetchSources(query, lang) {
-  // Simulating fetching from sources like Qur'an, Sefaria, etc.
-  // In a real implementation, this would involve complex logic.
   logger.info({ query, lang }, 'Fetching sources...');
   await new Promise(resolve => setTimeout(resolve, 800)); // Simulate network latency
   if (lang === 'Arabic' && query.includes('قرآن')) {
-    return;
+    return; // Return empty array on success
   }
   if (lang === 'Hebrew' && query.includes('תורה')) {
-    return;
+    return; // Return empty array on success
   }
-  return;
+  return; // Return empty array by default
 }
 
 /**
