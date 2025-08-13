@@ -13,30 +13,7 @@ const OracleVoice = () => {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef();
   const speechRecognitionRef = useRef(null);
-  const audioContextRef = useRef(null);
   const requestIdRef = useRef(null);
-
-  // ARCHITECTURE: Prioritize MediaRecorder, use Web Speech API only for interim captions.
-  const setupRecorders = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      // 1. Setup MediaRecorder (Primary)
-      setupMediaRecorder(stream);
-
-      // 2. Setup Web Speech API (Optional, for live captions on compatible browsers)
-      if ('webkitSpeechRecognition' in window |
-
-| 'SpeechRecognition' in window) {
-        setupWebSpeechRecognition();
-      } else {
-        setStatus('Live captions not supported on this browser. Recording is active.');
-      }
-    } catch (err) {
-      console.error('Error accessing microphone:', err);
-      setStatus('Microphone access denied. Please enable it in your browser settings.');
-    }
-  };
 
   // ARCHITECTURE: Robust codec selection for MediaRecorder
   const getBestMimeType = () => {
@@ -57,21 +34,12 @@ const OracleVoice = () => {
     mediaRecorderRef.current.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunksRef.current.push(event.data);
-        sendAudioChunkToServer();
       }
     };
 
     mediaRecorderRef.current.onstop = () => {
       if (audioChunksRef.current.length > 0) {
         sendAudioChunkToServer(true); // Send final chunk
-      }
-      // Once recording stops, send the final concatenated text to the chat API
-      if (finalText |
-
-| interimText) {
-        sendToChatAPI(finalText |
-
-| interimText);
       }
     };
   };
@@ -98,8 +66,6 @@ const OracleVoice = () => {
       
       // UX: Prevent mangled English transcriptions for non-English speech
       if (/[؀-ۿא-ת]/.test(interim) && /[a-zA-Z]/.test(interim)) {
-          // Detected non-English script but getting English words, likely a misrecognition.
-          // Stop Web Speech and rely solely on MediaRecorder + server STT.
           if (speechRecognitionRef.current) {
               speechRecognitionRef.current.stop();
               setStatus('Switching to high-accuracy transcription...');
@@ -114,7 +80,7 @@ const OracleVoice = () => {
     };
   };
 
-  const startRecording = () => {
+  const startRecording = async () => {
     if (isRecording) return;
     setIsRecording(true);
     setFinalText('');
@@ -122,15 +88,30 @@ const OracleVoice = () => {
     setReply('');
     setStatus('Listening...');
     requestIdRef.current = uuidv4(); // LOGGING: Generate unique ID for this interaction.
+    audioChunksRef.current =;
 
-    setupRecorders().then(() => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setupMediaRecorder(stream);
+      if ('webkitSpeechRecognition' in window |
+
+| 'SpeechRecognition' in window) {
+        setupWebSpeechRecognition();
+      } else {
+        setStatus('Live captions not supported. Recording is active.');
+      }
+
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.start(1200); // Send chunks every 1.2 seconds
       }
       if (speechRecognitionRef.current) {
         speechRecognitionRef.current.start();
       }
-    });
+    } catch (err) {
+      console.error('Error accessing microphone:', err);
+      setStatus('Microphone access denied. Please enable it.');
+      setIsRecording(false);
+    }
   };
 
   const stopRecording = () => {
@@ -143,9 +124,21 @@ const OracleVoice = () => {
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.stop();
     }
+    // After recording stops, send the final concatenated text to the chat API
+    // A short delay ensures the final STT result is processed
+    setTimeout(() => {
+        const textToProcess = finalText |
+
+| interimText;
+        if (textToProcess) {
+            sendToChatAPI(textToProcess);
+        } else {
+            setStatus('Could not hear you. Please try again.');
+        }
+    }, 500);
   };
 
-  const sendAudioChunkToServer = async (isFinal = false) => {
+  const sendAudioChunkToServer = async () => {
     if (audioChunksRef.current.length === 0) return;
 
     const blob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current.mimeType });
@@ -214,7 +207,6 @@ const OracleVoice = () => {
       // Fallback to device's built-in speech synthesis
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(text);
-        // Attempt to set language for device voice
         if (detectedLang && detectedLang!== 'auto') {
             utterance.lang = detectedLang;
         }
@@ -228,6 +220,7 @@ const OracleVoice = () => {
 
   // Helper to avoid word duplication from overlapping chunks
   const mergeNoDupe = (existing, newText) => {
+    if (!existing.trim()) return newText;
     const existingWords = existing.split(/\s+/);
     const newWords = newText.split(/\s+/);
     let overlap = 0;
