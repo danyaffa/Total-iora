@@ -7,7 +7,6 @@ import OpenAI from "openai";
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
-    // MUST match OracleVoice (20).js: { b64, mime, lang }
     const { b64, mime = "audio/webm", lang = "auto" } = req.body || {};
     if (!b64) return res.status(400).json({ error: "Missing b64" });
 
@@ -21,13 +20,13 @@ export default async function handler(req, res) {
     const tr = await openai.audio.transcriptions.create({
       file: blob,
       model: "whisper-1",
-      // language: lang !== "auto" ? lang : undefined, // optional hint
+      // language: lang !== "auto" ? lang : undefined,
     });
 
     const text = tr?.text || "";
-    return res.status(200).json({ text });
+    res.status(200).json({ text });
   } catch (err) {
     console.error("STT error:", err);
-    return res.status(500).json({ error: "stt_failed", detail: String(err?.message || err) });
+    res.status(500).json({ error: "stt_failed", detail: String(err?.message || err) });
   }
 }
