@@ -1,15 +1,54 @@
 // FILE: /components/OracleVoice.js
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const LANG_OPTIONS = [
-  { value: "auto", label: "Auto (by room)" },
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "en-IN", label: "English (India)" },
-  { value: "ar", label: "Arabic" },
-  { value: "he", label: "Hebrew" },
+/* ---------- language handling (free text: “say the language”) ---------- */
+const LANG_MAP = {
+  // common names → BCP-47 tags
+  arabic: "ar-SA", "modern standard arabic": "ar-SA",
+  hebrew: "he-IL",
+  english: "en-US", "english (uk)": "en-GB", "british english": "en-GB",
+  spanish: "es-ES", "spanish (mexico)": "es-MX",
+  french: "fr-FR", german: "de-DE", italian: "it-IT",
+  portuguese: "pt-PT", "portuguese (brazil)": "pt-BR",
+  russian: "ru-RU", ukrainian: "uk-UA",
+  chinese: "zh-CN", mandarin: "zh-CN", "chinese (hong kong)": "zh-HK", cantonese: "zh-HK", "chinese (taiwan)": "zh-TW",
+  japanese: "ja-JP", korean: "ko-KR",
+  hindi: "hi-IN", urdu: "ur-PK", bengali: "bn-BD", tamil: "ta-IN", telugu: "te-IN",
+  turkish: "tr-TR", persian: "fa-IR", farsi: "fa-IR",
+  indonesian: "id-ID", malay: "ms-MY", swahili: "sw-KE",
+  amharic: "am-ET", arabic_egypt: "ar-EG", arabic_gulf: "ar-AE",
+};
+const DATALIST = [
+  "Arabic", "Hebrew", "English", "English (UK)", "Spanish", "Spanish (Mexico)",
+  "French", "German", "Italian", "Portuguese", "Portuguese (Brazil)",
+  "Russian", "Ukrainian", "Chinese", "Chinese (Hong Kong)", "Chinese (Taiwan)",
+  "Japanese", "Korean", "Hindi", "Urdu", "Bengali", "Turkish", "Persian",
+  "Indonesian", "Malay", "Swahili", "Amharic"
 ];
 
+function normalizeLang(input) {
+  const s = String(input || "").trim();
+  if (!s || s.toLowerCase() === "auto") return "auto";
+  // direct code?
+  if (/^[a-z]{2}(-[A-Z]{2})?$/.test(s)) {
+    const [base, region] = s.split("-");
+    return region ? `${base.toLowerCase()}-${region.toUpperCase()}` : ({
+      ar: "ar-SA", he: "he-IL", en: "en-US", es: "es-ES", fr: "fr-FR", de: "de-DE",
+      it: "it-IT", pt: "pt-PT", ru: "ru-RU", uk: "uk-UA", zh: "zh-CN", ja: "ja-JP",
+      ko: "ko-KR", hi: "hi-IN", ur: "ur-PK", bn: "bn-BD", tr: "tr-TR", fa: "fa-IR",
+      id: "id-ID", ms: "ms-MY", sw: "sw-KE", am: "am-ET"
+    }[base.toLowerCase()] || `${base.toLowerCase()}-${(region || "XX").toUpperCase()}`);
+  }
+  const key = s.toLowerCase();
+  if (LANG_MAP[key]) return LANG_MAP[key];
+  return s; // pass through (browser/tts may still support it)
+}
+
+function isRTLTag(tag) {
+  return /^(ar|he|fa|ur)\b/i.test(String(tag || ""));
+}
+
+/* ---------- subject list (unchanged, long) ---------- */
 const SUBJECT_OPTIONS = [
   { value: "topic:general", label: "General" },
   { value: "style:gentle", label: "Gentle Guidance" },
@@ -53,124 +92,116 @@ const SUBJECT_OPTIONS = [
   { value: "topic:scripture", label: "Scripture Study" },
 ];
 
+/* ---------- helpers for room + voices ---------- */
 function autoLangFromPath(path) {
   switch (path) {
-    case "Jewish": return "he";
-    case "Muslim": return "ar";
+    case "Jewish": return "he-IL";
+    case "Muslim": return "ar-SA";
     case "Eastern": return "en-IN";
     case "Christian": return "en-GB";
     default: return "en-US";
   }
 }
-function pickVoice(lang) {
-  try {
-    const voices = window.speechSynthesis?.getVoices?.() || [];
-    if (!voices.length) return null;
-    let v = voices.find((x) => x.lang === lang) || voices.find((x)=>x.lang?.startsWith((lang||"").split("-")[0]));
-    return v || voices[0];
-  } catch { return null; }
-}
-
-const isMobile = () => typeof navigator !== "undefined" && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");
-const hasSR = () => (typeof window !== "undefined") && !isMobile() && (window.webkitSpeechRecognition || window.SpeechRecognition);
+const isMobileUA = () => (typeof navigator !== "undefined") && /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+const hasSR = () => (typeof window !== "undefined") && !isMobileUA() && (window.webkitSpeechRecognition || window.SpeechRecognition);
 const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
-const isSecure = () =>
-  typeof window === "undefined" ? true :
-  (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
+const isSecure = () => (typeof window === "undefined") ? true : (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
 
-/* Choose lowest-latency compatible format per device */
 function bestMime() {
   if (!hasRecorder()) return "audio/webm";
   const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";      // iOS/Safari
-  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";  // Android/Chrome
-  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";    // Firefox
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";     // iOS/Safari
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
   if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";   // Firefox
   return "audio/webm";
 }
 
-/* Helpers */
-function mergeNoDupe(base, addition) {
-  const a = (base||"").trim(), b = (addition||"").trim();
-  if (!b) return a; if (!a) return b;
-  const at = a.split(/\s+/), bt = b.split(/\s+/);
-  const n = Math.min(12, bt.length);
-  const tail = at.slice(-n).join(" "), head = bt.slice(0, n).join(" ");
-  if (tail === head || a.endsWith(b)) return a;
-  return (a + " " + b).replace(/\s+/g," ").trim();
+function pickVoice(tag) {
+  try {
+    const voices = window.speechSynthesis?.getVoices?.() || [];
+    if (!voices.length) return null;
+    const [base] = String(tag || "").split("-");
+    return voices.find(v => v.lang === tag)
+        || voices.find(v => v.lang?.toLowerCase() === String(tag||"").toLowerCase())
+        || voices.find(v => v.lang?.startsWith(base))
+        || null;
+  } catch { return null; }
 }
-async function sttUploadBlob(blob, mime, lang) {
+
+function mergeNoDupe(a, b) {
+  const A = (a || "").trim(), B = (b || "").trim();
+  if (!B) return A; if (!A) return B;
+  if (A.endsWith(B)) return A;
+  const tail = A.split(/\s+/).slice(-20).join(" ");
+  const head = B.split(/\s+/).slice(0, 20).join(" ");
+  return (tail === head ? A : (A + " " + B)).replace(/\s+/g, " ").trim();
+}
+
+async function sttUpload(blob, mime, lang) {
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
-  for (let i=0;i<bytes.length;i++) b64 += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
   const r = await fetch("/api/stt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ b64: btoa(b64), mime: mime || "audio/webm", lang: (lang || "en") }),
+    body: JSON.stringify({ b64: btoa(b64), mime: mime || "audio/webm", lang: (lang || "auto") }),
   });
   const js = await r.json().catch(()=>({}));
   if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
   return js?.text || "";
 }
 
+/* ---------- component ---------- */
 export default function OracleVoice({ path = "Universal" }) {
-  const [listening, setListening] = useState(false);
-  const [replying, setReplying] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
-  const [status, setStatus] = useState("");
+  const [listening, setListening]   = useState(false);
+  const [speaking, setSpeaking]     = useState(false);
+  const [replying, setReplying]     = useState(false);
+  const [status, setStatus]         = useState("");
+  const [liveText, setLiveText]     = useState("");
+  const [reply, setReply]           = useState("");
+  const [lang, setLang]             = useState("auto");  // free text
+  const [subject, setSubject]       = useState("topic:general");
+  const [volume, setVolume]         = useState(1);
+  const [polish, setPolish]         = useState(false);
 
-  const [liveText, setLiveText] = useState("");  // progressively updated as you speak
-  const [reply, setReply] = useState("");
+  const [sources, setSources]       = useState([]);
+  const [showSrc, setShowSrc]       = useState(false);
 
-  const [lang, setLang] = useState("auto");
-  const [subject, setSubject] = useState("topic:general");
-  const [volume, setVolume] = useState(1);
-  const [polish, setPolish] = useState(false);
-
-  const [sources, setSources] = useState([]);
-  const [showSrc, setShowSrc] = useState(false);
-
-  const canvasRef = useRef(null);
-  const srRef = useRef(null);
-
-  // Recorder & streaming queue
-  const recRef = useRef({ stream:null, rec:null, mime:"", ctx:null, analyser:null, anim:0 });
-  const chunkQueueRef = useRef([]);    // {idx, blob, mime}
-  const processingRef = useRef(false);
-  const chunkIdxRef = useRef(0);
-  const manualEditRef = useRef(false);
-  const stopRequestedRef = useRef(false);
+  const canvasRef  = useRef(null);
+  const audioRef   = useRef(null);
+  const srRef      = useRef(null);
+  const recRef     = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
+  const usingRef   = useRef(null);
+  const finalRef   = useRef("");
+  const listeningRef = useRef(false);
 
   const persona = useMemo(() => (
-    path === "Jewish" ? "Rabbi" :
+    path === "Jewish"    ? "Rabbi"  :
     path === "Christian" ? "Priest" :
-    path === "Muslim" ? "Imam" :
-    path === "Eastern" ? "Monk" : "Sage"
+    path === "Muslim"    ? "Imam"   :
+    path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
 
-  const chosenLang = lang === "auto" ? autoLangFromPath(path) : lang;
+  const chosenTag = (() => {
+    const raw = normalizeLang(lang);
+    if (raw === "auto") return normalizeLang(autoLangFromPath(path));
+    return normalizeLang(raw);
+  })();
+  const isRTL = isRTLTag(chosenTag);
 
-  /* TTS */
+  // voice availability priming
   useEffect(() => {
-    if (!("speechSynthesis" in window)) return;
-    const assign = () => {/* trigger voices load */};
-    window.speechSynthesis.onvoiceschanged = assign;
-    setTimeout(assign, 150);
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
-  }, [chosenLang]);
-  function speak(text) {
-    if (!text) return;
-    try { window.speechSynthesis.cancel(); } catch {}
-    const u = new SpeechSynthesisUtterance(text);
-    const v = pickVoice(chosenLang); if (v) u.voice = v;
-    u.lang = chosenLang || "en-US";
-    u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-    u.onend = () => setSpeaking(false);
-    setSpeaking(true);
-    try { window.speechSynthesis.speak(u); } catch {}
-  }
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    const tick = () => synth.getVoices();
+    const id = setInterval(tick, 250);
+    synth.addEventListener?.("voiceschanged", tick);
+    const stop = () => { clearInterval(id); synth.removeEventListener?.("voiceschanged", tick); };
+    setTimeout(stop, 2500);
+    return stop;
+  }, []);
 
-  // Canvas mic viz size
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
     const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -180,157 +211,215 @@ export default function OracleVoice({ path = "Universal" }) {
     cnv.getContext("2d").scale(dpr, dpr);
   }, []);
 
-  /* ====== Progressive captions pipeline ======
-     A) If browser has SpeechRecognition (desktop) -> near-instant interim words.
-     B) Always run MediaRecorder with 400ms chunks -> stream each chunk to /api/stt and append text.
-  */
-  async function processChunkQueue() {
-    if (processingRef.current) return;
-    processingRef.current = true;
+  useEffect(() => { audioRef.current = new Audio(); }, []);
+
+  async function speakOut(text) {
+    if (!text) return;
+    try { window.speechSynthesis.cancel(); } catch {}
+    const v = pickVoice(chosenTag);
+    if (v) {
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = v; u.lang = chosenTag; u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+      u.onend = () => setSpeaking(false);
+      setSpeaking(true);
+      try { window.speechSynthesis.speak(u); } catch {}
+      return;
+    }
+    // Fallback server TTS (multilingual)
     try {
-      while (chunkQueueRef.current.length) {
-        const { blob, mime } = chunkQueueRef.current.shift();
-        try {
-          const text = await sttUploadBlob(blob, mime, chosenLang);
-          if (!text) continue;
-          if (!manualEditRef.current) {
-            setLiveText(prev => mergeNoDupe(prev, text));
-          }
-        } catch (e) {
-          // swallow chunk errors; keep streaming
-        }
-      }
-    } finally {
-      processingRef.current = false;
-    }
-  }
-
-  function setupSR() {
-    const SR = (window.webkitSpeechRecognition || window.SpeechRecognition);
-    if (!SR) return null;
-    const rec = new SR();
-    rec.lang = chosenLang || "en-US";
-    rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
-    rec.onresult = (e) => {
-      let interim = "", final = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i]; const t = (r[0]?.transcript || "").trim();
-        if (!t) continue;
-        if (r.isFinal) final = mergeNoDupe(final, t);
-        else interim = mergeNoDupe("", t);
-      }
-      if (!manualEditRef.current) {
-        const combo = [final, interim].filter(Boolean).join(" ").trim();
-        if (combo) setLiveText(prev => mergeNoDupe(prev, combo));
-      }
-    };
-    rec.onerror = () => setStatus("Live captions (browser) error — server captions active.");
-    srRef.current = rec;
-    return rec;
-  }
-
-  async function startRecorder() {
-    if (!isSecure()) { setStatus("Microphone requires HTTPS or localhost."); return false; }
-    if (!navigator.mediaDevices?.getUserMedia || !hasRecorder()) {
-      setStatus("Recorder not supported on this device."); return false;
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
-    const AC = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AC(); try { await ctx.resume(); } catch {}
-    const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
-    const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
-
-    const mime = bestMime();
-    const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    rec.ondataavailable = (e) => {
-      if (!e.data || !e.data.size) return;
-      chunkQueueRef.current.push({ idx: chunkIdxRef.current++, blob: e.data, mime });
-      processChunkQueue(); // send chunk to STT immediately
-    };
-    rec.onstart = () => setStatus("Recording… (words appear as you speak)");
-    rec.onerror = () => setStatus("Recorder error.");
-    stopRequestedRef.current = false;
-    rec.start(400); // ~400ms chunks => low-latency captions
-
-    // simple visualizer
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const c = canvasRef.current?.getContext?.("2d");
-    const draw = () => {
-      if (!c) return;
-      analyser.getByteFrequencyData(data);
-      const avg = data.reduce((a,b)=>a+b,0)/data.length;
-      const radius = 32 + (avg/255)*40;
-      c.clearRect(0,0,220,220);
-      const g = c.createRadialGradient(110,110,radius*0.25,110,110,radius);
-      g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
-      c.fillStyle = g; c.beginPath(); c.arc(110,110,radius,0,Math.PI*2); c.fill();
-      if (!stopRequestedRef.current) recRef.current.anim = requestAnimationFrame(draw);
-    };
-    draw();
-
-    recRef.current = { stream, rec, mime, ctx, analyser, anim: recRef.current.anim };
-    return true;
+      const r = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, lang: chosenTag, format: "mp3" }),
+      });
+      if (!r.ok) throw new Error("Remote TTS failed");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = audioRef.current;
+      a.src = url; a.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+      setSpeaking(true);
+      await a.play().catch(()=> setSpeaking(false));
+    } catch { /* ignore: text still shown */ }
   }
 
   async function onStart() {
-    setReply(""); setStatus(""); setListening(true);
-    setLiveText(l => l); // don't clear what user typed
-    // A) Desktop live captions (if available)
+    setReply(""); setStatus(""); setListening(true); listeningRef.current = true;
+    usingRef.current = null; finalRef.current = "";
+
     if (hasSR()) {
-      try { const sr = setupSR(); sr && sr.start(); setStatus("Live captions on."); } catch {}
+      try {
+        const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
+        const rec = new SR();
+        rec.lang = chosenTag || "en-US";
+        rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+        rec.onresult = (e) => {
+          let acc = finalRef.current;
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const r = e.results[i], t = (r[0]?.transcript || "").trim();
+            if (!t) continue;
+            if (r.isFinal) acc = mergeNoDupe(acc, t);
+          }
+          finalRef.current = acc;
+          setLiveText(acc);
+        };
+        rec.onend = () => {
+          if (usingRef.current === "sr" && listeningRef.current) { try { rec.start(); } catch {} }
+          else { setListening(false); setStatus("Stopped."); }
+        };
+        srRef.current = rec;
+        rec.start();
+        usingRef.current = "sr";
+        setStatus("Recording… (words appear as you speak)");
+        return;
+      } catch { /* fall through */ }
     }
-    // B) Universal streaming recorder
+
+    if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
+    if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
+      setListening(false); setStatus("Dictation not supported on this device/browser."); return;
+    }
+
     try {
-      const ok = await startRecorder();
-      if (!ok) setListening(false);
+      setStatus("Opening microphone…");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AC(); try { await ctx.resume(); } catch {}
+      const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+      const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
+
+      const mime = bestMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstart = () => setStatus("Recording…");
+      rec.onerror = () => setStatus("Recorder error.");
+      rec.start(1000);
+
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const c = canvasRef.current?.getContext?.("2d");
+      const draw = () => {
+        if (!c) return;
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a,b)=>a+b,0)/data.length;
+        const r = 32 + (avg/255)*40;
+        c.clearRect(0,0,220,220);
+        const g = c.createRadialGradient(110,110,r*0.25,110,110,r);
+        g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
+        c.fillStyle = g; c.beginPath(); c.arc(110,110,r,0,Math.PI*2); c.fill();
+        recRef.current.anim = requestAnimationFrame(draw);
+      };
+      draw();
+
+      recRef.current = { stream, rec, chunks, mime: mime || "audio/webm", ctx, analyser, anim: recRef.current.anim };
+      usingRef.current = "rec";
+      setStatus("Recording… (tap Stop to transcribe)");
     } catch {
-      setListening(false); setStatus("Mic unavailable.");
+      setListening(false); setStatus("Mic permission denied or unavailable.");
     }
   }
 
   async function onStop() {
-    stopRequestedRef.current = true;
-    setListening(false);
-    try { srRef.current && srRef.current.stop && srRef.current.stop(); } catch {}
-    const r = recRef.current.rec;
-    if (r) { try { r.stop(); r.requestData && r.requestData(); } catch {} }
-    cancelAnimationFrame(recRef.current.anim || 0);
-    try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
-    try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-    recRef.current = { stream:null, rec:null, mime:"", ctx:null, analyser:null, anim:0 };
-    // allow final queued chunks to flush
-    setTimeout(processChunkQueue, 200);
+    if (!listening) return;
+    setListening(false); listeningRef.current = false;
+
+    if (usingRef.current === "sr") {
+      try { srRef.current && srRef.current.stop(); } catch {}
+      usingRef.current = null;
+      return;
+    }
+
+    if (usingRef.current === "rec") {
+      const r = recRef.current.rec;
+      try { r && r.stop(); r && r.requestData && r.requestData(); } catch {}
+      await new Promise(res => setTimeout(res, 350));
+
+      cancelAnimationFrame(recRef.current.anim || 0);
+      try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
+      try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
+
+      const { chunks, mime } = recRef.current;
+      recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
+
+      if (!chunks.length) { setStatus("No audio captured."); usingRef.current = null; return; }
+
+      setStatus("Transcribing…");
+      try {
+        const blob = new Blob(chunks, { type: mime || "audio/webm" });
+        const text = await sttUpload(blob, mime || "audio/webm", chosenTag);
+        finalRef.current = mergeNoDupe(finalRef.current, text);
+        setLiveText(finalRef.current);
+        setStatus("Ready.");
+      } catch (e) {
+        setStatus(String(e?.message || e));
+      }
+      usingRef.current = null;
+    }
   }
 
   async function sendForAnswer(text) {
     const clean = String(text || "").trim();
-    if (!clean) return;
+    if (!clean || clean.split(/\s+/).length < 2) return;
+
     setReplying(true);
-    setShowSrc(false); setSources([]);
+    setShowSrc(false);
+    setSources([]);
+
     try {
       const isStyle = subject.startsWith("style:");
       const isTopic = subject.startsWith("topic:");
       const mode = isStyle ? subject.slice(6) : "gentle";
       const topic = isTopic ? subject.slice(6) : "general";
+
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: clean, path, mode, topic, lang: chosenLang, polish }),
+        body: JSON.stringify({
+          message: clean,
+          path, mode, topic, lang: chosenTag, polish
+        }),
       });
       const data = await r.json().catch(()=> ({}));
-      setReply(data?.reply || "—");
+
+      const msg = data?.reply || "—";
+      setReply(msg);
       setSources(Array.isArray(data?.sources) ? data.sources : []);
-      if (data?.reply) speak(data.reply);
-    } finally {
-      setReplying(false);
-    }
+      if (msg) speakOut(msg);
+    } finally { setReplying(false); }
   }
 
-  function onUserTyping(e) {
-    manualEditRef.current = true;
-    setLiveText(e.target.value);
-    clearTimeout(onUserTyping.tid);
-    onUserTyping.tid = setTimeout(() => (manualEditRef.current = false), 500);
+  // re-speak if volume changed mid-speech
+  useEffect(() => {
+    if (!speaking || !reply) return;
+    const t = setTimeout(() => speakOut(reply), 100);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [volume]);
+
+  function buildExport() {
+    return [
+      `Total-iora Oracle — ${new Date().toLocaleString()}`,
+      `Language: ${lang || "auto"}  |  Room: ${path}  |  Subject: ${subject}`,
+      "", "Question:", liveText || "(none)", "", "Answer:", reply || "(none)"
+    ].join("\n");
+  }
+  function onDownload() {
+    const blob = new Blob([buildExport()], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `total-iora-answer-${Date.now()}.txt`;
+    document.body.appendChild(a);
+    a.click(); a.remove(); URL.revokeObjectURL(a.href);
+  }
+  function onPrint() {
+    const text = buildExport().replace(/\n/g, "<br/>");
+    const w = window.open("", "_blank", "noopener,noreferrer"); if (!w) return;
+    w.document.write(`<html><head><title>Total-iora — Print</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <style>body{font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#0f172a;padding:24px}
+      .box{border:1px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff}
+      @media print{@page{margin:14mm}}</style></head>
+      <body><h1>Total-iora Oracle</h1><div class="box">${text}</div><script>window.print()</script></body></html>`);
+    w.document.close();
   }
 
   return (
@@ -338,12 +427,21 @@ export default function OracleVoice({ path = "Universal" }) {
       <header className="head">
         <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
-
         <div className="bar">
-          <label>Language:
-            <select value={lang} onChange={(e)=>setLang(e.target.value)}>
-              {LANG_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+          <label style={{display:"flex",alignItems:"center",gap:8}}>
+            <span>Language:</span>
+            {/* free-text language; user can type ANY language or code */}
+            <input
+              list="all-langs"
+              value={lang}
+              onChange={(e)=>setLang(e.target.value)}
+              placeholder="auto  —  type e.g. Arabic, ar-SA"
+              className="langInput"
+            />
+            <datalist id="all-langs">
+              {DATALIST.map(n => <option key={n} value={n} />)}
+              <option value="auto" />
+            </datalist>
           </label>
           <label>Subject:
             <select value={subject} onChange={(e)=>setSubject(e.target.value)}>
@@ -353,9 +451,10 @@ export default function OracleVoice({ path = "Universal" }) {
           <label>Guide voice volume:
             <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e)=>setVolume(parseFloat(e.target.value||"1"))} />
           </label>
-          <label><input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar</label>
+          <label>
+            <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar
+          </label>
         </div>
-
         {status && <div style={{textAlign:"center", color:"#334155", fontWeight:700, marginTop:6}}>{status}</div>}
       </header>
 
@@ -364,17 +463,22 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className={`orb ${listening ? "on" : ""}`}>
             <canvas ref={canvasRef} width={220} height={220} />
             <div className="ring" />
-            {listening && <div style={{position:"absolute",bottom:10,fontWeight:800,color:"#7c3aed"}}>LIVE</div>}
           </div>
           <div className="log">
             <div className="label">You</div>
             <textarea
               className="edit"
               rows={5}
+              dir={isRTL ? "rtl" : "ltr"}
               value={liveText}
-              onChange={onUserTyping}
-              placeholder="Words appear as you speak…"
-              autoCorrect="off" autoCapitalize="off" spellCheck={false}
+              onChange={(e) => setLiveText(e.target.value)}
+              placeholder="Type or speak here, then press Get Answer."
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={true}
+              autoComplete="off"
+              inputMode="text"
+              enterKeyHint="send"
             />
             <div className="row">
               {!listening ? (
@@ -385,7 +489,17 @@ export default function OracleVoice({ path = "Universal" }) {
               <button className="btn ghost" onClick={()=>sendForAnswer(liveText)} disabled={replying || !liveText}>
                 {replying ? "Thinking…" : "Get Answer ⟶"}
               </button>
-              {speaking && <button className="btn danger" onClick={()=>{try{window.speechSynthesis.cancel();}catch{}; setSpeaking(false);}}>🔇 Stop Answer</button>}
+              {speaking && <button className="btn danger" onClick={()=>{
+                try{window.speechSynthesis.cancel();}catch{}
+                const a=audioRef.current; if(a){try{a.pause(); a.currentTime=0;}catch{}}
+                setSpeaking(false);
+              }}>🔇 Stop Answer</button>}
+            </div>
+
+            <div className="row" style={{marginTop:8}}>
+              <button className="btn ghost" onClick={()=>setShowSrc(s=>!s)} disabled={!sources?.length}>📚 {showSrc ? "Hide sources" : `Show sources (${sources.length})`}</button>
+              <button className="btn ghost" onClick={onDownload} disabled={!reply}>⬇️ Download</button>
+              <button className="btn ghost" onClick={onPrint} disabled={!reply}>🖨️ Print</button>
             </div>
           </div>
         </div>
@@ -394,27 +508,24 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className={`orb spirit ${replying || speaking ? "on" : ""}`}><div className="halo" /></div>
           <div className="log">
             <div className="label">Guide</div>
-            <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
+            <div className="bubble guide" dir={isRTL ? "rtl" : "ltr"} aria-live="polite">
+              {reply || (replying ? "Thinking…" : "—")}
+            </div>
 
-            {sources && sources.length > 0 && (
-              <div className="sources">
-                <button className="linkbtn" onClick={()=>setShowSrc(s => !s)} aria-expanded={showSrc}>
-                  {showSrc ? "Hide sources" : `Show sources (${sources.length})`}
-                </button>
-                {showSrc && (
-                  <ul className="srclist">
-                    {sources.map((s, i) => (
-                      <li key={`${s.i || i}-${s.url || s.work}`}>
-                        <div className="sline">
-                          <span className="work">{s.work}</span>
-                          {s.author ? <span className="author"> — {s.author}</span> : null}
-                          {s.url ? <a href={s.url} target="_blank" rel="noreferrer">open ↗</a> : null}
-                        </div>
-                        {s.quote ? <div className="quote">“{s.quote}”</div> : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+            {showSrc && sources && sources.length > 0 && (
+              <div className="sources" style={{marginTop:8}}>
+                <ul className="srclist">
+                  {sources.map((s, i) => (
+                    <li key={`${s.i || i}-${s.url || s.work}`}>
+                      <div className="sline">
+                        <span className="work">{s.work}</span>
+                        {s.author ? <span className="author"> — {s.author}</span> : null}
+                        {s.url ? <a href={s.url} target="_blank" rel="noreferrer">open ↗</a> : null}
+                      </div>
+                      {s.quote ? <div className="quote" dir={isRTL ? "rtl" : "ltr"}>“{s.quote}”</div> : null}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -431,7 +542,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .persona{display:inline-block;padding:6px 10px;font-weight:700;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#334155;margin-bottom:6px;font-size:.9rem;}
         .head h2{margin:4px 0 6px;font-size:1.7rem;font-weight:800;color:#0f172a;}
         .bar{margin-top:6px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;color:#475569;font-size:.95rem;}
-        .bar select{margin-left:6px;padding:8px 10px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;}
+        .bar select,.langInput{margin-left:6px;padding:8px 10px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;min-width:220px;}
         .bar input[type="range"]{vertical-align:middle;width:140px;margin-left:8px;}
         .body{display:grid;gap:12px;grid-template-columns:1fr;margin-top:10px;padding:0 6px;}
         @media(min-width:860px){.body{grid-template-columns:1fr 1fr;}}
@@ -453,19 +564,18 @@ export default function OracleVoice({ path = "Universal" }) {
         .bubble.guide{background:#eef6ff;border-color:#dbeafe;}
         .edit{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:1rem;min-height:120px;}
         .row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
-        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation; cursor:pointer;}
+        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation;cursor:pointer;}
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn.start{color:#fff;background:linear-gradient(135deg,#7c3aed,#14b8a6);border:none;}
         .btn.stop{color:#fff;background:#111827;border:none;}
         .btn.ghost{background:#fff;}
         .btn.danger{color:#fff;background:#b91c1c;border:none;}
         .sources{margin-top:8px}
-        .linkbtn{border:none;background:transparent;color:#1d4ed8;font-weight:700;cursor:pointer;padding:6px 0}
         .srclist{margin:6px 0 0;padding-left:16px;display:grid;gap:8px; list-style-type: none;}
         .sline{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
         .work{font-weight:700;color:#0f172a}
         .author{color:#475569}
-        .quote{color:#334155;margin-top:2px;white-space:pre-wrap; border-left: 3px solid #e2e8f0; padding-left: 8px;}
+        .quote{color:#334155;margin-top:2px;white-space:pre-wrap;border-left:3px solid #e2e8f0;padding-left:8px;}
       `}</style>
     </section>
   );
