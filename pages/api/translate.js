@@ -1,4 +1,3 @@
-// FILE: /pages/api/translate.js
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -14,21 +13,18 @@ export default async function handler(req, res) {
     if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
 
     const openai = new OpenAI({ apiKey });
-    const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
-
-    const out = await openai.chat.completions.create({
-      model,
+    const r = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       temperature: 0.2,
       messages: [
-        { role: "system", content: `Translate the user's text into ${target}. Return only the translation, no notes.` },
+        { role: "system", content: `Translate the user's text into ${target}. Preserve meaning and tone. Return only the translation.` },
         { role: "user", content: text }
       ],
     });
-
-    const translated = out?.choices?.[0]?.message?.content || "";
-    res.status(200).json({ text: translated });
+    const out = r?.choices?.[0]?.message?.content || "";
+    res.status(200).json({ text: out });
   } catch (e) {
-    console.error("Translate error:", e);
     res.status(500).json({ error: "translate_failed", detail: String(e?.message || e) });
   }
 }
+
