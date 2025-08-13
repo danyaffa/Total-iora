@@ -2,6 +2,7 @@
 import { OpenAI } from 'openai';
 import retry from 'async-retry';
 import pino from 'pino';
+import { toFile } from 'openai/uploads';
 
 // LOGGING: Initialize structured logger
 const logger = pino({ level: process.env.PINO_LOG_LEVEL |
@@ -15,15 +16,6 @@ const openai = new OpenAI({
 // CONFIG: Vercel deployment settings
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
-
-// Helper to convert base64 to a format the OpenAI SDK can read
-function base64ToAudioFile(base64String, filename = 'audio.webm') {
-    const buffer = Buffer.from(base64String, 'base64');
-    return {
-        file: buffer,
-        name: filename,
-    };
-}
 
 export default async function handler(req, res) {
   if (req.method!== 'POST') {
@@ -39,7 +31,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const audioFile = base64ToAudioFile(audioChunk);
+    const audioBuffer = Buffer.from(audioChunk, 'base64');
+    const audioFile = await toFile(audioBuffer, 'audio.webm');
+
     let transcription;
     const modelsToTry = ['gpt-4o-transcribe', 'whisper-1'];
 
@@ -49,7 +43,7 @@ export default async function handler(req, res) {
         const response = await retry(
           async () => {
             return await openai.audio.transcriptions.create({
-              file: audioFile.file,
+              file: audioFile,
               model: model,
             });
           },
