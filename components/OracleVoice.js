@@ -15,6 +15,7 @@ const OracleVoice = () => {
   const speechRecognitionRef = useRef(null);
   const requestIdRef = useRef(null);
 
+  // ARCHITECTURE: Robust codec selection for MediaRecorder
   const getBestMimeType = () => {
     const mimeTypes = [
         'audio/webm;codecs=opus',
@@ -27,7 +28,7 @@ const OracleVoice = () => {
         return mimeType;
       }
     }
-    return '';
+    return ''; // Fallback to browser default
   };
 
   const setupMediaRecorder = (stream) => {
@@ -38,8 +39,14 @@ const OracleVoice = () => {
     mediaRecorderRef.current.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunksRef.current.push(event.data);
-        // Send chunk for live transcription
-        sendAudioChunkToServer(new Blob([event.data], { type: mimeType }));
+      }
+    };
+
+    mediaRecorderRef.current.onstop = () => {
+      // Once stopped, combine all chunks and send for transcription
+      if (audioChunksRef.current.length > 0) {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current.mimeType });
+        sendAudioToServer(audioBlob);
       }
     };
   };
@@ -51,7 +58,7 @@ const OracleVoice = () => {
     speechRecognitionRef.current = new SpeechRecognition();
     speechRecognitionRef.current.continuous = true;
     speechRecognitionRef.current.interimResults = true;
-    speechRecognitionRef.current.lang = 'en-US';
+    speechRecognitionRef.current.lang = 'en-US'; // Default, will be overridden by server
 
     speechRecognitionRef.current.onresult = (event) => {
       let interim = '';
@@ -101,7 +108,7 @@ const OracleVoice = () => {
       }
 
       if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.start(1200);
+        mediaRecorderRef.current.start();
       }
       if (speechRecognitionRef.current) {
         speechRecognitionRef.current.start();
@@ -124,21 +131,22 @@ const OracleVoice = () => {
       speechRecognitionRef.current.stop();
     }
     
+    // The final text from Web Speech might be faster, but we wait for the high-quality
+    // audio from MediaRecorder to be processed for the most accurate result.
+    // The call to sendToChatAPI is now triggered by sendAudioToServer.
     setTimeout(() => {
         const textToProcess = finalText |
 
 | interimText;
-        if (textToProcess) {
-            sendToChatAPI(textToProcess);
-        } else {
+        if (!textToProcess && audioChunksRef.current.length === 0) {
             setStatus('Could not hear you. Please try again.');
         }
     }, 500);
   };
 
-  const sendAudioChunkToServer = (chunkBlob) => {
+  const sendAudioToServer = (audioBlob) => {
     const reader = new FileReader();
-    reader.readAsDataURL(chunkBlob);
+    reader.readAsDataURL(audioBlob);
     reader.onloadend = async () => {
       const base64Audio = reader.result.split(',')[1];
       try {
@@ -149,10 +157,13 @@ const OracleVoice = () => {
         });
         const data = await response.json();
         if (data.text) {
-          setFinalText(prev => mergeNoDupe(prev, data.text.trim()));
+          setFinalText(data.text); // Set the final, high-accuracy text
           setDetectedLang(data.lang |
 
 | 'auto');
+          sendToChatAPI(data.text); // Send to chat API after getting transcription
+        } else {
+          setStatus('Could not transcribe audio. Please try again.');
         }
       } catch (error) {
         console.error('STT API error:', error);
@@ -162,6 +173,10 @@ const OracleVoice = () => {
   };
 
   const sendToChatAPI = async (text) => {
+    if (!text) {
+      setStatus('Could not hear you. Please try again.');
+      return;
+    }
     setStatus('Thinking...');
     try {
       const response = await fetch('/api/auracode-chat', {
