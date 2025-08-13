@@ -10,7 +10,7 @@ const LANG_OPTIONS = [
   { value: "he", label: "Hebrew" },
 ];
 
-// FULL subject list (unchanged)
+// FULL subject list
 const SUBJECT_OPTIONS = [
   { value: "topic:general", label: "General" },
   { value: "style:gentle", label: "Gentle Guidance" },
@@ -77,24 +77,25 @@ const isMobileUA = () => {
   return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
 };
 
-// Prefer recorder on mobile to avoid SR jitter/duplication
+// Prefer SR on desktop (for live captions), MediaRecorder on mobile
 const hasSR = () => (typeof window !== "undefined") && !isMobileUA() && (window.webkitSpeechRecognition || window.SpeechRecognition);
 const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
 const isSecure = () =>
   typeof window === "undefined" ? true :
   (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
 
+// UPDATED per request: default to "audio/webm" instead of empty string
 function bestMime() {
-  if (!hasRecorder()) return "";
+  if (!hasRecorder()) return "audio/webm";
   const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // iOS/Safari
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";     // iOS/Safari
   if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
   if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
-  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";  // Firefox
-  return "";
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";   // Firefox
+  return "audio/webm";
 }
 
-// Strong de-dupe to stop “echo” from interim/final chunks
+// De-dupe interim/final SR chunks
 function mergeNoDupe(base, addition) {
   const a = (base || "").trim();
   const b = (addition || "").trim();
@@ -102,7 +103,7 @@ function mergeNoDupe(base, addition) {
   if (!a) return b;
   const atoks = a.split(/\s+/);
   const btoks = b.split(/\s+/);
-  const windowSize = Math.min(20, btoks.length); // was 10 → 20
+  const windowSize = Math.min(20, btoks.length);
   const tail = atoks.slice(-windowSize).join(" ");
   const head = btoks.slice(0, windowSize).join(" ");
   if (tail === head || a.endsWith(b)) return a;
@@ -135,16 +136,15 @@ export default function OracleVoice({ path = "Universal" }) {
   const [volume, setVolume]         = useState(1);
   const [polish, setPolish]         = useState(false);
 
-  // Auto-citations + full source pool
-  const [citations, setCitations]   = useState([]); // [{index, work, author, url, quote, reason}]
-  const [sources, setSources]       = useState([]); // [{work, author, url, quote, source}]
+  const [citations, setCitations]   = useState([]);
+  const [sources, setSources]       = useState([]);
   const [showSrc, setShowSrc]       = useState(false);
   const [showCites, setShowCites]   = useState(true);
 
   const canvasRef      = useRef(null);
   const srRef = useRef(null);
   const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
-  const usingRef = useRef(null); // "sr" | "rec"
+  const usingRef = useRef(null);
   const finalRef = useRef("");
   const interimRef = useRef("");
   const citesRef = useRef(null);
@@ -176,7 +176,6 @@ export default function OracleVoice({ path = "Universal" }) {
     usingRef.current = null;
     finalRef.current = ""; interimRef.current = "";
 
-    // Prefer SR for live captions (desktop only)
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
@@ -200,7 +199,6 @@ export default function OracleVoice({ path = "Universal" }) {
           setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
         };
         rec.onend = () => {
-          // Auto-restart while user is still "listening" (SR stability)
           if (usingRef.current === "sr" && listeningRef.current) {
             clearTimeout(restartRef.current);
             restartRef.current = setTimeout(() => {
@@ -216,10 +214,9 @@ export default function OracleVoice({ path = "Universal" }) {
         usingRef.current = "sr";
         setStatus("Listening (live captions)...");
         return;
-      } catch { /* fall through to recorder */ }
+      } catch { /* fall through */ }
     }
 
-    // Recorder fallback (and default on mobile)
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
@@ -241,7 +238,6 @@ export default function OracleVoice({ path = "Universal" }) {
       rec.onerror = () => setStatus("Recorder error.");
       rec.start(1000);
 
-      // Visual
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
       const draw = () => {
@@ -412,7 +408,6 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  // Live volume: re-speak current reply at new loudness (debounced)
   useEffect(() => {
     if (!speaking || !reply) return;
     const t = setTimeout(() => {
@@ -584,7 +579,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .bubble.guide{background:#eef6ff;border-color:#dbeafe;}
         .edit{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:1rem;min-height:120px;}
         .row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
-        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation; cursor:pointer;}
+        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation;cursor:pointer;}
         .btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn.start{color:#fff;background:linear-gradient(135deg,#7c3aed,#14b8a6);border:none;}
         .btn.stop{color:#fff;background:#111827;border:none;}
@@ -596,7 +591,7 @@ export default function OracleVoice({ path = "Universal" }) {
         .sline{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
         .work{font-weight:700;color:#0f172a}
         .author{color:#475569}
-        .quote{color:#334155;margin-top:2px;white-space:pre-wrap; border-left: 3px solid #e2e8f0; padding-left: 8px;}
+        .quote{color:#334155;margin-top:2px;white-space:pre-wrap;border-left:3px solid #e2e8f0;padding-left:8px;}
       `}</style>
     </section>
   );
