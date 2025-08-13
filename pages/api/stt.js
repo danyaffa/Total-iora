@@ -1,59 +1,88 @@
 // FILE: /pages/api/stt.js
+import { OpenAI } from 'openai';
+import retry from 'async-retry';
+import pino from 'pino';
+
+// LOGGING: Initialize structured logger
+const logger = pino({ level: process.env.PINO_LOG_LEVEL |
+
+| 'info' });
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// CONFIG: Vercel deployment settings
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-import OpenAI from "openai";
-
-function b64ToBuffer(b64) {
-  const bin = Buffer.from(b64, "base64");
-  return bin;
-}
-
-// quick BCP-47 guess from Unicode ranges
-function guessLang(txt) {
-  const s = String(txt || "");
-  if (/[؀-ۿ]/.test(s)) return "ar";     // Arabic
-  if (/[א-ת]/.test(s)) return "he";     // Hebrew
-  if (/[а-яёА-ЯЁ]/.test(s)) return "ru";
-  if (/[\u3400-\u9FBF]/.test(s)) return "zh";
-  if (/[áéíóúñü¿¡]/i.test(s)) return "es";
-  if (/[àâçéèêëïîôùû]/i.test(s)) return "fr";
-  return "en";
+// Helper to convert base64 to a readable stream for OpenAI SDK
+function base64ToReadableStream(base64String, filename = 'audio.webm') {
+  const buffer = Buffer.from(base64String, 'base64');
+  return {
+    file: buffer,
+    filename: filename,
+  };
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method!== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  const { audioChunk, requestId } = req.body;
+  const log = logger.child({ requestId });
+
+  if (!audioChunk) {
+    log.warn('Request received with no audio chunk.');
+    return res.status(400).json({ error: 'Audio chunk is required' });
+  }
+
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
+    const audioFile = base64ToReadableStream(audioChunk);
+    let transcription;
+    const modelsToTry = ['gpt-4o-transcribe', 'whisper-1'];
 
-    const { b64, mime } = req.body || {};
-    if (!b64) return res.status(400).json({ error: "Missing audio" });
-
-    const openai = new OpenAI({ apiKey });
-
-    const buf = b64ToBuffer(String(b64));
-    // The SDK accepts a Blob-like object; filename helps routing
-    const file = new File([buf], `audio.${(mime||"audio/webm").split("/")[1] || "webm"}`, { type: mime || "audio/webm" });
-
-    // Try the newest transcriber, fall back to whisper-1
-    let result;
-    try {
-      result = await openai.audio.transcriptions.create({
-        file, model: "gpt-4o-transcribe"
-      });
-    } catch {
-      result = await openai.audio.transcriptions.create({
-        file, model: "whisper-1"
-      });
+    for (const model of modelsToTry) {
+      try {
+        log.info({ model }, 'Attempting transcription with model.');
+        // RESILIENCE: Wrap OpenAI transcription call in a retry block.
+        const response = await retry(
+          async () => {
+            return await openai.audio.transcriptions.create({
+              file: audioFile,
+              model: model,
+            });
+          },
+          {
+            retries: 1,
+            minTimeout: 500,
+            onRetry: (error) => {
+              log.warn({ err: error, model }, `Retrying transcription with ${model}...`);
+            },
+          }
+        );
+        transcription = response;
+        log.info({ model, text: transcription.text }, 'Transcription successful.');
+        break; // Success, exit loop
+      } catch (error) {
+        log.error({ err: error, model }, `Failed to transcribe with model ${model}.`);
+        if (model === modelsToTry) {
+          // If the last model failed, throw the error to be caught by the outer catch block.
+          throw error;
+        }
+      }
     }
 
-    const text = String(result?.text || "").trim();
-    const lang = text ? guessLang(text) : null;
+    // A coarse language guess can be done here if needed, but we rely on the more robust
+    // server-side detection in auracode-chat.js for the final prompt.
+    // For client-side hints, we can pass back a simple guess.
+    const lang = 'auto'; // Let the main chat API handle robust detection.
 
-    return res.status(200).json({ text, lang });
-  } catch (err) {
-    console.error("STT error:", err);
-    return res.status(500).json({ error: "stt_failed", detail: String(err?.message || err) });
+    res.status(200).json({ text: transcription.text, lang });
+
+  } catch (error) {
+    log.error({ err: error }, 'Error in STT handler.');
+    res.status(500).json({ error: 'Speech-to-text transcription failed.' });
   }
 }
