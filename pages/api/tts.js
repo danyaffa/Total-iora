@@ -1,34 +1,41 @@
 // FILE: /pages/api/tts.js
-// GET /api/tts?text=... → returns audio/mpeg (binary)
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
-export const config = { api: { bodyParser: false } };
-
-import OpenAI from 'openai';
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import OpenAI from "openai";
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', ['GET']);
-    return res.status(405).end('Method Not Allowed');
+  if (!["POST", "GET"].includes(req.method || "")) {
+    return res.status(405).json({ error: "Method not allowed" });
   }
   try {
-    const text = String(req.query.text || '').trim();
-    if (!text) return res.status(400).end('Missing text');
+    // OracleVoice (20).js calls POST with { text, voice: "verse" }
+    const text =
+      req.method === "GET" ? String(req.query.text || "") : String(req.body?.text || "");
+    const voice =
+      req.method === "GET" ? String(req.query.voice || "verse") : String(req.body?.voice || "verse");
 
-    const speech = await openai.audio.speech.create({
-      model: 'tts-1',
-      voice: 'alloy',
-      input: text.slice(0, 5000)
+    if (!text.trim()) return res.status(400).json({ error: "Missing text" });
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
+
+    const openai = new OpenAI({ apiKey });
+    const model = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
+
+    const out = await openai.audio.speech.create({
+      model,
+      voice,
+      input: text,
+      format: "mp3",
     });
 
-    const arrayBuffer = await speech.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Length', buffer.length.toString());
-    res.status(200).end(buffer);
-  } catch (error) {
-    console.error('[tts] error', error);
-    res.status(500).end('TTS failed');
+    const buf = Buffer.from(await out.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).send(buf);
+  } catch (err) {
+    console.error("TTS error:", err);
+    res.status(500).json({ error: "tts_failed", detail: String(err?.message || err) });
   }
 }
