@@ -10,6 +10,7 @@ const LANG_OPTIONS = [
   { value: "he", label: "Hebrew" },
 ];
 
+// FULL subject list (unchanged)
 const SUBJECT_OPTIONS = [
   { value: "topic:general", label: "General" },
   { value: "style:gentle", label: "Gentle Guidance" },
@@ -71,7 +72,13 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-const hasSR = () => (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
+const isMobileUA = () => {
+  if (typeof navigator === "undefined") return false;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+};
+
+// Prefer recorder on mobile to avoid SR jitter/duplication
+const hasSR = () => (typeof window !== "undefined") && !isMobileUA() && (window.webkitSpeechRecognition || window.SpeechRecognition);
 const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
 const isSecure = () =>
   typeof window === "undefined" ? true :
@@ -87,7 +94,7 @@ function bestMime() {
   return "";
 }
 
-// Prevent duplicate loops from mobile SR
+// Strong de-dupe to stop “echo” from interim/final chunks
 function mergeNoDupe(base, addition) {
   const a = (base || "").trim();
   const b = (addition || "").trim();
@@ -95,7 +102,7 @@ function mergeNoDupe(base, addition) {
   if (!a) return b;
   const atoks = a.split(/\s+/);
   const btoks = b.split(/\s+/);
-  const windowSize = Math.min(10, btoks.length);
+  const windowSize = Math.min(20, btoks.length); // was 10 → 20
   const tail = atoks.slice(-windowSize).join(" ");
   const head = btoks.slice(0, windowSize).join(" ");
   if (tail === head || a.endsWith(b)) return a;
@@ -128,7 +135,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const [volume, setVolume]         = useState(1);
   const [polish, setPolish]         = useState(false);
 
-  // Auto-citations used + full source pool
+  // Auto-citations + full source pool
   const [citations, setCitations]   = useState([]); // [{index, work, author, url, quote, reason}]
   const [sources, setSources]       = useState([]); // [{work, author, url, quote, source}]
   const [showSrc, setShowSrc]       = useState(false);
@@ -169,7 +176,7 @@ export default function OracleVoice({ path = "Universal" }) {
     usingRef.current = null;
     finalRef.current = ""; interimRef.current = "";
 
-    // Prefer SR for live captions
+    // Prefer SR for live captions (desktop only)
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
@@ -193,7 +200,7 @@ export default function OracleVoice({ path = "Universal" }) {
           setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
         };
         rec.onend = () => {
-          // Auto-restart while user is still "listening" (mobile SR stability)
+          // Auto-restart while user is still "listening" (SR stability)
           if (usingRef.current === "sr" && listeningRef.current) {
             clearTimeout(restartRef.current);
             restartRef.current = setTimeout(() => {
@@ -212,7 +219,7 @@ export default function OracleVoice({ path = "Universal" }) {
       } catch { /* fall through to recorder */ }
     }
 
-    // Fallback recorder (text after Stop)
+    // Recorder fallback (and default on mobile)
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
@@ -234,6 +241,7 @@ export default function OracleVoice({ path = "Universal" }) {
       rec.onerror = () => setStatus("Recorder error.");
       rec.start(1000);
 
+      // Visual
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
       const draw = () => {
@@ -375,10 +383,17 @@ export default function OracleVoice({ path = "Universal" }) {
           polish
         }),
       });
-      const data = await r.json().catch(()=> ({}));
 
-      const msg = data?.reply || "I’m here with you.";
-      setReply(msg);
+      const data = await r.json().catch(()=> ({}));
+      if (!r.ok) {
+        setReply("—");
+        setCitations([]); setSources([]);
+        setStatus(data?.error || data?.detail || "Server error");
+        return;
+      }
+
+      const msg = data?.reply || "";
+      setReply(msg || "—");
       setCitations(Array.isArray(data?.citations) ? data.citations : []);
       setSources(Array.isArray(data?.sources) ? data.sources : []);
 
@@ -455,6 +470,8 @@ export default function OracleVoice({ path = "Universal" }) {
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={true}
+              autoComplete="off"
+              inputMode="text"
               enterKeyHint="send"
             />
             <div className="row">
@@ -481,7 +498,7 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className={`orb spirit ${replying || speaking ? "on" : ""}`}><div className="halo" /></div>
           <div className="log">
             <div className="label">Guide</div>
-            <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
+            <div className="bubble guide" aria-live="polite">{reply || (replying ? "Thinking…" : "—")}</div>
 
             {Array.isArray(citations) && citations.length > 0 && (
               <div className="sources">
