@@ -16,14 +16,16 @@ const openai = new OpenAI({
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Helper to convert base64 to a readable stream for OpenAI SDK
+// Helper to convert base64 to a format the OpenAI SDK can read
 function base64ToReadableStream(base64String, filename = 'audio.webm') {
-  const buffer = Buffer.from(base64String, 'base64');
-  return {
-    file: buffer,
-    filename: filename,
-  };
+    const buffer = Buffer.from(base64String, 'base64');
+    // The SDK expects an object with a `file` buffer and a `filename`
+    return {
+        file: buffer,
+        filename: filename,
+    };
 }
+
 
 export default async function handler(req, res) {
   if (req.method!== 'POST') {
@@ -50,7 +52,7 @@ export default async function handler(req, res) {
         const response = await retry(
           async () => {
             return await openai.audio.transcriptions.create({
-              file: audioFile,
+              file: await audioFile, // Ensure the file is awaited if it were async
               model: model,
             });
           },
