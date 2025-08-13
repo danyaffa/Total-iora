@@ -17,15 +17,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // Helper to convert base64 to a format the OpenAI SDK can read
-function base64ToReadableStream(base64String, filename = 'audio.webm') {
+function base64ToAudioFile(base64String, filename = 'audio.webm') {
     const buffer = Buffer.from(base64String, 'base64');
-    // The SDK expects an object with a `file` buffer and a `filename`
     return {
         file: buffer,
-        filename: filename,
+        name: filename,
     };
 }
-
 
 export default async function handler(req, res) {
   if (req.method!== 'POST') {
@@ -41,45 +39,34 @@ export default async function handler(req, res) {
   }
 
   try {
-    const audioFile = base64ToReadableStream(audioChunk);
+    const audioFile = base64ToAudioFile(audioChunk);
     let transcription;
     const modelsToTry = ['gpt-4o-transcribe', 'whisper-1'];
 
     for (const model of modelsToTry) {
       try {
         log.info({ model }, 'Attempting transcription with model.');
-        // RESILIENCE: Wrap OpenAI transcription call in a retry block.
         const response = await retry(
           async () => {
             return await openai.audio.transcriptions.create({
-              file: await audioFile, // Ensure the file is awaited if it were async
+              file: audioFile.file,
               model: model,
             });
           },
-          {
-            retries: 1,
-            minTimeout: 500,
-            onRetry: (error) => {
-              log.warn({ err: error, model }, `Retrying transcription with ${model}...`);
-            },
-          }
+          { retries: 1, minTimeout: 500, onRetry: (error) => { log.warn({ err: error, model }, `Retrying transcription with ${model}...`); } }
         );
         transcription = response;
         log.info({ model, text: transcription.text }, 'Transcription successful.');
-        break; // Success, exit loop
+        break; 
       } catch (error) {
         log.error({ err: error, model }, `Failed to transcribe with model ${model}.`);
         if (model === modelsToTry) {
-          // If the last model failed, throw the error to be caught by the outer catch block.
           throw error;
         }
       }
     }
 
-    // A coarse language guess can be done here if needed, but we rely on the more robust
-    // server-side detection in auracode-chat.js for the final prompt.
-    // For client-side hints, we can pass back a simple guess.
-    const lang = 'auto'; // Let the main chat API handle robust detection.
+    const lang = 'auto'; 
 
     res.status(200).json({ text: transcription.text, lang });
 
