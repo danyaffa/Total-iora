@@ -1,4 +1,3 @@
-// FILE: /pages/homepage.js
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -23,14 +22,9 @@ export default function HomePage() {
     }
     const update = () => {
       const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
-      const isDevBypass =
-        (typeof window !== "undefined" &&
-          (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
-           has("ac_dev") ||
-           window.location.hostname === "localhost"));
-      const isRegistered =
-        has("ac_registered") ||
-        has("ac_session") ||
+      const isDevBypass = (typeof window !== "undefined" &&
+        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" || has("ac_dev") || window.location.hostname === "localhost"));
+      const isRegistered = has("ac_registered") || has("ac_session") ||
         (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
       setUnlocked(Boolean(isRegistered || isDevBypass));
     };
@@ -69,8 +63,7 @@ export default function HomePage() {
             <header className="h">
               <div className="pill">Sacred Notes</div>
               <h3>Leave a private note • Light a candle</h3>
-              <p>Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.
-                <strong> Nothing is stored or kept.</strong></p>
+              <p>Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.<strong> Nothing is stored or kept.</strong></p>
             </header>
             <footer className="f">
               {locked ? (
@@ -78,7 +71,7 @@ export default function HomePage() {
               ) : (
                 <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
               )}
-              <div className="disc">This is your space. Nothing is saved on our servers.</div>
+              <div className="disc">This is your space. Do whatever you like on this page. We have no responsibility for anything you write, and nothing is saved on our servers.</div>
             </footer>
           </article>
 
@@ -86,7 +79,7 @@ export default function HomePage() {
             <header className="h">
               <div className="pill">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
-              <p>Ask for a future outlook, horoscope-style reflections, and gentle advice from your tradition.</p>
+              <p>Ask questions by typing or voice and get grounded answers. Download your write-up when it’s ready.</p>
             </header>
             <footer className="f">
               {locked ? (
@@ -102,7 +95,6 @@ export default function HomePage() {
 
       {unlocked ? (
         <>
-          <h3 className="choose">Choose your spiritual heritage (optional)</h3>
           <HeritageSelector path={path} onChange={setPath} />
           <OracleVoice path={path} />
         </>
@@ -110,8 +102,8 @@ export default function HomePage() {
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>This is a preview only. After you register (free) you’ll use the full board on the Home page.</p>
-            <Link href="/homepage?dev=on" className="btn accent">Open the Full Board</Link>
+            <p>Log in (or register free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <Link href="/login" className="btn accent">Log in</Link>
           </div>
         </section>
       )}
@@ -124,7 +116,7 @@ export default function HomePage() {
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
         .hero { text-align:center; padding-top:8px; }
-        .logo { width:148px; height:auto; margin:0 auto; display:block; }
+        .logo { width:148px; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
@@ -138,8 +130,6 @@ export default function HomePage() {
         .disc { color:#64748b; font-size:.92rem; }
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
-        .choose { text-align:center; margin: 12px 0 4px; color:#334155; }
-        .previewBanner { max-width:1100px; margin: 0 auto 8px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 12px; background:#fff; color:#334155; }
       `}</style>
     </div>
   );
