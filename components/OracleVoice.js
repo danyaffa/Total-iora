@@ -1,5 +1,5 @@
 // FILE: /components/OracleVoice.js
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid'; // For generating unique request IDs
 
 const OracleVoice = () => {
@@ -15,15 +15,19 @@ const OracleVoice = () => {
   const speechRecognitionRef = useRef(null);
   const requestIdRef = useRef(null);
 
-  // ARCHITECTURE: Robust codec selection for MediaRecorder
   const getBestMimeType = () => {
-    const mimeTypes =;
+    const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/mp4;codecs=aac',
+        'audio/ogg;codecs=opus',
+        'audio/webm'
+    ];
     for (const mimeType of mimeTypes) {
       if (MediaRecorder.isTypeSupported(mimeType)) {
         return mimeType;
       }
     }
-    return ''; // Fallback to browser default
+    return '';
   };
 
   const setupMediaRecorder = (stream) => {
@@ -34,12 +38,8 @@ const OracleVoice = () => {
     mediaRecorderRef.current.ondataavailable = (event) => {
       if (event.data.size > 0) {
         audioChunksRef.current.push(event.data);
-      }
-    };
-
-    mediaRecorderRef.current.onstop = () => {
-      if (audioChunksRef.current.length > 0) {
-        sendAudioChunkToServer(true); // Send final chunk
+        // Send chunk for live transcription
+        sendAudioChunkToServer(new Blob([event.data], { type: mimeType }));
       }
     };
   };
@@ -51,7 +51,7 @@ const OracleVoice = () => {
     speechRecognitionRef.current = new SpeechRecognition();
     speechRecognitionRef.current.continuous = true;
     speechRecognitionRef.current.interimResults = true;
-    speechRecognitionRef.current.lang = 'en-US'; // Default, will be overridden by server
+    speechRecognitionRef.current.lang = 'en-US';
 
     speechRecognitionRef.current.onresult = (event) => {
       let interim = '';
@@ -64,7 +64,6 @@ const OracleVoice = () => {
         }
       }
       
-      // UX: Prevent mangled English transcriptions for non-English speech
       if (/[؀-ۿא-ת]/.test(interim) && /[a-zA-Z]/.test(interim)) {
           if (speechRecognitionRef.current) {
               speechRecognitionRef.current.stop();
@@ -87,7 +86,7 @@ const OracleVoice = () => {
     setInterimText('');
     setReply('');
     setStatus('Listening...');
-    requestIdRef.current = uuidv4(); // LOGGING: Generate unique ID for this interaction.
+    requestIdRef.current = uuidv4();
     audioChunksRef.current =;
 
     try {
@@ -102,7 +101,7 @@ const OracleVoice = () => {
       }
 
       if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.start(1200); // Send chunks every 1.2 seconds
+        mediaRecorderRef.current.start(1200);
       }
       if (speechRecognitionRef.current) {
         speechRecognitionRef.current.start();
@@ -124,8 +123,7 @@ const OracleVoice = () => {
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.stop();
     }
-    // After recording stops, send the final concatenated text to the chat API
-    // A short delay ensures the final STT result is processed
+    
     setTimeout(() => {
         const textToProcess = finalText |
 
@@ -138,14 +136,9 @@ const OracleVoice = () => {
     }, 500);
   };
 
-  const sendAudioChunkToServer = async () => {
-    if (audioChunksRef.current.length === 0) return;
-
-    const blob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current.mimeType });
-    audioChunksRef.current =; // Clear chunks after sending
-
+  const sendAudioChunkToServer = (chunkBlob) => {
     const reader = new FileReader();
-    reader.readAsDataURL(blob);
+    reader.readAsDataURL(chunkBlob);
     reader.onloadend = async () => {
       const base64Audio = reader.result.split(',')[1];
       try {
@@ -169,10 +162,6 @@ const OracleVoice = () => {
   };
 
   const sendToChatAPI = async (text) => {
-    if (!text) {
-      setStatus('Could not hear you. Please try again.');
-      return;
-    }
     setStatus('Thinking...');
     try {
       const response = await fetch('/api/auracode-chat', {
@@ -192,7 +181,6 @@ const OracleVoice = () => {
 
   const speakOut = async (text) => {
     try {
-      // Prefer server-side TTS for quality and consistency
       const response = await fetch(`/api/tts?text=${encodeURIComponent(text)}&requestId=${requestIdRef.current}`);
       if (!response.ok) throw new Error(`Server TTS failed with status ${response.status}`);
       
@@ -204,7 +192,6 @@ const OracleVoice = () => {
     } catch (error) {
       console.warn('Server TTS failed, falling back to device synthesis.', error);
       setStatus('Server voice unavailable, using device voice.');
-      // Fallback to device's built-in speech synthesis
       if ('speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(text);
         if (detectedLang && detectedLang!== 'auto') {
@@ -218,7 +205,6 @@ const OracleVoice = () => {
     }
   };
 
-  // Helper to avoid word duplication from overlapping chunks
   const mergeNoDupe = (existing, newText) => {
     if (!existing.trim()) return newText;
     const existingWords = existing.split(/\s+/);
