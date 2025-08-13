@@ -9,7 +9,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
   try {
-    // OracleVoice (20).js calls POST with { text, voice: "verse" }
     const text =
       req.method === "GET" ? String(req.query.text || "") : String(req.body?.text || "");
     const voice =
