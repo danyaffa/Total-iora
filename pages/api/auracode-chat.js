@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import { searchSacredFirst } from "../../lib/sacred-sourcehub.js";
+import { searchGeneralFirst } from "../../lib/general-sourcehub.js";
 
 /* ---------- tiny utils ---------- */
 const clip = (s, n = 900) => String(s || "").trim().slice(0, n);
@@ -11,8 +12,8 @@ const ok = (s) => !!(s && String(s).trim());
 
 const SRC_LINK = {
   sefaria:  (ref) => `https://www.sefaria.org/${encodeURIComponent(ref)}?lang=bi`,
-  quran:    (s,a) => `https://quran.com/${s}/${a}`,
-  gutenberg:(id)  => `https://www.gutenberg.org/ebooks/${id}`,
+  quran:    (s, a) => `https://quran.com/${s}/${a}`,
+  gutenberg:(id)   => `https://www.gutenberg.org/ebooks/${id}`,
 };
 
 function langName(lang) {
@@ -28,19 +29,19 @@ function langName(lang) {
 
 /* ---------- fetch helpers ---------- */
 async function withTimeout(run, ms = 12000) {
-  const ac = new AbortController(); const t = setTimeout(()=>ac.abort(), ms);
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), ms);
   try { return await run(ac.signal); } finally { clearTimeout(t); }
 }
 async function getJSON(url, ms = 12000) {
   return withTimeout(async (signal) => {
     const r = await fetch(url, { signal }); if (!r.ok) return null;
-    return await r.json().catch(()=>null);
+    return await r.json().catch(() => null);
   }, ms);
 }
 async function getTEXT(url, ms = 12000) {
   return withTimeout(async (signal) => {
     const r = await fetch(url, { signal }); if (!r.ok) return "";
-    return await r.text().catch(()=> "");
+    return await r.text().catch(() => "");
   }, ms);
 }
 
@@ -134,11 +135,13 @@ export default async function handler(req, res){
     if (!OPENAI_API_KEY) return res.status(503).json({ error:"Missing OPENAI_API_KEY" });
 
     const targetLanguage = langName(lang);
+    const cap = Math.max(1, Number(maxSources) || 8);
 
     // 1) YOUR curated sources first
     let manifest = [];
     try {
-      const { quotes = [] } = await searchSacredFirst({ query: message, path, max: maxSources }) || {};
+      const resHub = await searchSacredFirst({ query: message, path, max: cap });
+      const quotes = Array.isArray(resHub?.quotes) ? resHub.quotes : [];
       manifest = quotes.map(q => ({
         work: q.work || q.title || q.ref,
         author: q.author || null,
@@ -146,14 +149,29 @@ export default async function handler(req, res){
         quote: clip(q.text || q.quote || q.chunk || "", 900),
         source: q.source || "sacred"
       })).filter(x => x.work && x.quote);
-    } catch { /* ignore */ }
+    } catch { /* ignore hub errors – continue */ }
 
-    // 2) Fallback to public sources if hub is empty
+    // 1b) Top-up from GENERAL sources if sacred pool is thin
+    if (manifest.length < Math.max(2, Math.floor(cap/2))) {
+      try {
+        const general = await searchGeneralFirst({ query: message, max: cap - manifest.length });
+        if (Array.isArray(general) && general.length) {
+          const seen = new Set(manifest.map(s => `${s.source}|${s.work}|${(s.quote||"").slice(0,60)}`));
+          for (const g of general) {
+            const key = `${g.source}|${g.work}|${(g.quote||"").slice(0,60)}`;
+            if (!seen.has(key)) { manifest.push(g); seen.add(key); }
+            if (manifest.length >= cap) break;
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 2) Sacred public fallbacks only if we still have nothing
     if (!manifest.length) {
       let pool = [];
-      if (path === "Jewish") pool = await fetchSefaria(message, maxSources);
-      else if (path === "Muslim") pool = await fetchQuran(message, maxSources);
-      else if (path === "Christian") pool = await fetchGutenbergTitle("King James Bible", maxSources);
+      if (path === "Jewish") pool = await fetchSefaria(message, cap);
+      else if (path === "Muslim") pool = await fetchQuran(message, cap);
+      else if (path === "Christian") pool = await fetchGutenbergTitle("King James Bible", cap);
       else if (path === "Eastern") {
         const a = await fetchGutenbergTitle("Tao Te Ching", 4);
         const b = await fetchGutenbergTitle("Bhagavad Gita", 4);
@@ -172,11 +190,12 @@ export default async function handler(req, res){
         const key = `${s.source||"x"}|${s.work}|${s.url}|${(s.quote||"").slice(0,80)}`;
         if (seen.has(key)) return false; seen.add(key);
         return s.work && s.quote;
-      }).slice(0, Math.max(1, Number(maxSources)||8));
+      }).slice(0, cap);
     }
 
     const sourceBlock = manifest.map((s, i) => {
-      const head = `[${i + 1}] ${s.work}${s.author ? ` — ${s.author}` : ""}`; return `${head}\n${clip(s.quote, 500)}`;
+      const head = `[${i + 1}] ${s.work}${s.author ? ` — ${s.author}` : ""}`;
+      return `${head}\n${clip(s.quote, 500)}`;
     }).join("\n\n");
 
     const system = [
@@ -195,9 +214,14 @@ export default async function handler(req, res){
     const ai = await fetch("https://api.openai.com/v1/chat/completions", {
       method:"POST",
       headers:{ Authorization:`Bearer ${OPENAI_API_KEY}`, "Content-Type":"application/json" },
-      body: JSON.stringify({ model: process.env.OPENAI_MODEL || "gpt-4o-mini", temperature: 0.25, messages:[
-        { role:"system", content: system }, { role:"user", content: userMsg }
-      ]})
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        temperature: 0.25,
+        messages: [
+          { role:"system", content: system },
+          { role:"user", content: userMsg }
+        ]
+      })
     });
 
     if (!ai.ok) {
@@ -208,6 +232,7 @@ export default async function handler(req, res){
     const data = await ai.json().catch(()=> ({}));
     const raw  = data?.choices?.[0]?.message?.content || "{}";
 
+    // tolerate if model wraps JSON in prose
     let parsed;
     try {
       const m = String(raw).match(/\{[\s\S]*\}$/);
@@ -221,8 +246,13 @@ export default async function handler(req, res){
       const it = Number.isInteger(idx) && idx>=1 && idx<=manifest.length ? manifest[idx-1] : null;
       if (!it) return null;
       return {
-        index: idx, work: it.work, author: it.author || null, url: it.url || "",
-        quote: String(c?.exact_quote || it.quote || "").trim(), reason: String(c?.reason || "").trim(), source: it.source || null
+        index: idx,
+        work: it.work,
+        author: it.author || null,
+        url: it.url || "",
+        quote: String(c?.exact_quote || it.quote || "").trim(),
+        reason: String(c?.reason || "").trim(),
+        source: it.source || null
       };
     }).filter(Boolean) : [];
 
