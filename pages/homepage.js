@@ -1,12 +1,12 @@
 // FILE: /pages/homepage.js
-// (UNCHANGED LAYOUT) — your original interactive page.
-// Shows a read-only banner when locked; becomes fully active after login.
-
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
-import OracleVoice from "../components/OracleVoice";
+
+// Load the rich two-orb Oracle only on the client
+const OracleVoice = dynamic(() => import("../components/OracleVoice"), { ssr: false });
 
 // --- tiny helpers (client-only) ---
 function setCookie(name, value, maxAgeDays = 365) {
@@ -20,13 +20,12 @@ export default function HomePage() {
   const [path, setPath] = useState("Universal");
   const [unlocked, setUnlocked] = useState(false);
 
-  // Gate logic: default = locked (static). Unlock if cookie or dev bypass.
+  // Gate logic: default = locked. Unlock if cookie or dev bypass.
   useEffect(() => {
     if (typeof window !== "undefined") {
       const usp = new URLSearchParams(window.location.search);
       if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
-
     const update = () => {
       const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
       const isDevBypass =
@@ -42,7 +41,6 @@ export default function HomePage() {
 
       setUnlocked(Boolean(isRegistered || isDevBypass));
     };
-
     update();
     const t = setTimeout(update, 80);
     window.addEventListener?.("storage", update);
@@ -126,18 +124,23 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* GATED AREA — interactive when unlocked */}
+      {/* Oracle board */}
       {unlocked ? (
         <>
+          <h3 className="choose">Choose your spiritual heritage (optional)</h3>
           <HeritageSelector path={path} onChange={setPath} />
+          {/* This renders the two‑orb board with full controls */}
           <OracleVoice path={path} />
         </>
       ) : (
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Log in (or register free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
+            <p>This is a preview only. After you register (free) you’ll use the full board on the Home page.</p>
             <Link href="/login" className="btn accent">Log in</Link>
+            <div style={{marginTop:8}}>
+              <Link href="/homepage?dev=on">Open the Full Board</Link> {/* dev unlock for testing */}
+            </div>
           </div>
         </section>
       )}
@@ -164,6 +167,8 @@ export default function HomePage() {
         .disc { color:#64748b; font-size:.92rem; }
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
+        .choose { text-align:center; margin: 12px 0 4px; color:#334155; }
+        .previewBanner { max-width:1100px; margin: 0 auto 8px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 12px; background:#fff; color:#334155; }
       `}</style>
     </div>
   );
