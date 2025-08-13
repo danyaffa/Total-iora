@@ -1,12 +1,9 @@
 // FILE: /pages/api/tts.js
-// GET /api/tts?text=... → returns audio/mpeg (binary), as your component expects.
+// GET /api/tts?text=... → returns audio/mpeg (binary)
 
 export const config = { api: { bodyParser: false } };
 
 import OpenAI from 'openai';
-import pino from 'pino';
-
-const logger = pino({ level: process.env.PINO_LOG_LEVEL || 'info' });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export default async function handler(req, res) {
@@ -31,7 +28,7 @@ export default async function handler(req, res) {
     res.setHeader('Content-Length', buffer.length.toString());
     res.status(200).end(buffer);
   } catch (error) {
-    logger.error({ err: error }, 'TTS error');
+    console.error('[tts] error', error);
     res.status(500).end('TTS failed');
   }
 }
