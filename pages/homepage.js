@@ -146,15 +146,12 @@ export default function HomePage() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-
         .topnav { display:flex; justify-content:center; padding:14px; }
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
-
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; height:auto; margin:0 auto; display:block; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
-
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
@@ -165,7 +162,6 @@ export default function HomePage() {
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
-
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
       `}</style>
