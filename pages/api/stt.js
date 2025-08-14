@@ -17,8 +17,22 @@ function detectLangFromText(s, fallback = "en-US") {
   return fallback;
 }
 
+// crude energy check to avoid sending obvious silence
+function looksLikeSilence(bytes) {
+  if (!bytes || !bytes.length) return true;
+  // sample every 16th byte; if almost all under 6, call it silence
+  let low = 0, seen = 0;
+  for (let i = 0; i < bytes.length; i += 16) {
+    const v = bytes[i];
+    if (v < 6) low++;
+    seen++;
+  }
+  return seen > 8 && (low / seen) > 0.85;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
@@ -26,26 +40,48 @@ export default async function handler(req, res) {
     const { b64, mime = "audio/webm", lang = "auto" } = req.body || {};
     if (!b64) return res.status(400).json({ error: "Missing audio payload" });
 
+    // base64 -> Buffer
+    const buf = Buffer.from(b64, "base64");
+
+    // micro‑optimizations: skip tiny or silent chunks to keep live text snappy
+    if (buf.byteLength < 1800 || looksLikeSilence(buf)) {
+      // return empty so the client doesn’t append duplicates
+      return res.status(200).json({ text: "", lang: lang === "auto" ? "en-US" : lang });
+    }
+
+    // defensive cap (avoid someone sending minutes of audio to the preview endpoint)
+    const MAX_BYTES = 8 * 1024 * 1024; // 8 MB
+    if (buf.byteLength > MAX_BYTES) {
+      return res.status(413).json({ error: "Payload too large" });
+    }
+
     const openai = new OpenAI({ apiKey });
 
-    // base64 -> Buffer -> File (Node 18+ has File/Blob)
-    const buf = Buffer.from(b64, "base64");
+    // Node 18+ has File/Blob
     const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
     const file = new File([buf], `recording.${ext}`, { type: mime });
 
-    // Whisper is the most tolerant of formats
-    const out = await openai.audio.transcriptions.create({
+    // Whisper keeps the original language by default.
+    // DO NOT set translate: true
+    // Only pass 'language' when user hints a fixed value (not "auto")
+    const params = {
       file,
-      model: "whisper-1",
-      // language: (lang && lang !== "auto") ? lang : undefined, // optional hint
-    });
+      model: process.env.STT_MODEL || "whisper-1",
+      // translate: false, // not needed; default is no translation in Whisper
+    };
+    if (lang && lang !== "auto") {
+      params.language = lang; // hint only; still returns same-language text
+    }
+
+    const out = await openai.audio.transcriptions.create(params);
 
     const text = (out?.text || "").trim();
+    // If no hint was provided, guess a BCP‑47-ish tag for TTS routing on the client
     const detected = lang === "auto" ? detectLangFromText(text, "en-US") : lang;
 
-    res.status(200).json({ text, lang: detected });
+    return res.status(200).json({ text, lang: detected });
   } catch (err) {
     console.error("STT error:", err);
-    res.status(500).json({ error: "stt_failed", detail: String(err?.message || err) });
+    return res.status(500).json({ error: "stt_failed", detail: String(err?.message || err) });
   }
 }
