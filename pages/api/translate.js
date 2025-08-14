@@ -6,7 +6,6 @@ import OpenAI from "openai";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
@@ -21,15 +20,15 @@ export default async function handler(req, res) {
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
       temperature: 0,
       messages: [
-        { role: "system", content: `You translate text. Output ONLY the translation in ${tgt}. No preface, no quotes.` },
+        { role: "system", content: `Translate the user's text. Output ONLY the translation in ${tgt}.` },
         { role: "user", content: src },
       ],
     });
 
     const out = r?.choices?.[0]?.message?.content?.trim() || "";
-    return res.status(200).json({ text: out });
+    res.status(200).json({ text: out });
   } catch (err) {
     console.error("Translate error:", err);
-    return res.status(500).json({ error: "translate_failed", detail: String(err?.message || err) });
+    res.status(500).json({ error: "translate_failed", detail: String(err?.message || err) });
   }
 }
