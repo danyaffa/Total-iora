@@ -12,7 +12,6 @@ function setCookie(name, value, maxAgeDays = 365) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
-// NEW: normalize the inbound query to one of the allowed rooms
 function normalizeFaith(s) {
   switch (String(s || "").toLowerCase()) {
     case "muslim": return "Muslim";
@@ -27,15 +26,13 @@ function normalizeFaith(s) {
 export async function getServerSideProps(ctx) {
   const { req, res, query } = ctx;
 
-  // read from URL first (for testing), then header/cookie/env, then default
-  const qFaith = normalizeFaith(query?.faith);
-  const headerFaith = normalizeFaith(req.headers["x-faith"]);
-  const cookieFaith = normalizeFaith(req.cookies?.faith);
-  const envFaith = normalizeFaith(process.env.FAITH_OVERRIDE);
+  const qFaith     = normalizeFaith(query?.faith);
+  const headerFaith= normalizeFaith(req.headers["x-faith"]);
+  const cookieFaith= normalizeFaith(req.cookies?.faith);
+  const envFaith   = normalizeFaith(process.env.FAITH_OVERRIDE);
 
   const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
 
-  // if faith came from the URL, persist it in a cookie so API routes can see it
   if (qFaith && qFaith !== cookieFaith) {
     const oneYear = 60 * 60 * 24 * 365;
     const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
@@ -47,6 +44,33 @@ export async function getServerSideProps(ctx) {
   return { props: { faith } };
 }
 
+function FaithIcon({ faith }) {
+  if (faith === "Muslim") {
+    // Crescent
+    return (
+      <svg className="faith-icon gold" viewBox="0 0 64 64" aria-label="Muslim Crescent">
+        <path d="M39.5 6a22.5 22.5 0 1 0 0 52a20 20 0 1 1 0-52z" />
+      </svg>
+    );
+  }
+  if (faith === "Christian") {
+    // Cross
+    return (
+      <svg className="faith-icon gold" viewBox="0 0 64 64" aria-label="Christian Cross">
+        <path d="M28 8h8v16h12v8H36v24h-8V32H16v-8h12z" />
+      </svg>
+    );
+  }
+  if (faith === "Jewish") {
+    // Star of David
+    return (
+      <svg className="faith-icon blue" viewBox="0 0 64 64" aria-label="Star of David">
+        <polygon points="32,6 40,20 56,20 44,32 50,48 32,40 14,48 20,32 8,20 24,20" />
+      </svg>
+    );
+  }
+  return null;
+}
 
 export default function HomePage({ faith }) {
   const [path, setPath] = useState(faith);
@@ -81,17 +105,7 @@ export default function HomePage({ faith }) {
 
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
-
-        {faith === "Muslim" && (
-          <img src="/icons/muslim-moon.svg" alt="Muslim Crescent" className="faith-icon gold" />
-        )}
-        {faith === "Christian" && (
-          <img src="/icons/christian-cross.svg" alt="Christian Cross" className="faith-icon gold" />
-        )}
-        {faith === "Jewish" && (
-          <img src="/icons/jewish-star.svg" alt="Star of David" className="faith-icon blue" />
-        )}
-
+        <FaithIcon faith={faith} />
         <p className="note">
           Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
@@ -180,6 +194,12 @@ export default function HomePage({ faith }) {
         .disc { color:#64748b; font-size:.92rem; }
         .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
         .gatecard { text-align:center; }
+      `}</style>
+      
+      <style jsx global>{`
+        .faith-icon { width:48px; height:48px; margin:8px auto 0; display:block; }
+        .gold { fill: gold; filter: drop-shadow(0 0 2px gold); }
+        .blue { fill: #0057b8; filter: drop-shadow(0 0 2px #0057b8); }
       `}</style>
     </div>
   );
