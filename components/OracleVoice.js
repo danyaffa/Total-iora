@@ -78,6 +78,31 @@ function appendSegment(existing, seg) {
   return (A + " " + B).replace(/\s+/g, " ").trim();
 }
 
+// NEW: Intelligently appends only the new words from a transcript
+function diffTail(oldStr, newStr) {
+  const A = String(oldStr || "").trim();
+  const B = String(newStr || "").trim();
+  if (!B || A === B) return "";
+  if (!A) return B;
+  
+  // Find the last 4 words of the old string to use as an anchor
+  const anchorWords = A.split(/\s+/).slice(-4).join(" ");
+  if (!anchorWords) return B;
+  const idx = B.indexOf(anchorWords);
+
+  if (idx !== -1) {
+    // If the anchor is found, return the text that comes after it
+    return B.slice(idx + anchorWords.length).trim();
+  }
+  
+  // Fallback for very different strings
+  if (B.startsWith(A)) {
+    return B.slice(A.length).trim();
+  }
+
+  return B; // Return the whole new string if no clear overlap
+}
+
 // Map to full BCP-47 for recognizer / TTS
 function toBCP47(tag = "en-US") {
   const t = String(tag || "").toLowerCase();
@@ -164,7 +189,6 @@ export default function OracleVoice({ path = "Universal" }) {
   const lastDetectedLangRef = useRef("en-US");
   const listeningRef   = useRef(listening);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
-  const recogRef       = useRef(null); // Web Speech recognizer
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -172,34 +196,6 @@ export default function OracleVoice({ path = "Universal" }) {
     path === "Muslim"    ? "Imam"   :
     path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
-
-  const startWebSpeech = (langHint) => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    try { recogRef.current && recogRef.current.stop(); } catch {}
-    const recog = new SR();
-    recog.lang = toBCP47(langHint || navigator.language || "en-US");
-    recog.continuous = true;
-    recog.interimResults = true;
-    recog.maxAlternatives = 1;
-    recog.onresult = (e) => {
-      let seg = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        seg += e.results[i][0]?.transcript || "";
-      }
-      if (seg) {
-        finalRef.current = appendSegment(finalRef.current, seg);
-        setLiveText(finalRef.current);
-      }
-    };
-    recog.onend = () => {
-      if (listeningRef.current) {
-        try { recog.start(); } catch {}
-      }
-    };
-    try { recog.start(); } catch {}
-    recogRef.current = recog;
-  }
 
   useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
 
@@ -227,10 +223,6 @@ export default function OracleVoice({ path = "Universal" }) {
     setCitations([]); setSources([]); setShowSrc(false); setShowCites(false);
     setStatus(""); setListening(true);
 
-    if (typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
-      startWebSpeech(lastDetectedLangRef.current || navigator.language || "en-US");
-    }
-
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
       setListening(false); setStatus("Dictation not supported on this device/browser."); return;
@@ -248,45 +240,41 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 400; // How often to check for language
-      const SLICE_MS = 350; // How often to slice audio
+      const CHUNK_MS = 500; // How often to send a preview
+      const SLICE_MS = 400; // How often to slice audio
 
+      // ** UPDATED LOGIC **
       rec.ondataavailable = async (e) => {
         if (e.data && e.data.size) {
           chunks.push(e.data);
           const now = Date.now();
-
+      
           if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
             lastChunkSent = now;
-            
-            // ** NEW LOGIC STARTS HERE **
             try {
-              // This preview runs silently to detect language and retune the live recognizer.
-              // It NO LONGER writes text to the screen, preventing repetition.
-              const ctl = new AbortController();
-              const preview = await sttUpload(e.data, mime || "audio/webm", ctl.signal);
-              
-              if (preview?.lang) {
-                const detectedLang = preview.lang;
-                // If a new language is detected, update our reference
-                if (lastDetectedLangRef.current !== detectedLang) {
-                  lastDetectedLangRef.current = detectedLang;
-                }
-                
-                // Retune the live on-device recognizer if it's not set to the correct language
-                const want = toBCP47(detectedLang);
-                const cur = recogRef.current?.lang;
-                if (recogRef.current && want && want !== cur) {
-                  startWebSpeech(want);
+              // Send the CUMULATIVE audio recorded so far
+              const cumulativeBlob = new Blob(chunks, { type: mime || "audio/webm" });
+              const preview = await sttUpload(cumulativeBlob, mime || "audio/webm");
+      
+              // Intelligently append only what is newly recognized
+              if (preview?.text) {
+                const freshText = diffTail(finalRef.current, preview.text);
+                if (freshText) {
+                  finalRef.current = appendSegment(finalRef.current, freshText);
+                  setLiveText(finalRef.current);
                 }
               }
+      
+              if (preview?.lang) {
+                lastDetectedLangRef.current = preview.lang;
+              }
             } catch {
-              // Ignore preview errors, as the final transcript on stop will still run.
+              // Ignore preview errors; the final pass on Stop will still run.
             }
-            // ** NEW LOGIC ENDS HERE **
           }
         }
       };
+
       rec.onstart = () => setStatus("Recording…");
       rec.onerror = () => setStatus("Recorder error.");
       rec.onstop = () => {
@@ -322,9 +310,6 @@ export default function OracleVoice({ path = "Universal" }) {
     if (!listening) return;
     setListening(false);
     setStatus("Stopping…");
-
-    try { recogRef.current && recogRef.current.stop(); } catch {}
-    recogRef.current = null;
 
     const r = recRef.current.rec;
     try { r && r.state !== "inactive" && r.stop(); } catch {}
