@@ -1,11 +1,13 @@
-/* Safety: prevent any oversized hero images */
-img { max-width: 100%; height: auto; }
-
-/* If some legacy hero sneaks in above our page, hide it */
-#__next > .hero, 
-#__next > .Hero, 
-#__next > header:first-child, 
-#__next > .landing, 
-#__next > .Landing {
-  display: none !important;
+.faith-icon {
+  width: 48px;
+  height: 48px;
+  margin-top: 8px;
+}
+.gold {
+  filter: drop-shadow(0 0 2px gold);
+  fill: gold;
+}
+.blue {
+  filter: drop-shadow(0 0 2px #0057b8);
+  fill: #0057b8;
 }
