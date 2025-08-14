@@ -164,8 +164,6 @@ export default function OracleVoice({ path = "Universal" }) {
   const lastDetectedLangRef = useRef("en-US");
   const listeningRef   = useRef(listening);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
-  const previewCtlRef  = useRef(null);
-  const previewBusyRef = useRef(false);
   const recogRef       = useRef(null); // Web Speech recognizer
 
   const persona = useMemo(() => (
@@ -250,8 +248,8 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 300;
-      const SLICE_MS = 250;
+      const CHUNK_MS = 400; // How often to check for language
+      const SLICE_MS = 350; // How often to slice audio
 
       rec.ondataavailable = async (e) => {
         if (e.data && e.data.size) {
@@ -260,34 +258,32 @@ export default function OracleVoice({ path = "Universal" }) {
 
           if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
             lastChunkSent = now;
+            
+            // ** NEW LOGIC STARTS HERE **
             try {
-              if (previewCtlRef.current) {
-                try { previewCtlRef.current.abort(); } catch {}
-              }
+              // This preview runs silently to detect language and retune the live recognizer.
+              // It NO LONGER writes text to the screen, preventing repetition.
               const ctl = new AbortController();
-              previewCtlRef.current = ctl;
-
-              if (previewBusyRef.current) return;
-              previewBusyRef.current = true;
-
               const preview = await sttUpload(e.data, mime || "audio/webm", ctl.signal);
-              previewBusyRef.current = false;
-
-              if (preview?.text) {
-                 finalRef.current = appendSegment(finalRef.current, preview.text);
-                 setLiveText(finalRef.current);
-              }
+              
               if (preview?.lang) {
-                lastDetectedLangRef.current = preview.lang;
-                const want = toBCP47(preview.lang);
+                const detectedLang = preview.lang;
+                // If a new language is detected, update our reference
+                if (lastDetectedLangRef.current !== detectedLang) {
+                  lastDetectedLangRef.current = detectedLang;
+                }
+                
+                // Retune the live on-device recognizer if it's not set to the correct language
+                const want = toBCP47(detectedLang);
                 const cur = recogRef.current?.lang;
                 if (recogRef.current && want && want !== cur) {
                   startWebSpeech(want);
                 }
               }
             } catch {
-              previewBusyRef.current = false;
+              // Ignore preview errors, as the final transcript on stop will still run.
             }
+            // ** NEW LOGIC ENDS HERE **
           }
         }
       };
@@ -329,12 +325,6 @@ export default function OracleVoice({ path = "Universal" }) {
 
     try { recogRef.current && recogRef.current.stop(); } catch {}
     recogRef.current = null;
-
-    if (previewCtlRef.current) {
-      try { previewCtlRef.current.abort(); } catch {}
-      previewCtlRef.current = null;
-    }
-    previewBusyRef.current = false;
 
     const r = recRef.current.rec;
     try { r && r.state !== "inactive" && r.stop(); } catch {}
