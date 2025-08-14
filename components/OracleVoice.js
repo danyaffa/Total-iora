@@ -198,7 +198,7 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 500;
+      const CHUNK_MS = 1000;
 
       rec.ondataavailable = async (e) => {
         if (e.data && e.data.size) {
@@ -224,7 +224,7 @@ export default function OracleVoice({ path = "Universal" }) {
         try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
         cancelAnimationFrame(recRef.current.anim || 0);
       };
-      rec.start(500);
+      rec.start(1000);
 
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
