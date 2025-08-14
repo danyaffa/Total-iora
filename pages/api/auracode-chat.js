@@ -55,6 +55,95 @@ function cleanPara(p) {
   if (/project\s+gutenberg/i.test(s)) return "";
   return s;
 }
+function curatedFallbackSources(message, path) {
+  const want = (s) => new RegExp(s, "i").test(message || "");
+  const out = [];
+
+  // Jewish
+  if (path === "Jewish" || path === "Universal") {
+    out.push({
+      work: "Micah 6:8",
+      author: "Tanakh",
+      quote: "He has told you, O man, what is good; and what does the LORD require of you but to do justice, to love kindness, and to walk humbly with your God?",
+      url: "https://www.sefaria.org/Micah.6.8?lang=bi",
+      source: "sefaria"
+    });
+    out.push({
+      work: "Psalms 23",
+      author: "Tehillim",
+      quote: "The LORD is my shepherd; I shall not want…",
+      url: "https://www.sefaria.org/Psalms.23?lang=bi",
+      source: "sefaria"
+    });
+  }
+
+  // Muslim
+  if (path === "Muslim" || path === "Universal") {
+    out.push({
+      work: "Qur'an 2:186",
+      author: "Qur'an",
+      quote: "When My servants ask you concerning Me, indeed I am near…",
+      url: "https://quran.com/2/186",
+      source: "quran"
+    });
+    out.push({
+      work: "Qur'an 16:90",
+      author: "Qur'an",
+      quote: "Indeed, Allah orders justice and good conduct and giving to relatives…",
+      url: "https://quran.com/16/90",
+      source: "quran"
+    });
+  }
+
+  // Christian
+  if (path === "Christian" || path === "Universal") {
+    out.push({
+      work: "John 13:34",
+      author: "New Testament",
+      quote: "A new commandment I give to you, that you love one another…",
+      url: "https://www.biblegateway.com/passage/?search=John+13%3A34&version=KJV",
+      source: "bible"
+    });
+    out.push({
+      work: "Matthew 5:9",
+      author: "New Testament",
+      quote: "Blessed are the peacemakers, for they shall be called sons of God.",
+      url: "https://www.biblegateway.com/passage/?search=Matthew+5%3A9&version=KJV",
+      source: "bible"
+    });
+  }
+
+  // Eastern
+  if (path === "Eastern" || path === "Universal") {
+    out.push({
+      work: "Tao Te Ching 8",
+      author: "Laozi",
+      quote: "The supreme good is like water…",
+      url: "https://taoistic.com/taoteching-laotzu-chapter-8.htm",
+      source: "tao"
+    });
+    out.push({
+      work: "Bhagavad Gita 2:47",
+      author: "Vyasa",
+      quote: "You have a right to perform your prescribed duty, but you are not entitled to the fruits of action.",
+      url: "https://www.holy-bhagavad-gita.org/chapter/2/verse/47",
+      source: "gita"
+    });
+  }
+
+  // Light keyword routing (optional)
+  if (want("love")) {
+    out.unshift({
+      work: "1 Corinthians 13",
+      author: "New Testament",
+      quote: "Love is patient, love is kind…",
+      url: "https://www.biblegateway.com/passage/?search=1+Corinthians+13&version=KJV",
+      source: "bible"
+    });
+  }
+
+  return out.slice(0, 6);
+}
 
 /* ---------- providers ---------- */
 async function fetchSefariaSnippets(query, topK = 6) {
@@ -152,6 +241,11 @@ export default async function handler(req, res) {
     for (const r of settled) if (r.status === "fulfilled" && Array.isArray(r.value)) sources = sources.concat(r.value);
     sources = sources.slice(0, maxSources).filter(allowSource);
 
+    // if external fetches found nothing, add curated fallback so the Source button is never empty
+    if (!sources.length) {
+      sources = curatedFallbackSources(message, path);
+    }
+
     const ETHOS = [
       "Answer directly. Do not instruct the user to reformulate another question.",
       "No platform instructions, no meta talk.",
@@ -171,7 +265,7 @@ export default async function handler(req, res) {
     const user = [
       polish ? "Please polish the grammar of the question first, silently." : "",
       "Question:",
-      message,
+      clamp(message, 2000),
       sources.length ? "\nYou may optionally weave relevant short quotes from the sources list." : "",
     ].join("\n");
 
@@ -190,7 +284,11 @@ export default async function handler(req, res) {
     });
 
     const reply = chat?.choices?.[0]?.message?.content || "";
-    return res.status(200).json({ reply, sources });
+    
+    const payload = { reply, sources };
+    payload.citations = payload.sources;  // alias for UIs that expect `citations`
+    return res.status(200).json(payload);
+
   } catch (e) {
     return res.status(500).json({ error: "chat_failed", detail: String(e?.message || e) });
   }
