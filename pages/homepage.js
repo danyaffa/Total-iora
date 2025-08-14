@@ -1,3 +1,4 @@
+// FILE: /pages/homepage.js
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Footer from "../components/Footer";
@@ -11,8 +12,17 @@ function setCookie(name, value, maxAgeDays = 365) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
-export default function HomePage() {
-  const [path, setPath] = useState("Universal");
+export async function getServerSideProps({ req, res }) {
+  const faith =
+    req.headers["x-faith"] ||
+    req.cookies?.faith ||
+    process.env.FAITH_OVERRIDE ||
+    "Universal";
+  return { props: { faith } };
+}
+
+export default function HomePage({ faith }) {
+  const [path, setPath] = useState(faith);
   const [unlocked, setUnlocked] = useState(false);
 
   useEffect(() => {
@@ -95,7 +105,9 @@ export default function HomePage() {
 
       {unlocked ? (
         <>
-          <HeritageSelector path={path} onChange={setPath} />
+          {faith === "Universal" ? (
+            <HeritageSelector path={path} onChange={setPath} />
+          ) : null}
           <OracleVoice path={path} />
         </>
       ) : (
