@@ -137,14 +137,15 @@ export default function OracleVoice({ path = "Universal" }) {
   const [citations, setCitations]   = useState([]);
   const [sources, setSources]       = useState([]);
   const [showSrc, setShowSrc]       = useState(false);
-  const [showCites, setShowCites]   = useState(true);
+  const [showCites, setShowCites]   = useState(false);
 
   const canvasRef      = useRef(null);
   const recRef         = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
-  const usingRef       = useRef(null);
   const finalRef       = useRef("");
   const audioRef       = useRef(null);
   const lastDetectedLangRef = useRef("en-US");
+  const listeningRef   = useRef(listening);
+  useEffect(() => { listeningRef.current = listening; }, [listening]);
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -164,11 +165,20 @@ export default function OracleVoice({ path = "Universal" }) {
     cnv.getContext("2d").scale(dpr, dpr);
   }, []);
 
+  useEffect(() => {
+    const onVoices = () => {}; // touching getVoices warms cache
+    if (window?.speechSynthesis) {
+      window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
+      window.speechSynthesis.getVoices?.();
+      return () => window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
+    }
+  }, []);
+
   async function onStart() {
     // fresh turn each time
     setReply(""); setLiveText("");
     finalRef.current = "";
-    setCitations([]); setSources([]); setShowSrc(false); setShowCites(true);
+    setCitations([]); setSources([]); setShowSrc(false); setShowCites(false);
     setStatus(""); setListening(true);
 
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
@@ -187,10 +197,34 @@ export default function OracleVoice({ path = "Universal" }) {
       const mime = bestMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
-      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      let lastChunkSent = 0;
+      const CHUNK_MS = 500;
+
+      rec.ondataavailable = async (e) => {
+        if (e.data && e.data.size) {
+          chunks.push(e.data);
+          const now = Date.now();
+          if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
+            lastChunkSent = now;
+            try {
+              const preview = await sttUpload(e.data, mime || "audio/webm");
+              finalRef.current = appendSegment(finalRef.current, preview?.text || "");
+              setLiveText(finalRef.current);
+              if (preview?.lang) lastDetectedLangRef.current = preview.lang;
+            } catch {
+              /* ignore preview errors; final pass will still run on Stop */
+            }
+          }
+        }
+      };
       rec.onstart = () => setStatus("Recording…");
       rec.onerror = () => setStatus("Recorder error.");
-      rec.start(1000);
+      rec.onstop = () => {
+        try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
+        try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
+        cancelAnimationFrame(recRef.current.anim || 0);
+      };
+      rec.start(500);
 
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
@@ -208,8 +242,7 @@ export default function OracleVoice({ path = "Universal" }) {
       draw();
 
       recRef.current = { stream, rec, chunks, mime: mime || "audio/webm", ctx, analyser, anim: recRef.current.anim };
-      usingRef.current = "rec";
-      setStatus("Recording… (text will appear after Stop)");
+      setStatus("Recording…");
     } catch {
       setListening(false); setStatus("Mic permission denied or unavailable.");
     }
@@ -218,39 +251,35 @@ export default function OracleVoice({ path = "Universal" }) {
   async function onStop() {
     if (!listening) return;
     setListening(false);
+    setStatus("Stopping…");
+    const r = recRef.current.rec;
+    try { r && r.state !== "inactive" && r.stop(); } catch {}
+    await new Promise(res => setTimeout(res, 250));
+    try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
+    try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
+    cancelAnimationFrame(recRef.current.anim || 0);
+    const { chunks, mime } = recRef.current;
+    recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
 
-    if (usingRef.current === "rec") {
-      const r = recRef.current.rec;
-      try { r && r.stop(); r && r.requestData && r.requestData(); } catch {}
-      await new Promise(res => setTimeout(res, 350));
+    if (!chunks.length) { setStatus("Stopped."); return; }
 
-      cancelAnimationFrame(recRef.current.anim || 0);
-      try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
-      try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-
-      const { chunks, mime } = recRef.current;
-      recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
-
-      if (!chunks.length) { setStatus("No audio captured."); usingRef.current = null; return; }
-
-      setStatus("Transcribing…");
-      try {
-        const blob = new Blob(chunks, { type: mime || "audio/webm" });
-        const { text, lang } = await sttUpload(blob, mime || "audio/webm");
-        finalRef.current = appendSegment(finalRef.current, text);
+    setStatus("Transcribing…");
+    try {
+      const blob = new Blob(chunks, { type: mime || "audio/webm" });
+      const { text, lang } = await sttUpload(blob, mime || "audio/webm");
+      if (text) {
+        finalRef.current = text;
         setLiveText(finalRef.current);
-        if (lang) lastDetectedLangRef.current = lang; // e.g., "ar", "he", "en-US" (your API can return short tag)
-        setStatus(`Ready.`);
-        // Voice command: “translate to <language>”
-        const m = /^\s*(translate|translation)\s+(it|this|answer|message)?\s*to\s+([A-Za-z\u00C0-\u024F\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u4E00-\u9FFF]+)\s*[\.\?!]*$/i.exec(text);
-        if (m && reply) {
-          const targetName = normalizeLangName(m[3]);
-          if (targetName) await doTranslate(targetName);
-        }
-      } catch (e) {
-        setStatus(String(e?.message || e));
       }
-      usingRef.current = null;
+      if (lang) lastDetectedLangRef.current = lang;
+      setStatus("Ready.");
+      const m = /^\s*(translate|translation)\s+(it|this|answer|message)?\s*to\s+([A-Za-z\u00C0-\u024F\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u4E00-\u9FFF]+)\s*[\.\?!]*$/i.exec(text);
+      if (m && reply) {
+        const targetName = normalizeLangName(m[3]);
+        if (targetName) await doTranslate(targetName);
+      }
+    } catch (e) {
+      setStatus(String(e?.message || e));
     }
   }
 
@@ -280,7 +309,7 @@ export default function OracleVoice({ path = "Universal" }) {
     if (!clean || clean.split(/\s+/).length < 2) return;
 
     setReplying(true);
-    setShowSrc(false); setShowCites(true);
+    setShowSrc(false); setShowCites(false);
     setCitations([]); setSources([]);
 
     try {
@@ -295,7 +324,6 @@ export default function OracleVoice({ path = "Universal" }) {
         body: JSON.stringify({
           message: clean,
           path, mode, topic,
-          // speak back in detected language:
           lang: lastDetectedLangRef.current || "en-US",
           polish
         }),
@@ -333,7 +361,6 @@ export default function OracleVoice({ path = "Universal" }) {
       });
       const js = await r.json().catch(()=>({}));
       if (r.ok && js?.text) {
-        // speak translated text too
         const spoken = js.text;
         const v = pickVoice(lastDetectedLangRef.current || "en-US");
         setReply(spoken);
@@ -347,8 +374,8 @@ export default function OracleVoice({ path = "Universal" }) {
   }
 
   function onSourceButton() {
-    if (Array.isArray(citations) && citations.length) setShowCites(true);
-    else if (Array.isArray(sources) && sources.length) setShowSrc(true);
+    if (citations?.length) { setShowSrc(false); setShowCites(v => !v); }
+    else if (sources?.length) { setShowCites(false); setShowSrc(v => !v); }
   }
 
   return (
@@ -453,6 +480,38 @@ export default function OracleVoice({ path = "Universal" }) {
           <div className="log">
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
+
+            {/* Sources / Citations list */}
+            {(showCites && citations?.length > 0) && (
+              <div className="sources">
+                <div className="src-title">Citations</div>
+                <ol>
+                  {citations.map((s, i) => (
+                    <li key={i}>
+                      <strong>{s.work}</strong>
+                      {s.author ? <> — <em>{s.author}</em></> : null}
+                      {s.url ? <> · <a href={s.url} target="_blank" rel="noopener noreferrer">Open</a></> : null}
+                      {s.quote ? <blockquote>{s.quote}</blockquote> : null}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            {(showSrc && sources?.length > 0) && (
+              <div className="sources">
+                <div className="src-title">Sources</div>
+                <ol>
+                  {sources.map((s, i) => (
+                    <li key={i}>
+                      <strong>{s.work}</strong>
+                      {s.author ? <> — <em>{s.author}</em></> : null}
+                      {s.url ? <> · <a href={s.url} target="_blank" rel="noopener noreferrer">Open</a></> : null}
+                      {s.quote ? <blockquote>{s.quote}</blockquote> : null}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -492,6 +551,11 @@ export default function OracleVoice({ path = "Universal" }) {
         .btn.stop{color:#fff;background:#111827;border:none;}
         .btn.ghost{background:#fff;}
         .btn.danger{color:#fff;background:#b91c1c;border:none;}
+        .sources{margin-top:10px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px}
+        .src-title{font-weight:800;color:#0f172a;margin-bottom:6px}
+        .sources ol{margin:0;padding-left:18px}
+        .sources li{margin:6px 0}
+        .sources blockquote{margin:6px 0 0;padding-left:10px;border-left:3px solid #e2e8f0;color:#334155}
       `}</style>
     </section>
   );
