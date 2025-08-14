@@ -1,3 +1,4 @@
+// FILE: /pages/api/tts.js
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -8,8 +9,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
   try {
-    const text = req.method === "GET" ? String(req.query.text || "") : String(req.body?.text || "");
-    const voice = req.method === "GET" ? String(req.query.voice || "verse") : String(req.body?.voice || "verse");
+    const text =
+      req.method === "GET" ? String(req.query.text || "") : String(req.body?.text || "");
+    const voice =
+      req.method === "GET" ? String(req.query.voice || "verse") : String(req.body?.voice || "verse");
+
     if (!text.trim()) return res.status(400).json({ error: "Missing text" });
 
     const apiKey = process.env.OPENAI_API_KEY;
@@ -20,8 +24,8 @@ export default async function handler(req, res) {
 
     const out = await openai.audio.speech.create({
       model,
-      voice,          // multilingual
-      input: text,
+      voice,                 // multilingual voice
+      input: text,           // the API will speak Arabic/Hebrew/etc automatically
       format: "mp3",
     });
 
