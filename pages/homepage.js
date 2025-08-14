@@ -27,13 +27,15 @@ function normalizeFaith(s) {
 export async function getServerSideProps(ctx) {
   const { req, res, query } = ctx;
 
-  const qFaith     = normalizeFaith(query?.faith);
-  const headerFaith= normalizeFaith(req.headers["x-faith"]);
-  const cookieFaith= normalizeFaith(req.cookies?.faith);
-  const envFaith   = normalizeFaith(process.env.FAITH_OVERRIDE);
+  // read from URL first (for testing), then header/cookie/env, then default
+  const qFaith = normalizeFaith(query?.faith);
+  const headerFaith = normalizeFaith(req.headers["x-faith"]);
+  const cookieFaith = normalizeFaith(req.cookies?.faith);
+  const envFaith = normalizeFaith(process.env.FAITH_OVERRIDE);
 
   const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
 
+  // if faith came from the URL, persist it in a cookie so API routes can see it
   if (qFaith && qFaith !== cookieFaith) {
     const oneYear = 60 * 60 * 24 * 365;
     const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
@@ -79,6 +81,17 @@ export default function HomePage({ faith }) {
 
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
+
+        {faith === "Muslim" && (
+          <img src="/icons/muslim-moon.svg" alt="Muslim Crescent" className="faith-icon gold" />
+        )}
+        {faith === "Christian" && (
+          <img src="/icons/christian-cross.svg" alt="Christian Cross" className="faith-icon gold" />
+        )}
+        {faith === "Jewish" && (
+          <img src="/icons/jewish-star.svg" alt="Star of David" className="faith-icon blue" />
+        )}
+
         <p className="note">
           Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
           or start with Sacred Notes.
