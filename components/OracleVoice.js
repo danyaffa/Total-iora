@@ -46,26 +46,38 @@ const SUBJECT_OPTIONS = [
 ];
 
 /* ---------- HELPERS ---------- */
-function autoLangFromPath(path) {
-  switch (path) {
-    case "Jewish": return "he";
-    case "Muslim": return "ar";
-    case "Eastern": return "en-IN";
-    case "Christian": return "en-GB";
-    default: return "en-US";
-  }
+const hasRecorder = () =>
+  (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
+
+const isSecure = () =>
+  typeof window === "undefined"
+    ? true
+    : (window.isSecureContext ||
+       /^https:/i.test(location.protocol) ||
+       /^http:\/\/localhost/i.test(location.href));
+
+function bestMime() {
+  if (!hasRecorder()) return "audio/webm";
+  const M = window.MediaRecorder;
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus";
+  if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
+  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";
+  return "audio/webm";
 }
-function detectLangBCP47(text, fallback = "en-US") {
-  const s = String(text || "");
-  if (/[ء-ي]/.test(s)) return "ar";
-  if (/[\u0590-\u05FF]/.test(s)) return "he";
-  if (/[\u0400-\u04FF]/.test(s)) return "ru";
-  if (/[\u4E00-\u9FFF]/.test(s)) return "zh";
-  if (/[\u0900-\u097F]/.test(s)) return "hi";
-  if (/[\u3040-\u30FF]/.test(s)) return "ja";
-  if (/[\u0E00-\u0E7F]/.test(s)) return "th";
-  return fallback || "en-US";
+
+/* robust append to avoid “provide provide …” duplicates */
+function appendSegment(existing, seg) {
+  const A = String(existing || "").trim();
+  const B = String(seg || "").trim();
+  if (!B) return A;
+  if (!A) return B;
+  const tail = A.slice(Math.max(0, A.length - 80));
+  if (tail.endsWith(B)) return A;
+  if (A.includes(B)) return A;
+  return (A + " " + B).replace(/\s+/g, " ").trim();
 }
+
 function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
@@ -77,43 +89,41 @@ function pickVoice(lang) {
     );
   } catch { return null; }
 }
-const hasSR = () => (typeof window !== "undefined") && (window.webkitSpeechRecognition || window.SpeechRecognition);
-const hasRecorder = () => (typeof window !== "undefined") && typeof window.MediaRecorder === "function";
-const isSecure = () =>
-  typeof window === "undefined" ? true :
-  (window.isSecureContext || /^https:/i.test(location.protocol) || /^http:\/\/localhost/i.test(location.href));
-function bestMime() {
-  if (!hasRecorder()) return "audio/webm";
-  const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // iOS/Safari
-  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
-  if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
-  if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";  // Firefox
-  return "audio/webm";
-}
-function mergeNoDupe(a, b) {
-  const A = (a || "").trim(), B = (b || "").trim();
-  if (!B) return A; if (!A) return B;
-  const at = A.split(/\s+/), bt = B.split(/\s+/);
-  const w = Math.min(10, bt.length);
-  if (at.slice(-w).join(" ") === bt.slice(0, w).join(" ") || A.endsWith(B)) return A;
-  return (A + " " + B).replace(/\s+/g, " ").trim();
-}
-async function sttUpload(blob, mime, lang) {
+
+/* send blob to /api/stt (auto language) */
+async function sttUpload(blob, mime) {
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
   const r = await fetch("/api/stt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ b64: btoa(b64), mime: mime || "audio/webm", lang: (lang || "auto") }),
+    body: JSON.stringify({ b64: btoa(b64), mime }),
   });
   const js = await r.json().catch(()=>({}));
   if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
-  return js?.text || "";
+  return js; // { text, lang }
 }
 
-/* ---------- COMPONENT ---------- */
+/* simple language-name normalizer for “translate to <X>” */
+function normalizeLangName(s) {
+  const x = String(s || "").trim().toLowerCase();
+  const map = {
+    arabic: "Arabic", ar: "Arabic", "العربية": "Arabic",
+    hebrew: "Hebrew", he: "Hebrew", "עברית": "Hebrew",
+    english: "English", en: "English",
+    french: "French", fr: "French", français: "French",
+    spanish: "Spanish", es: "Spanish", español: "Spanish",
+    german: "German", de: "German", deutsch: "German",
+    russian: "Russian", ru: "Russian", русский: "Russian",
+    chinese: "Chinese", zh: "Chinese", 中文: "Chinese",
+    japanese: "Japanese", ja: "Japanese", 日本語: "Japanese",
+    hindi: "Hindi", hi: "Hindi", हिन्दी: "Hindi",
+    thai: "Thai", th: "Thai", ไทย: "Thai",
+  };
+  return map[x] || (x ? (x[0].toUpperCase() + x.slice(1)) : "");
+}
+
 export default function OracleVoice({ path = "Universal" }) {
   const [listening, setListening]   = useState(false);
   const [speaking, setSpeaking]     = useState(false);
@@ -124,28 +134,17 @@ export default function OracleVoice({ path = "Universal" }) {
   const [subject, setSubject]       = useState("topic:general");
   const [volume, setVolume]         = useState(1);
   const [polish, setPolish]         = useState(false);
-
-  const [translatedText, setTranslatedText] = useState("");
-  const [isTranslating, setIsTranslating] = useState(false);
-
   const [citations, setCitations]   = useState([]);
   const [sources, setSources]       = useState([]);
   const [showSrc, setShowSrc]       = useState(false);
   const [showCites, setShowCites]   = useState(true);
 
   const canvasRef      = useRef(null);
-  const srRef          = useRef(null);
   const recRef         = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
   const usingRef       = useRef(null);
   const finalRef       = useRef("");
-  const interimRef     = useRef("");
-  const citesRef       = useRef(null);
-  const listeningRef   = useRef(false);
-  const restartRef     = useRef(0);
   const audioRef       = useRef(null);
-
-  useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
-  useEffect(() => { listeningRef.current = listening; }, [listening]);
+  const lastDetectedLangRef = useRef("en-US");
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -154,7 +153,7 @@ export default function OracleVoice({ path = "Universal" }) {
     path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
 
-  const detectedLang = detectLangBCP47(liveText || finalRef.current, autoLangFromPath(path));
+  useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
 
   useEffect(() => {
     const cnv = canvasRef.current; if (!cnv) return;
@@ -166,42 +165,11 @@ export default function OracleVoice({ path = "Universal" }) {
   }, []);
 
   async function onStart() {
-    setReply(""); setStatus(""); setListening(true); listeningRef.current = true;
-    setTranslatedText("");
-    usingRef.current = null; finalRef.current = ""; interimRef.current = "";
-
-    if (hasSR()) {
-      try {
-        const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
-        const rec = new SR();
-        rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
-
-        rec.onresult = (e) => {
-          let interimLocal = "";
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            const r = e.results[i]; const t = (r[0]?.transcript || "").trim(); if (!t) continue;
-            if (r.isFinal) finalRef.current = mergeNoDupe(finalRef.current, t);
-            else interimLocal = mergeNoDupe("", t);
-          }
-          interimRef.current = interimLocal;
-          setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
-        };
-        rec.onend = () => {
-          if (usingRef.current === "sr" && listeningRef.current) {
-            clearTimeout(restartRef.current);
-            restartRef.current = setTimeout(() => {
-              try { rec.start(); setStatus("Listening…"); } catch { setListening(false); }
-            }, 200);
-          } else { setListening(false); setStatus("Stopped."); }
-        };
-
-        srRef.current = rec;
-        rec.start();
-        usingRef.current = "sr";
-        setStatus("Listening…");
-        return;
-      } catch { /* fall through */ }
-    }
+    // fresh turn each time
+    setReply(""); setLiveText("");
+    finalRef.current = "";
+    setCitations([]); setSources([]); setShowSrc(false); setShowCites(true);
+    setStatus(""); setListening(true);
 
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
@@ -249,18 +217,12 @@ export default function OracleVoice({ path = "Universal" }) {
 
   async function onStop() {
     if (!listening) return;
-    setListening(false); listeningRef.current = false;
-
-    if (usingRef.current === "sr") {
-      try { srRef.current && srRef.current.stop(); } catch {}
-      usingRef.current = null;
-      return;
-    }
+    setListening(false);
 
     if (usingRef.current === "rec") {
       const r = recRef.current.rec;
       try { r && r.stop(); r && r.requestData && r.requestData(); } catch {}
-      await new Promise(res => setTimeout(res, 400));
+      await new Promise(res => setTimeout(res, 350));
 
       cancelAnimationFrame(recRef.current.anim || 0);
       try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
@@ -274,64 +236,21 @@ export default function OracleVoice({ path = "Universal" }) {
       setStatus("Transcribing…");
       try {
         const blob = new Blob(chunks, { type: mime || "audio/webm" });
-        const text = await sttUpload(blob, mime || "audio/webm", detectedLang);
-        finalRef.current = mergeNoDupe(finalRef.current, text);
+        const { text, lang } = await sttUpload(blob, mime || "audio/webm");
+        finalRef.current = appendSegment(finalRef.current, text);
         setLiveText(finalRef.current);
-        setStatus("Ready.");
+        if (lang) lastDetectedLangRef.current = lang; // e.g., "ar", "he", "en-US" (your API can return short tag)
+        setStatus(`Ready.`);
+        // Voice command: “translate to <language>”
+        const m = /^\s*(translate|translation)\s+(it|this|answer|message)?\s*to\s+([A-Za-z\u00C0-\u024F\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u4E00-\u9FFF]+)\s*[\.\?!]*$/i.exec(text);
+        if (m && reply) {
+          const targetName = normalizeLangName(m[3]);
+          if (targetName) await doTranslate(targetName);
+        }
       } catch (e) {
         setStatus(String(e?.message || e));
       }
       usingRef.current = null;
-    }
-  }
-
-  function buildExportText() {
-    const lines = [];
-    lines.push(`Total-iora Oracle — ${new Date().toLocaleString()}`);
-    lines.push(`Room: ${path} | Subject: ${subject} | Language: ${detectedLang}`);
-    lines.push("");
-    lines.push("Question:"); lines.push(liveText || "(none)");
-    lines.push("");
-    lines.push("Answer:"); lines.push(reply || "(none)");
-    if (translatedText) { lines.push(""); lines.push("Translation:"); lines.push(translatedText); }
-    if (Array.isArray(citations) && citations.length) {
-      lines.push(""); lines.push("Citations:");
-      citations.forEach((c, i) => {
-        lines.push(`[${c.index ?? i+1}] ${c.work}${c.author ? " — " + c.author : ""}${c.url ? " <" + c.url + ">" : ""}`);
-        if (c.quote) lines.push(`“${c.quote}”`);
-        lines.push("");
-      });
-    }
-    return lines.join("\n");
-  }
-  function onDownload() {
-    const text = buildExportText();
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `total-iora-answer-${Date.now()}.txt`;
-    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
-  }
-  function onPrint() {
-    const text = buildExportText().replace(/\n/g, "<br/>");
-    const w = window.open("", "_blank", "noopener,noreferrer"); if (!w) return;
-    w.document.write(`
-      <html><head><title>Total-iora — Print</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <style>body{font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#0f172a;padding:24px}
-      h1{font-size:20px;margin:0 0 12px}.box{border:1px solid #e2e8f0;border-radius:12px;padding:16px;background:#fff}
-      @media print { @page { margin: 14mm; } }</style></head>
-      <body><h1>Total-iora Oracle</h1><div class="box">${text}</div><script>window.print()</script></body></html>
-    `);
-    w.document.close();
-  }
-  function onSourceButton() {
-    if (Array.isArray(citations) && citations.length) {
-      setShowCites(true);
-      setTimeout(() => { try { citesRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }); } catch {} }, 0);
-    } else if (Array.isArray(sources) && sources.length) {
-      setShowSrc(true);
-      setTimeout(() => { try { citesRef.current?.scrollIntoView({ behavior:"smooth", block:"center" }); } catch {} }, 0);
     }
   }
 
@@ -376,7 +295,8 @@ export default function OracleVoice({ path = "Universal" }) {
         body: JSON.stringify({
           message: clean,
           path, mode, topic,
-          lang: detectedLang,
+          // speak back in detected language:
+          lang: lastDetectedLangRef.current || "en-US",
           polish
         }),
       });
@@ -387,11 +307,11 @@ export default function OracleVoice({ path = "Universal" }) {
       setCitations(Array.isArray(data?.citations) ? data.citations : []);
       setSources(Array.isArray(data?.sources) ? data.sources : []);
 
-      const v = pickVoice(detectedLang);
+      const v = pickVoice(lastDetectedLangRef.current || "en-US");
       if (v && window?.speechSynthesis) {
         try { window.speechSynthesis.cancel(); } catch {}
         const u = new SpeechSynthesisUtterance(msg);
-        u.voice = v; u.lang = detectedLang || "en-US";
+        u.voice = v; u.lang = lastDetectedLangRef.current || "en-US";
         u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
         u.onend = () => setSpeaking(false);
         setSpeaking(true);
@@ -404,63 +324,58 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  async function onTranslate() {
-    const target = (typeof window !== "undefined") ? (window.prompt("Translate to which language? (e.g. English, Arabic, French)") || "").trim() : "";
-    if (!target || !reply) return;
-    setIsTranslating(true);
-    setTranslatedText("Translating…");
+  async function doTranslate(targetName) {
     try {
       const r = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: reply, target }),
+        body: JSON.stringify({ text: reply, target: targetName }),
       });
-      const js = await r.json();
-      if (!r.ok || !js?.text) throw new Error(js?.detail || "Translation request failed");
-      setTranslatedText(js.text);
-      await speakOutServer(js.text);
+      const js = await r.json().catch(()=>({}));
+      if (r.ok && js?.text) {
+        // speak translated text too
+        const spoken = js.text;
+        const v = pickVoice(lastDetectedLangRef.current || "en-US");
+        setReply(spoken);
+        await speakOutServer(spoken);
+      } else {
+        setStatus("Translate failed.");
+      }
     } catch (e) {
-      setTranslatedText(`Translate failed: ${String(e?.message || e)}`);
-    } finally {
-      setIsTranslating(false);
+      setStatus(`Translate failed: ${String(e?.message || e)}`);
     }
   }
 
-  useEffect(() => {
-    if (!speaking || !reply) return;
-    const t = setTimeout(async () => {
-      const v = pickVoice(detectedLang);
-      try { window.speechSynthesis?.cancel?.(); } catch {}
-      if (v && window?.speechSynthesis) {
-        const u = new SpeechSynthesisUtterance(reply);
-        u.voice = v; u.lang = detectedLang; u.volume = volume;
-        u.onend = () => setSpeaking(false);
-        try { window.speechSynthesis.speak(u); } catch { await speakOutServer(reply); }
-      } else {
-        await speakOutServer(reply);
-      }
-    }, 120);
-    return () => clearTimeout(t);
-  }, [volume]); // eslint-disable-line react-hooks/exhaustive-deps
+  function onSourceButton() {
+    if (Array.isArray(citations) && citations.length) setShowCites(true);
+    else if (Array.isArray(sources) && sources.length) setShowSrc(true);
+  }
 
   return (
     <section className="oracle">
       <header className="head">
         <div className="persona">{persona}</div>
         <h2>Write or Speak to the Oracle</h2>
+
         <div className="bar">
           <label>Subject:
             <select value={subject} onChange={(e)=>setSubject(e.target.value)}>
               {SUBJECT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
+
           <label>Guide voice volume:
-            <input type="range" min="0" max="1" step="0.05" value={volume} onChange={(e)=>setVolume(parseFloat(e.target.value||"1"))} />
+            <input type="range" min="0" max="1" step="0.05"
+                   value={volume}
+                   onChange={(e)=>setVolume(parseFloat(e.target.value||"1"))} />
           </label>
+
           <label>
-            <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />&nbsp;Fix my grammar before sending
+            <input type="checkbox" checked={polish} onChange={(e)=>setPolish(e.target.checked)} />
+            &nbsp;Fix my grammar before sending
           </label>
         </div>
+
         {status && <div style={{textAlign:"center", color:"#334155", fontWeight:700, marginTop:6}}>{status}</div>}
       </header>
 
@@ -477,7 +392,7 @@ export default function OracleVoice({ path = "Universal" }) {
               rows={5}
               value={liveText}
               onChange={(e) => setLiveText(e.target.value)}
-              placeholder="Words appear as you speak…"
+              placeholder="Speak in any language…"
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={true}
@@ -508,72 +423,36 @@ export default function OracleVoice({ path = "Universal" }) {
 
             <div className="row" style={{marginTop:8}}>
               <button className="btn ghost" onClick={onSourceButton} disabled={!citations?.length && !sources?.length}>📚 Source</button>
-              <button className="btn ghost" onClick={onDownload} disabled={!reply}>⬇️ Download</button>
-              <button className="btn ghost" onClick={onPrint} disabled={!reply}>🖨️ Print</button>
-              <button className="btn ghost" onClick={onTranslate} disabled={!reply || replying}>{isTranslating ? "Translating…" : "🌐 Translate…"}</button>
+              <button className="btn ghost" onClick={()=>{
+                const text = `Question:\n${liveText}\n\nAnswer:\n${reply}`;
+                const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `total-iora-answer-${Date.now()}.txt`;
+                document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+              }} disabled={!reply}>⬇️ Download</button>
+              <button className="btn ghost" onClick={()=>{
+                const text = `Question:\n${liveText}\n\nAnswer:\n${reply}`;
+                const w = window.open("", "_blank", "noopener,noreferrer");
+                w.document.write(`<pre style="font:16px/1.4 system-ui,Segoe UI,Roboto">${text}</pre><script>window.print()</script>`);
+                w.document.close();
+              }} disabled={!reply}>🖨️ Print</button>
+              <button className="btn ghost" onClick={async ()=>{
+                if (!reply) return;
+                const target = window.prompt("Translate to which language? (e.g., Arabic, Hebrew, German)") || "";
+                const name = normalizeLangName(target);
+                if (!name) return;
+                await doTranslate(name);
+              }} disabled={!reply || replying}>🌐 Translate…</button>
             </div>
           </div>
         </div>
 
-        <div className="pane" ref={citesRef}>
-          <div className={`orb spirit ${replying || speaking || isTranslating ? "on" : ""}`}><div className="halo" /></div>
+        <div className="pane">
+          <div className={`orb spirit ${replying || speaking ? "on" : ""}`}><div className="halo" /></div>
           <div className="log">
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
-
-            {translatedText && (
-              <div className="bubble" style={{marginTop: "12px", background: "#f0f9ff", borderColor: "#e0f2fe"}}>
-                {isTranslating ? "Translating…" : translatedText}
-              </div>
-            )}
-
-            {Array.isArray(citations) && citations.length > 0 && (
-              <div className="sources">
-                <button className="linkbtn" onClick={()=>setShowCites(s => !s)} aria-expanded={showCites}>
-                  {showCites ? "Hide citations" : `Show citations (${citations.length})`}
-                </button>
-                {showCites && (
-                  <ul className="srclist">
-                    {citations.map((c,i)=>(
-                      <li key={`c-${c.index ?? i}`}>
-                        <div className="sline">
-                          <span className="work">{c.work}</span>
-                          {c.author ? <span className="author"> — {c.author}</span> : null}
-                          {c.url ? <a href={c.url} target="_blank" rel="noreferrer">open ↗</a> : null}
-                        </div>
-                        {c.quote ? <div className="quote">“{c.quote}”</div> : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-
-            {showCites && (!citations?.length && !sources?.length) && (
-              <div className="text-slate-500">No sources were returned for this answer.</div>
-            )}
-
-            {sources && sources.length > 0 && (
-              <div className="sources" style={{marginTop:8}}>
-                <button className="linkbtn" onClick={()=>setShowSrc(s => !s)} aria-expanded={showSrc}>
-                  {showSrc ? "Hide source pool" : `Show source pool (${sources.length})`}
-                </button>
-                {showSrc && (
-                  <ul className="srclist">
-                    {sources.map((s, i) => (
-                      <li key={`${s.i || i}-${s.url || s.work}`}>
-                        <div className="sline">
-                          <span className="work">{s.work}</span>
-                          {s.author ? <span className="author"> — {s.author}</span> : null}
-                          {s.url ? <a href={s.url} target="_blank" rel="noreferrer">open ↗</a> : null}
-                        </div>
-                        {s.quote ? <div className="quote">“{s.quote}”</div> : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -607,19 +486,12 @@ export default function OracleVoice({ path = "Universal" }) {
         .bubble.guide{background:#eef6ff;border-color:#dbeafe;}
         .edit{width:100%;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:1rem;min-height:120px;}
         .row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
-        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);touch-action:manipulation; cursor:pointer;}
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn{padding:12px 18px;border-radius:14px;font-weight:800;border:1px solid rgba(15,23,42,.12);cursor:pointer;}
+        .btn:disabled{opacity:.6;cursor:not-allowed;}
         .btn.start{color:#fff;background:linear-gradient(135deg,#7c3aed,#14b8a6);border:none;}
         .btn.stop{color:#fff;background:#111827;border:none;}
         .btn.ghost{background:#fff;}
         .btn.danger{color:#fff;background:#b91c1c;border:none;}
-        .sources{margin-top:8px}
-        .linkbtn{border:none;background:transparent;color:#1d4ed8;font-weight:700;cursor:pointer;padding:6px 0}
-        .srclist{margin:6px 0 0;padding-left:16px;display:grid;gap:8px; list-style-type: none;}
-        .sline{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}
-        .work{font-weight:700;color:#0f172a}
-        .author{color:#475569}
-        .quote{color:#334155;margin-top:2px;white-space:pre-wrap; border-left: 3px solid #e2e8f0; padding-left: 8px;}
       `}</style>
     </section>
   );
