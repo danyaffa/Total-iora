@@ -12,12 +12,38 @@ function setCookie(name, value, maxAgeDays = 365) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
-export async function getServerSideProps({ req, res }) {
-  const faith =
-    req.headers["x-faith"] ||
-    req.cookies?.faith ||
-    process.env.FAITH_OVERRIDE ||
-    "Universal";
+// NEW: normalize the inbound query to one of the allowed rooms
+function normalizeFaith(s) {
+  switch (String(s || "").toLowerCase()) {
+    case "muslim": return "Muslim";
+    case "christian": return "Christian";
+    case "jewish": return "Jewish";
+    case "eastern": return "Eastern";
+    case "universal": return "Universal";
+    default: return null;
+  }
+}
+
+export async function getServerSideProps(ctx) {
+  const { req, res, query } = ctx;
+
+  // read from URL first (for testing), then header/cookie/env, then default
+  const qFaith = normalizeFaith(query?.faith);
+  const headerFaith = normalizeFaith(req.headers["x-faith"]);
+  const cookieFaith = normalizeFaith(req.cookies?.faith);
+  const envFaith = normalizeFaith(process.env.FAITH_OVERRIDE);
+
+  const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
+
+  // if faith came from the URL, persist it in a cookie so API routes can see it
+  if (qFaith && qFaith !== cookieFaith) {
+    const oneYear = 60 * 60 * 24 * 365;
+    const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
+    res.setHeader("Set-Cookie",
+      `faith=${encodeURIComponent(qFaith)}; Max-Age=${oneYear}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`
+    );
+  }
+
   return { props: { faith } };
 }
 
