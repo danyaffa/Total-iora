@@ -66,14 +66,6 @@ function bestMime() {
   return "audio/webm";
 }
 
-function appendSegment(existing, seg) {
-  const A = String(existing || "").trim();
-  const B = String(seg || "").trim();
-  if (!B) return A;
-  if (!A) return B;
-  return (A + (A ? " " : "") + B).replace(/\s+/g, " ").trim();
-}
-
 function toBCP47(tag = "en-US") {
   const t = String(tag || "").toLowerCase();
   if (t.startsWith("he")) return "he-IL";
@@ -103,6 +95,7 @@ function pickVoice(lang) {
 }
 
 async function sttUpload(blob, mime, signal) {
+  if (!blob || blob.size < 200) return { text: "", lang: "en-US" };
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
@@ -152,12 +145,11 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const canvasRef      = useRef(null);
   const recRef         = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
-  const liveTextRef    = useRef("");
+  const finalTransRef  = useRef("");
   const audioRef       = useRef(null);
   const lastDetectedLangRef = useRef("en-US");
   const listeningRef   = useRef(listening);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
-  const recogRef       = useRef(null);
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -165,41 +157,6 @@ export default function OracleVoice({ path = "Universal" }) {
     path === "Muslim"    ? "Imam"   :
     path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
-
-  const startWebSpeech = (langHint) => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
-    try { recogRef.current?.stop(); } catch {}
-    
-    let lastTranscript = "";
-    const recog = new SR();
-    recog.lang = toBCP47(langHint || navigator.language || "en-US");
-    recog.continuous = true;
-    recog.interimResults = true;
-    recog.maxAlternatives = 1;
-    
-    recog.onresult = (e) => {
-      let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; ++i) {
-        if (e.results[i].isFinal) {
-          lastTranscript = appendSegment(lastTranscript, e.results[i][0].transcript);
-        } else {
-          interim += e.results[i][0].transcript;
-        }
-      }
-      liveTextRef.current = appendSegment(lastTranscript, interim);
-      setLiveText(liveTextRef.current);
-    };
-
-    recog.onend = () => {
-      if (listeningRef.current) {
-        try { recog.start(); } catch {}
-      }
-    };
-
-    try { recog.start(); } catch {}
-    recogRef.current = recog;
-  }
 
   useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
 
@@ -223,13 +180,9 @@ export default function OracleVoice({ path = "Universal" }) {
 
   async function onStart() {
     setReply(""); setLiveText("");
-    liveTextRef.current = "";
+    finalTransRef.current = "";
     setCitations([]); setSources([]); setShowSrc(false); setShowCites(false);
     setStatus(""); setListening(true);
-
-    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
-      startWebSpeech(lastDetectedLangRef.current);
-    }
 
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
@@ -248,8 +201,8 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 800;
-      const SLICE_MS = 700;
+      const CHUNK_MS = 600;
+      const SLICE_MS = 500;
 
       rec.ondataavailable = async (e) => {
         if (e.data?.size) {
@@ -258,15 +211,14 @@ export default function OracleVoice({ path = "Universal" }) {
           if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
             lastChunkSent = now;
             try {
-              const preview = await sttUpload(e.data, mime || "audio/webm");
+              const cumulativeBlob = new Blob(chunks, { type: mime });
+              const preview = await sttUpload(cumulativeBlob, mime);
+              if (preview?.text) {
+                // To prevent jarring updates, we only replace the text, not append.
+                setLiveText(preview.text);
+              }
               if (preview?.lang) {
-                const detectedLang = preview.lang;
-                if (lastDetectedLangRef.current !== detectedLang) {
-                  lastDetectedLangRef.current = detectedLang;
-                  if (recogRef.current && toBCP47(detectedLang) !== recogRef.current.lang) {
-                    startWebSpeech(detectedLang);
-                  }
-                }
+                lastDetectedLangRef.current = preview.lang;
               }
             } catch {}
           }
@@ -309,9 +261,6 @@ export default function OracleVoice({ path = "Universal" }) {
     setListening(false);
     setStatus("Stopping…");
 
-    try { recogRef.current?.stop(); } catch {}
-    recogRef.current = null;
-
     const r = recRef.current.rec;
     try { r?.stop(); } catch {}
     await new Promise(res => setTimeout(res, 200));
@@ -327,10 +276,10 @@ export default function OracleVoice({ path = "Universal" }) {
     setStatus("Transcribing…");
     try {
       const blob = new Blob(chunks, { type: mime || "audio/webm" });
-      const { text, lang } = await sttUpload(blob, mime || "audio/webm");
+      const { text, lang } = await sttUpload(blob, mime);
       
       if (text) {
-        liveTextRef.current = text;
+        finalTransRef.current = text;
         setLiveText(text);
       }
       if (lang) {
@@ -338,11 +287,6 @@ export default function OracleVoice({ path = "Universal" }) {
       }
       setStatus("Ready.");
       
-      const m = /^\s*(translate|translation)\s*.*to\s+([A-Za-z\u00C0-\u024F\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u4E00-\u9FFF]+)/i.exec(text);
-      if (m && reply) {
-        const targetName = normalizeLangName(m[2]);
-        if (targetName) await doTranslate(targetName);
-      }
     } catch (e) {
       setStatus(String(e?.message || e));
     }
@@ -506,7 +450,7 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              <button className="btn ghost" onClick={()=>sendForAnswer(liveTextRef.current)} disabled={replying || !liveText}>
+              <button className="btn ghost" onClick={()=>sendForAnswer(liveText)} disabled={replying || !liveText}>
                 {replying ? "Thinking…" : "Get Answer ⟶"}
               </button>
               {speaking && (
