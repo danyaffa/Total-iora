@@ -265,7 +265,7 @@ export default async function handler(req, res) {
     const user = [
       polish ? "Please polish the grammar of the question first, silently." : "",
       "Question:",
-      clamp(message, 2000),
+      message,
       sources.length ? "\nYou may optionally weave relevant short quotes from the sources list." : "",
     ].join("\n");
 
