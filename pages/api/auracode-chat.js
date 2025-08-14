@@ -1,3 +1,4 @@
+// FILE: /pages/api/auracode-chat.js
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
@@ -65,9 +66,7 @@ async function fetchSefariaSnippets(query, topK = 6) {
       const ref = h?._source?.ref || h?.ref; if (!ref) continue;
       const tx = await (await fetch(`https://www.sefaria.org/api/texts/${encodeURIComponent(ref)}?context=0&commentary=0`)).json();
       const en = Array.isArray(tx?.text) ? tx.text.join(" ") : (tx?.text || "");
-      const he = Array.isArray(tx?.he) ? tx.he.join(" ") : (tx?.he || "");
-      const quoteRaw = /[\u0590-\u05FF]/.test(query) ? he : en;
-      const quote = cleanPara(quoteRaw) || clamp(quoteRaw || en || he, 800);
+      const quote = cleanPara(en) || clamp(en, 800);
       if (!quote) continue;
       out.push({ work: ref, author: "Sefaria", pos: 0, quote, url: SRC_LINK.sefaria(ref), source: "sefaria" });
       if (out.length >= topK) break;
@@ -75,12 +74,13 @@ async function fetchSefariaSnippets(query, topK = 6) {
     return out.filter(allowSource);
   } catch { return []; }
 }
+
 async function fetchQuranSnippets(query, topK = 6){
   try {
     const lang = /[ء-ي]/.test(String(query||"")) ? "ar" : "en";
     const js = await (await fetch(`https://api.alquran.cloud/v1/search/${encodeURIComponent(query)}/all/${lang}`)).json();
     const matches = js?.data?.matches || [];
-    return matches.slice(0, topK).map(m => ({
+    const out = matches.slice(0, topK).map(m => ({
       work: `Qur'an ${m.surah?.englishName || m.surah?.name || "Surah"} ${m.surah?.number}:${m.numberInSurah}`,
       author: lang === "ar" ? "القرآن" : "Qur'an",
       pos: m.numberInSurah || 0,
@@ -88,8 +88,18 @@ async function fetchQuranSnippets(query, topK = 6){
       url: SRC_LINK.quran(m.surah?.number || "", m.numberInSurah || ""),
       source: "quran",
     })).filter(allowSource);
+
+    // Fallbacks if nothing matched (e.g., vague English queries)
+    if (!out.length) {
+      return [
+        { work: "Qur'an 112:1–4 (Al‑Ikhlās)", author: "Qur'an", pos: 1, quote: "", url: SRC_LINK.quran(112, 1), source: "quran" },
+        { work: "Qur'an 2:255 (Āyat al‑Kursī)", author: "Qur'an", pos: 2, quote: "", url: SRC_LINK.quran(2, 255), source: "quran" },
+      ];
+    }
+    return out;
   } catch { return []; }
 }
+
 async function fetchGutenbergTitleSnippets(title, topK = 4){
   try {
     const js = await (await fetch(`https://gutendex.com/books/?languages=en&search=${encodeURIComponent(title)}`)).json();
@@ -131,10 +141,14 @@ export default async function handler(req, res) {
 
     const targetLanguage = langNameBCP47(lang);
 
+    // sources by room
     const tasks = [];
     if (path === "Jewish") tasks.push(fetchSefariaSnippets(message, 6));
     if (path === "Muslim") tasks.push(fetchQuranSnippets(message, 6));
-    if (path === "Christian") tasks.push(fetchGutenbergTitleSnippets("King James Bible", 6));
+    if (path === "Christian") {
+      // KJV is public-domain; use it as our base
+      tasks.push(fetchGutenbergTitleSnippets("King James Bible", 6));
+    }
     if (path === "Eastern") {
       tasks.push(fetchGutenbergTitleSnippets("Tao Te Ching", 4));
       tasks.push(fetchGutenbergTitleSnippets("Bhagavad Gita", 4));
@@ -157,7 +171,6 @@ export default async function handler(req, res) {
       "No platform instructions, no meta talk.",
       "No medical, legal, or financial diagnosis; offer supportive, general guidance only.",
       `Reply entirely in ${targetLanguage}. Keep paragraphs short.`,
-      "If you quote from sources in another language, translate the quote into the reply language and include the link."
     ].join(" ");
 
     const GUIDANCE = {
