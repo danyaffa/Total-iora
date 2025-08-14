@@ -24,8 +24,8 @@ export default async function handler(req, res) {
 
     const out = await openai.audio.speech.create({
       model,
-      voice,                 // multilingual voice
-      input: text,           // the API will speak Arabic/Hebrew/etc automatically
+      voice,
+      input: text,
       format: "mp3",
     });
 
