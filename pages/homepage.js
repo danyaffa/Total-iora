@@ -27,15 +27,13 @@ function normalizeFaith(s) {
 export async function getServerSideProps(ctx) {
   const { req, res, query } = ctx;
 
-  // read from URL first (for testing), then header/cookie/env, then default
-  const qFaith = normalizeFaith(query?.faith);
-  const headerFaith = normalizeFaith(req.headers["x-faith"]);
-  const cookieFaith = normalizeFaith(req.cookies?.faith);
-  const envFaith = normalizeFaith(process.env.FAITH_OVERRIDE);
+  const qFaith     = normalizeFaith(query?.faith);
+  const headerFaith= normalizeFaith(req.headers["x-faith"]);
+  const cookieFaith= normalizeFaith(req.cookies?.faith);
+  const envFaith   = normalizeFaith(process.env.FAITH_OVERRIDE);
 
   const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
 
-  // if faith came from the URL, persist it in a cookie so API routes can see it
   if (qFaith && qFaith !== cookieFaith) {
     const oneYear = 60 * 60 * 24 * 365;
     const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
@@ -46,6 +44,7 @@ export async function getServerSideProps(ctx) {
 
   return { props: { faith } };
 }
+
 
 export default function HomePage({ faith }) {
   const [path, setPath] = useState(faith);
