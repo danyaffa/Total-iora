@@ -1,4 +1,5 @@
- import { useEffect, useMemo, useRef, useState } from "react";
+// FILE: /components/OracleVoice.js
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /* ---------- SUBJECTS ---------- */
 const SUBJECT_OPTIONS = [
@@ -84,8 +85,8 @@ const isSecure = () =>
 function bestMime() {
   if (!hasRecorder()) return "audio/webm";
   const M = window.MediaRecorder;
-  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // Safari/iOS
-  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Chrome/Android
+  if (M.isTypeSupported?.("audio/mp4;codecs=aac")) return "audio/mp4;codecs=aac";   // iOS/Safari
+  if (M.isTypeSupported?.("audio/webm;codecs=opus")) return "audio/webm;codecs=opus"; // Android/Chrome
   if (M.isTypeSupported?.("audio/webm")) return "audio/webm";
   if (M.isTypeSupported?.("audio/ogg;codecs=opus")) return "audio/ogg;codecs=opus";  // Firefox
   return "audio/webm";
@@ -132,16 +133,16 @@ export default function OracleVoice({ path = "Universal" }) {
   const [showSrc, setShowSrc]       = useState(false);
   const [showCites, setShowCites]   = useState(true);
 
-  const canvasRef = useRef(null);
-  const srRef = useRef(null);
-  const recRef = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
-  const usingRef = useRef(null);
-  const finalRef = useRef("");
-  const interimRef = useRef("");
-  const citesRef = useRef(null);
-  const listeningRef = useRef(false);
-  const restartRef = useRef(0);
-  const audioRef = useRef(null);
+  const canvasRef      = useRef(null);
+  const srRef          = useRef(null);
+  const recRef         = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
+  const usingRef       = useRef(null);
+  const finalRef       = useRef("");
+  const interimRef     = useRef("");
+  const citesRef       = useRef(null);
+  const listeningRef   = useRef(false);
+  const restartRef     = useRef(0);
+  const audioRef       = useRef(null);
 
   useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
@@ -169,34 +170,21 @@ export default function OracleVoice({ path = "Universal" }) {
     setTranslatedText("");
     usingRef.current = null; finalRef.current = ""; interimRef.current = "";
 
-    // Prefer live captions
     if (hasSR()) {
       try {
         const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
         const rec = new SR();
-        // start with a best-guess lang to improve non-English; auto-switch on script detection
-        rec.lang = autoLangFromPath(path);
         rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
 
         rec.onresult = (e) => {
           let interimLocal = "";
           for (let i = e.resultIndex; i < e.results.length; i++) {
             const r = e.results[i]; const t = (r[0]?.transcript || "").trim(); if (!t) continue;
-            if (/[ء-ي]/.test(t) || /[\u0590-\u05FF]/.test(t) || /[\u0400-\u04FF]/.test(t) || /[\u4E00-\u9FFF]/.test(t) || /[\u0E00-\u0E7F]/.test(t) || /[\u0900-\u097F]/.test(t)) {
-              // switch to recorder path for full multilingual accuracy
-              try { rec.stop(); } catch {}
-              setStatus("Switching to high‑accuracy transcription…");
-              usingRef.current = null;
-              // fall through to recorder path
-            } else {
-              if (r.isFinal) finalRef.current = mergeNoDupe(finalRef.current, t);
-              else interimLocal = mergeNoDupe("", t);
-              interimRef.current = interimLocal;
-              setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
-              continue;
-            }
-            break;
+            if (r.isFinal) finalRef.current = mergeNoDupe(finalRef.current, t);
+            else interimLocal = mergeNoDupe("", t);
           }
+          interimRef.current = interimLocal;
+          setLiveText([finalRef.current, interimRef.current].filter(Boolean).join(" ").trim());
         };
         rec.onend = () => {
           if (usingRef.current === "sr" && listeningRef.current) {
@@ -204,24 +192,24 @@ export default function OracleVoice({ path = "Universal" }) {
             restartRef.current = setTimeout(() => {
               try { rec.start(); setStatus("Listening…"); } catch { setListening(false); }
             }, 200);
-          }
+          } else { setListening(false); setStatus("Stopped."); }
         };
 
         srRef.current = rec;
         rec.start();
         usingRef.current = "sr";
         setStatus("Listening…");
-      } catch {}
+        return;
+      } catch { /* fall through */ }
     }
 
-    // Recorder path (multilingual, accurate) — used immediately if SR not available or we switched above
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
-      if (usingRef.current !== "sr") { setListening(false); setStatus("Dictation not supported on this device/browser."); }
-      return;
+      setListening(false); setStatus("Dictation not supported on this device/browser."); return;
     }
 
     try {
+      setStatus("Opening microphone…");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
       const AC = window.AudioContext || window.webkitAudioContext;
       const ctx = new AC(); try { await ctx.resume(); } catch {}
@@ -253,8 +241,9 @@ export default function OracleVoice({ path = "Universal" }) {
 
       recRef.current = { stream, rec, chunks, mime: mime || "audio/webm", ctx, analyser, anim: recRef.current.anim };
       usingRef.current = "rec";
+      setStatus("Recording… (text will appear after Stop)");
     } catch {
-      if (usingRef.current !== "sr") { setListening(false); setStatus("Mic permission denied or unavailable."); }
+      setListening(false); setStatus("Mic permission denied or unavailable.");
     }
   }
 
@@ -265,11 +254,14 @@ export default function OracleVoice({ path = "Universal" }) {
     if (usingRef.current === "sr") {
       try { srRef.current && srRef.current.stop(); } catch {}
       usingRef.current = null;
+      return;
     }
 
-    if (recRef.current.rec) {
-      try { recRef.current.rec.stop(); recRef.current.rec.requestData?.(); } catch {}
+    if (usingRef.current === "rec") {
+      const r = recRef.current.rec;
+      try { r && r.stop(); r && r.requestData && r.requestData(); } catch {}
       await new Promise(res => setTimeout(res, 400));
+
       cancelAnimationFrame(recRef.current.anim || 0);
       try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
       try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
@@ -277,7 +269,7 @@ export default function OracleVoice({ path = "Universal" }) {
       const { chunks, mime } = recRef.current;
       recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
 
-      if (!chunks.length) { setStatus("No audio captured."); return; }
+      if (!chunks.length) { setStatus("No audio captured."); usingRef.current = null; return; }
 
       setStatus("Transcribing…");
       try {
@@ -289,6 +281,7 @@ export default function OracleVoice({ path = "Universal" }) {
       } catch (e) {
         setStatus(String(e?.message || e));
       }
+      usingRef.current = null;
     }
   }
 
@@ -342,7 +335,6 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  // server TTS (multilingual)
   async function speakOutServer(text) {
     if (!text) return;
     try {
@@ -381,7 +373,12 @@ export default function OracleVoice({ path = "Universal" }) {
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: clean, path, mode, topic, lang: detectedLang, polish }),
+        body: JSON.stringify({
+          message: clean,
+          path, mode, topic,
+          lang: detectedLang,
+          polish
+        }),
       });
       const data = await r.json().catch(()=> ({}));
 
@@ -429,7 +426,6 @@ export default function OracleVoice({ path = "Universal" }) {
     }
   }
 
-  // re-speak on volume change
   useEffect(() => {
     if (!speaking || !reply) return;
     const t = setTimeout(async () => {
