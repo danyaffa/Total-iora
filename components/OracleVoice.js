@@ -90,8 +90,8 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-/* send blob to /api/stt (auto language) */
-async function sttUpload(blob, mime) {
+/* send blob to /api/stt (auto language) — with abortable previews */
+async function sttUpload(blob, mime, signal) {
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
@@ -99,6 +99,7 @@ async function sttUpload(blob, mime) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ b64: btoa(b64), mime }),
+    signal,
   });
   const js = await r.json().catch(()=>({}));
   if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
@@ -147,6 +148,10 @@ export default function OracleVoice({ path = "Universal" }) {
   const listeningRef   = useRef(listening);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
 
+  // NEW: manage a single in‑flight preview so chunks don’t “stack up”
+  const previewCtlRef  = useRef(null);
+  const previewBusyRef = useRef(false);
+
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
     path === "Christian" ? "Priest" :
@@ -166,7 +171,7 @@ export default function OracleVoice({ path = "Universal" }) {
   }, []);
 
   useEffect(() => {
-    const onVoices = () => {}; // touching getVoices warms cache
+    const onVoices = () => {};
     if (window?.speechSynthesis) {
       window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
       window.speechSynthesis.getVoices?.();
@@ -198,21 +203,38 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 1000;
+      const CHUNK_MS = 300;            // ↓ faster previews
+      const SLICE_MS = 250;            // recorder slice interval
 
       rec.ondataavailable = async (e) => {
         if (e.data && e.data.size) {
           chunks.push(e.data);
           const now = Date.now();
+
+          // throttle & live preview with abort of previous request
           if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
             lastChunkSent = now;
             try {
-              const preview = await sttUpload(e.data, mime || "audio/webm");
+              // abort previous preview if still running
+              if (previewCtlRef.current) {
+                try { previewCtlRef.current.abort(); } catch {}
+              }
+              const ctl = new AbortController();
+              previewCtlRef.current = ctl;
+
+              // mark busy; only one in flight
+              if (previewBusyRef.current) return;
+              previewBusyRef.current = true;
+
+              const preview = await sttUpload(e.data, mime || "audio/webm", ctl.signal);
+              previewBusyRef.current = false;
+
               finalRef.current = appendSegment(finalRef.current, preview?.text || "");
               setLiveText(finalRef.current);
               if (preview?.lang) lastDetectedLangRef.current = preview.lang;
             } catch {
-              /* ignore preview errors; final pass will still run on Stop */
+              previewBusyRef.current = false;
+              // ignore preview errors; final pass still runs on Stop
             }
           }
         }
@@ -224,7 +246,7 @@ export default function OracleVoice({ path = "Universal" }) {
         try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
         cancelAnimationFrame(recRef.current.anim || 0);
       };
-      rec.start(1000);
+      rec.start(SLICE_MS);
 
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext?.("2d");
@@ -252,9 +274,17 @@ export default function OracleVoice({ path = "Universal" }) {
     if (!listening) return;
     setListening(false);
     setStatus("Stopping…");
+
+    // abort any in‑flight preview request so it doesn’t finish late
+    if (previewCtlRef.current) {
+      try { previewCtlRef.current.abort(); } catch {}
+      previewCtlRef.current = null;
+    }
+    previewBusyRef.current = false;
+
     const r = recRef.current.rec;
     try { r && r.state !== "inactive" && r.stop(); } catch {}
-    await new Promise(res => setTimeout(res, 250));
+    await new Promise(res => setTimeout(res, 200));
     try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
     try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
     cancelAnimationFrame(recRef.current.anim || 0);
@@ -362,7 +392,6 @@ export default function OracleVoice({ path = "Universal" }) {
       const js = await r.json().catch(()=>({}));
       if (r.ok && js?.text) {
         const spoken = js.text;
-        const v = pickVoice(lastDetectedLangRef.current || "en-US");
         setReply(spoken);
         await speakOutServer(spoken);
       } else {
@@ -481,7 +510,6 @@ export default function OracleVoice({ path = "Universal" }) {
             <div className="label">Guide</div>
             <div className="bubble guide">{reply || (replying ? "Thinking…" : "—")}</div>
 
-            {/* Sources / Citations list */}
             {(showCites && citations?.length > 0) && (
               <div className="sources">
                 <div className="src-title">Citations</div>
