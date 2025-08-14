@@ -209,7 +209,24 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { message, path = "Universal", mode = "gentle", topic = "general", lang = "en-US", maxSources = 8, polish = false } = req.body || {};
+    // force path from header/cookie/env
+    const forcedPath =
+      (req.headers["x-faith"] && String(req.headers["x-faith"])) ||
+      (req.cookies?.faith) ||
+      process.env.FAITH_OVERRIDE ||
+      "Universal";
+
+    const {
+      message,
+      /* ignore incoming path */ mode = "gentle",
+      topic = "general",
+      lang = "en-US",
+      maxSources = 8,
+      polish = false
+    } = req.body || {};
+
+    const path = forcedPath; // use the enforced value
+    
     if (!isOK(message)) return res.status(400).json({ error: "Missing message" });
 
     const apiKey = process.env.OPENAI_API_KEY;
