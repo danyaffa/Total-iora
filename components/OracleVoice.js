@@ -419,17 +419,29 @@ export default function OracleVoice({ path = "Universal" }) {
       setCitations(Array.isArray(data?.citations) ? data.citations : []);
       setSources(Array.isArray(data?.sources) ? data.sources : []);
 
-      const v = pickVoice(lastDetectedLangRef.current || "en-US");
-      if (v && window?.speechSynthesis) {
-        try { window.speechSynthesis.cancel(); } catch {}
-        const u = new SpeechSynthesisUtterance(msg);
-        u.voice = v;
-        u.lang = toBCP47(lastDetectedLangRef.current || "en-US");
-        u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
-        u.onend = () => setSpeaking(false);
-        setSpeaking(true);
-        try { window.speechSynthesis.speak(u); } catch { await speakOutServer(msg); }
+      const spokeLang = String(lastDetectedLangRef.current || "en-US");
+      const isEnglish = /^en\b/i.test(spokeLang);
+
+      if (isEnglish && window?.speechSynthesis) {
+        // Try browser voice first for EN
+        const v = pickVoice(spokeLang);
+        if (v) {
+          try { window.speechSynthesis.cancel(); } catch {}
+          const u = new SpeechSynthesisUtterance(msg);
+          u.voice = v; u.lang = spokeLang;
+          u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
+          u.onend = () => setSpeaking(false);
+          setSpeaking(true);
+          try {
+            window.speechSynthesis.speak(u);
+          } catch {
+            await speakOutServer(msg); // fallback
+          }
+        } else {
+          await speakOutServer(msg);
+        }
       } else {
+        // For Hebrew/Arabic/other languages: always use server TTS
         await speakOutServer(msg);
       }
     } finally {
