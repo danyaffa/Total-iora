@@ -7,13 +7,13 @@ import OpenAI from "openai";
 // quick language guess from result text (used for TTS routing)
 function detectLangFromText(s, fallback = "en-US") {
   const t = String(s || "");
-  if (/[ء-ي]/.test(t)) return "ar";
-  if (/[\u0590-\u05FF]/.test(t)) return "he";
-  if (/[\u0400-\u04FF]/.test(t)) return "ru";
-  if (/[\u4E00-\u9FFF]/.test(t)) return "zh";
-  if (/[\u0900-\u097F]/.test(t)) return "hi";
-  if (/[\u3040-\u30FF]/.test(t)) return "ja";
-  if (/[\u0E00-\u0E7F]/.test(t)) return "th";
+  if (/[ء-ي]/.test(t)) return "ar-SA";
+  if (/[\u0590-\u05FF]/.test(t)) return "he-IL";
+  if (/[\u0400-\u04FF]/.test(t)) return "ru-RU";
+  if (/[\u4E00-\u9FFF]/.test(t)) return "zh-CN";
+  if (/[\u0900-\u097F]/.test(t)) return "hi-IN";
+  if (/[\u3040-\u30FF]/.test(t)) return "ja-JP";
+  if (/[\u0E00-\u0E7F]/.test(t)) return "th-TH";
   return fallback;
 }
 
@@ -61,22 +61,17 @@ export default async function handler(req, res) {
     const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
     const file = new File([buf], `recording.${ext}`, { type: mime });
 
-    // Whisper keeps the original language by default.
-    // DO NOT set translate: true
-    // Only pass 'language' when user hints a fixed value (not "auto")
     const params = {
       file,
       model: process.env.STT_MODEL || "whisper-1",
-      // translate: false, // not needed; default is no translation in Whisper
     };
     if (lang && lang !== "auto") {
-      params.language = lang; // hint only; still returns same-language text
+      params.language = lang;
     }
 
     const out = await openai.audio.transcriptions.create(params);
 
     const text = (out?.text || "").trim();
-    // If no hint was provided, guess a BCP‑47-ish tag for TTS routing on the client
     const detected = lang === "auto" ? detectLangFromText(text, "en-US") : lang;
 
     return res.status(200).json({ text, lang: detected });
