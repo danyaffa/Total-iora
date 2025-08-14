@@ -66,44 +66,14 @@ function bestMime() {
   return "audio/webm";
 }
 
-/* robust append to avoid “provide provide …” duplicates */
 function appendSegment(existing, seg) {
   const A = String(existing || "").trim();
   const B = String(seg || "").trim();
   if (!B) return A;
   if (!A) return B;
-  const tail = A.slice(Math.max(0, A.length - 80));
-  if (tail.endsWith(B)) return A;
-  if (A.includes(B)) return A;
-  return (A + " " + B).replace(/\s+/g, " ").trim();
+  return (A + (A ? " " : "") + B).replace(/\s+/g, " ").trim();
 }
 
-// NEW: Intelligently appends only the new words from a transcript
-function diffTail(oldStr, newStr) {
-  const A = String(oldStr || "").trim();
-  const B = String(newStr || "").trim();
-  if (!B || A === B) return "";
-  if (!A) return B;
-  
-  // Find the last 4 words of the old string to use as an anchor
-  const anchorWords = A.split(/\s+/).slice(-4).join(" ");
-  if (!anchorWords) return B;
-  const idx = B.indexOf(anchorWords);
-
-  if (idx !== -1) {
-    // If the anchor is found, return the text that comes after it
-    return B.slice(idx + anchorWords.length).trim();
-  }
-  
-  // Fallback for very different strings
-  if (B.startsWith(A)) {
-    return B.slice(A.length).trim();
-  }
-
-  return B; // Return the whole new string if no clear overlap
-}
-
-// Map to full BCP-47 for recognizer / TTS
 function toBCP47(tag = "en-US") {
   const t = String(tag || "").toLowerCase();
   if (t.startsWith("he")) return "he-IL";
@@ -132,7 +102,6 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-/* send blob to /api/stt (auto language) — with abortable previews */
 async function sttUpload(blob, mime, signal) {
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
@@ -145,10 +114,9 @@ async function sttUpload(blob, mime, signal) {
   });
   const js = await r.json().catch(()=>({}));
   if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
-  return js; // { text, lang }
+  return js;
 }
 
-/* simple language-name normalizer for “translate to <X>” */
 function normalizeLangName(s) {
   const x = String(s || "").trim().toLowerCase();
   const map = {
@@ -184,11 +152,12 @@ export default function OracleVoice({ path = "Universal" }) {
 
   const canvasRef      = useRef(null);
   const recRef         = useRef({ stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 });
-  const finalRef       = useRef("");
+  const liveTextRef    = useRef("");
   const audioRef       = useRef(null);
   const lastDetectedLangRef = useRef("en-US");
   const listeningRef   = useRef(listening);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
+  const recogRef       = useRef(null);
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -196,6 +165,41 @@ export default function OracleVoice({ path = "Universal" }) {
     path === "Muslim"    ? "Imam"   :
     path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
+
+  const startWebSpeech = (langHint) => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    try { recogRef.current?.stop(); } catch {}
+    
+    let lastTranscript = "";
+    const recog = new SR();
+    recog.lang = toBCP47(langHint || navigator.language || "en-US");
+    recog.continuous = true;
+    recog.interimResults = true;
+    recog.maxAlternatives = 1;
+    
+    recog.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; ++i) {
+        if (e.results[i].isFinal) {
+          lastTranscript = appendSegment(lastTranscript, e.results[i][0].transcript);
+        } else {
+          interim += e.results[i][0].transcript;
+        }
+      }
+      liveTextRef.current = appendSegment(lastTranscript, interim);
+      setLiveText(liveTextRef.current);
+    };
+
+    recog.onend = () => {
+      if (listeningRef.current) {
+        try { recog.start(); } catch {}
+      }
+    };
+
+    try { recog.start(); } catch {}
+    recogRef.current = recog;
+  }
 
   useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
 
@@ -219,9 +223,13 @@ export default function OracleVoice({ path = "Universal" }) {
 
   async function onStart() {
     setReply(""); setLiveText("");
-    finalRef.current = "";
+    liveTextRef.current = "";
     setCitations([]); setSources([]); setShowSrc(false); setShowCites(false);
     setStatus(""); setListening(true);
+
+    if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+      startWebSpeech(lastDetectedLangRef.current);
+    }
 
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
@@ -240,52 +248,42 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 500; // How often to send a preview
-      const SLICE_MS = 400; // How often to slice audio
+      const CHUNK_MS = 800;
+      const SLICE_MS = 700;
 
-      // ** UPDATED LOGIC **
       rec.ondataavailable = async (e) => {
-        if (e.data && e.data.size) {
+        if (e.data?.size) {
           chunks.push(e.data);
           const now = Date.now();
-      
           if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
             lastChunkSent = now;
             try {
-              // Send the CUMULATIVE audio recorded so far
-              const cumulativeBlob = new Blob(chunks, { type: mime || "audio/webm" });
-              const preview = await sttUpload(cumulativeBlob, mime || "audio/webm");
-      
-              // Intelligently append only what is newly recognized
-              if (preview?.text) {
-                const freshText = diffTail(finalRef.current, preview.text);
-                if (freshText) {
-                  finalRef.current = appendSegment(finalRef.current, freshText);
-                  setLiveText(finalRef.current);
+              const preview = await sttUpload(e.data, mime || "audio/webm");
+              if (preview?.lang) {
+                const detectedLang = preview.lang;
+                if (lastDetectedLangRef.current !== detectedLang) {
+                  lastDetectedLangRef.current = detectedLang;
+                  if (recogRef.current && toBCP47(detectedLang) !== recogRef.current.lang) {
+                    startWebSpeech(detectedLang);
+                  }
                 }
               }
-      
-              if (preview?.lang) {
-                lastDetectedLangRef.current = preview.lang;
-              }
-            } catch {
-              // Ignore preview errors; the final pass on Stop will still run.
-            }
+            } catch {}
           }
         }
       };
-
+      
       rec.onstart = () => setStatus("Recording…");
       rec.onerror = () => setStatus("Recorder error.");
       rec.onstop = () => {
         try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-        try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
+        try { recRef.current.ctx?.close(); } catch {}
         cancelAnimationFrame(recRef.current.anim || 0);
       };
       rec.start(SLICE_MS);
 
       const data = new Uint8Array(analyser.frequencyBinCount);
-      const c = canvasRef.current?.getContext?.("2d");
+      const c = canvasRef.current?.getContext("2d");
       const draw = () => {
         if (!c) return;
         analyser.getByteFrequencyData(data);
@@ -311,12 +309,16 @@ export default function OracleVoice({ path = "Universal" }) {
     setListening(false);
     setStatus("Stopping…");
 
+    try { recogRef.current?.stop(); } catch {}
+    recogRef.current = null;
+
     const r = recRef.current.rec;
-    try { r && r.state !== "inactive" && r.stop(); } catch {}
+    try { r?.stop(); } catch {}
     await new Promise(res => setTimeout(res, 200));
     try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-    try { recRef.current.ctx && recRef.current.ctx.close(); } catch {}
+    try { recRef.current.ctx?.close(); } catch {}
     cancelAnimationFrame(recRef.current.anim || 0);
+    
     const { chunks, mime } = recRef.current;
     recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
 
@@ -326,15 +328,19 @@ export default function OracleVoice({ path = "Universal" }) {
     try {
       const blob = new Blob(chunks, { type: mime || "audio/webm" });
       const { text, lang } = await sttUpload(blob, mime || "audio/webm");
+      
       if (text) {
-        finalRef.current = text;
-        setLiveText(finalRef.current);
+        liveTextRef.current = text;
+        setLiveText(text);
       }
-      if (lang) lastDetectedLangRef.current = lang;
+      if (lang) {
+        lastDetectedLangRef.current = lang;
+      }
       setStatus("Ready.");
-      const m = /^\s*(translate|translation)\s+(it|this|answer|message)?\s*to\s+([A-Za-z\u00C0-\u024F\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u4E00-\u9FFF]+)\s*[\.\?!]*$/i.exec(text);
+      
+      const m = /^\s*(translate|translation)\s*.*to\s+([A-Za-z\u00C0-\u024F\u0400-\u04FF\u0590-\u05FF\u0600-\u06FF\u4E00-\u9FFF]+)/i.exec(text);
       if (m && reply) {
-        const targetName = normalizeLangName(m[3]);
+        const targetName = normalizeLangName(m[2]);
         if (targetName) await doTranslate(targetName);
       }
     } catch (e) {
@@ -398,7 +404,6 @@ export default function OracleVoice({ path = "Universal" }) {
       const isEnglish = /^en\b/i.test(spokeLang);
 
       if (isEnglish && window?.speechSynthesis) {
-        // Try browser voice first for EN
         const v = pickVoice(spokeLang);
         if (v) {
           try { window.speechSynthesis.cancel(); } catch {}
@@ -410,13 +415,12 @@ export default function OracleVoice({ path = "Universal" }) {
           try {
             window.speechSynthesis.speak(u);
           } catch {
-            await speakOutServer(msg); // fallback
+            await speakOutServer(msg);
           }
         } else {
           await speakOutServer(msg);
         }
       } else {
-        // For Hebrew/Arabic/other languages: always use server TTS
         await speakOutServer(msg);
       }
     } finally {
@@ -502,7 +506,7 @@ export default function OracleVoice({ path = "Universal" }) {
               ) : (
                 <button className="btn stop" onClick={onStop}>⏹ Stop</button>
               )}
-              <button className="btn ghost" onClick={()=>sendForAnswer(liveText)} disabled={replying || !liveText}>
+              <button className="btn ghost" onClick={()=>sendForAnswer(liveTextRef.current)} disabled={replying || !liveText}>
                 {replying ? "Thinking…" : "Get Answer ⟶"}
               </button>
               {speaking && (
