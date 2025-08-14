@@ -78,13 +78,30 @@ function appendSegment(existing, seg) {
   return (A + " " + B).replace(/\s+/g, " ").trim();
 }
 
+// Map to full BCP-47 for recognizer / TTS
+function toBCP47(tag = "en-US") {
+  const t = String(tag || "").toLowerCase();
+  if (t.startsWith("he")) return "he-IL";
+  if (t.startsWith("ar")) return "ar-SA";
+  if (t.startsWith("de")) return "de-DE";
+  if (t.startsWith("fr")) return "fr-FR";
+  if (t.startsWith("es")) return "es-ES";
+  if (t.startsWith("ru")) return "ru-RU";
+  if (t.startsWith("zh")) return "zh-CN";
+  if (t.startsWith("ja")) return "ja-JP";
+  if (t.startsWith("hi")) return "hi-IN";
+  if (t.startsWith("th")) return "th-TH";
+  return "en-US";
+}
+
 function pickVoice(lang) {
   try {
     const voices = window.speechSynthesis?.getVoices?.() || [];
     if (!voices.length) return null;
+    const full = toBCP47(lang);
     return (
-      voices.find(v => v.lang === lang) ||
-      voices.find(v => v.lang?.startsWith((lang || "").split("-")[0])) ||
+      voices.find(v => v.lang === full) ||
+      voices.find(v => v.lang?.startsWith(full.split("-")[0])) ||
       voices[0]
     );
   } catch { return null; }
@@ -147,10 +164,9 @@ export default function OracleVoice({ path = "Universal" }) {
   const lastDetectedLangRef = useRef("en-US");
   const listeningRef   = useRef(listening);
   useEffect(() => { listeningRef.current = listening; }, [listening]);
-
-  // NEW: manage a single in‑flight preview so chunks don’t “stack up”
   const previewCtlRef  = useRef(null);
   const previewBusyRef = useRef(false);
+  const recogRef       = useRef(null); // Web Speech recognizer
 
   const persona = useMemo(() => (
     path === "Jewish"    ? "Rabbi"  :
@@ -158,6 +174,34 @@ export default function OracleVoice({ path = "Universal" }) {
     path === "Muslim"    ? "Imam"   :
     path === "Eastern"   ? "Monk"   : "Sage"
   ), [path]);
+
+  const startWebSpeech = (langHint) => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    try { recogRef.current && recogRef.current.stop(); } catch {}
+    const recog = new SR();
+    recog.lang = toBCP47(langHint || navigator.language || "en-US");
+    recog.continuous = true;
+    recog.interimResults = true;
+    recog.maxAlternatives = 1;
+    recog.onresult = (e) => {
+      let seg = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        seg += e.results[i][0]?.transcript || "";
+      }
+      if (seg) {
+        finalRef.current = appendSegment(finalRef.current, seg);
+        setLiveText(finalRef.current);
+      }
+    };
+    recog.onend = () => {
+      if (listeningRef.current) {
+        try { recog.start(); } catch {}
+      }
+    };
+    try { recog.start(); } catch {}
+    recogRef.current = recog;
+  }
 
   useEffect(() => { audioRef.current = new Audio(); audioRef.current.preload = "auto"; }, []);
 
@@ -180,11 +224,14 @@ export default function OracleVoice({ path = "Universal" }) {
   }, []);
 
   async function onStart() {
-    // fresh turn each time
     setReply(""); setLiveText("");
     finalRef.current = "";
     setCitations([]); setSources([]); setShowSrc(false); setShowCites(false);
     setStatus(""); setListening(true);
+
+    if (typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition)) {
+      startWebSpeech(lastDetectedLangRef.current || navigator.language || "en-US");
+    }
 
     if (!isSecure()) { setListening(false); setStatus("Microphone requires HTTPS (or localhost)."); return; }
     if (!hasRecorder() || !navigator.mediaDevices?.getUserMedia) {
@@ -203,38 +250,43 @@ export default function OracleVoice({ path = "Universal" }) {
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
       let lastChunkSent = 0;
-      const CHUNK_MS = 300;            // ↓ faster previews
-      const SLICE_MS = 250;            // recorder slice interval
+      const CHUNK_MS = 300;
+      const SLICE_MS = 250;
 
       rec.ondataavailable = async (e) => {
         if (e.data && e.data.size) {
           chunks.push(e.data);
           const now = Date.now();
 
-          // throttle & live preview with abort of previous request
           if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
             lastChunkSent = now;
             try {
-              // abort previous preview if still running
               if (previewCtlRef.current) {
                 try { previewCtlRef.current.abort(); } catch {}
               }
               const ctl = new AbortController();
               previewCtlRef.current = ctl;
 
-              // mark busy; only one in flight
               if (previewBusyRef.current) return;
               previewBusyRef.current = true;
 
               const preview = await sttUpload(e.data, mime || "audio/webm", ctl.signal);
               previewBusyRef.current = false;
 
-              finalRef.current = appendSegment(finalRef.current, preview?.text || "");
-              setLiveText(finalRef.current);
-              if (preview?.lang) lastDetectedLangRef.current = preview.lang;
+              if (preview?.text) {
+                 finalRef.current = appendSegment(finalRef.current, preview.text);
+                 setLiveText(finalRef.current);
+              }
+              if (preview?.lang) {
+                lastDetectedLangRef.current = preview.lang;
+                const want = toBCP47(preview.lang);
+                const cur = recogRef.current?.lang;
+                if (recogRef.current && want && want !== cur) {
+                  startWebSpeech(want);
+                }
+              }
             } catch {
               previewBusyRef.current = false;
-              // ignore preview errors; final pass still runs on Stop
             }
           }
         }
@@ -275,7 +327,9 @@ export default function OracleVoice({ path = "Universal" }) {
     setListening(false);
     setStatus("Stopping…");
 
-    // abort any in‑flight preview request so it doesn’t finish late
+    try { recogRef.current && recogRef.current.stop(); } catch {}
+    recogRef.current = null;
+
     if (previewCtlRef.current) {
       try { previewCtlRef.current.abort(); } catch {}
       previewCtlRef.current = null;
@@ -369,7 +423,8 @@ export default function OracleVoice({ path = "Universal" }) {
       if (v && window?.speechSynthesis) {
         try { window.speechSynthesis.cancel(); } catch {}
         const u = new SpeechSynthesisUtterance(msg);
-        u.voice = v; u.lang = lastDetectedLangRef.current || "en-US";
+        u.voice = v;
+        u.lang = toBCP47(lastDetectedLangRef.current || "en-US");
         u.volume = Math.max(0, Math.min(1, Number(volume) || 1));
         u.onend = () => setSpeaking(false);
         setSpeaking(true);
