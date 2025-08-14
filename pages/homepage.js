@@ -46,10 +46,18 @@ export async function getServerSideProps(ctx) {
 
 function FaithIcon({ faith }) {
   if (faith === "Muslim") {
-    // Crescent
+    // Crescent (with evenodd fillRule to ensure correct rendering)
     return (
-      <svg className="faith-icon gold" viewBox="0 0 64 64" aria-label="Muslim Crescent">
-        <path d="M39.5 6a22.5 22.5 0 1 0 0 52a20 20 0 1 1 0-52z" />
+      <svg
+        className="faith-icon gold"
+        viewBox="0 0 64 64"
+        aria-label="Muslim Crescent"
+      >
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M39.5 6a22.5 22.5 0 1 0 0 52a20 20 0 1 1 0-52z"
+        />
       </svg>
     );
   }
