@@ -1,5 +1,6 @@
 // FILE: /pages/homepage.js
 import { useEffect, useState } from "react";
+import Head from "next/head";
 import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
@@ -18,12 +19,18 @@ function setCookie(name, value, maxAgeDays = 365) {
 }
 function normalizeFaith(s) {
   switch (String(s || "").toLowerCase()) {
-    case "muslim": return "Muslim";
-    case "christian": return "Christian";
-    case "jewish": return "Jewish";
-    case "eastern": return "Eastern";
-    case "universal": return "Universal";
-    default: return null;
+    case "muslim":
+      return "Muslim";
+    case "christian":
+      return "Christian";
+    case "jewish":
+      return "Jewish";
+    case "eastern":
+      return "Eastern";
+    case "universal":
+      return "Universal";
+    default:
+      return null;
   }
 }
 
@@ -31,10 +38,10 @@ function normalizeFaith(s) {
 export async function getServerSideProps(ctx) {
   const { req, res, query } = ctx;
 
-  const qFaith      = normalizeFaith(query?.faith);
+  const qFaith = normalizeFaith(query?.faith);
   const headerFaith = normalizeFaith(req.headers["x-faith"]);
   const cookieFaith = normalizeFaith(req.cookies?.faith);
-  const envFaith    = normalizeFaith(process.env.FAITH_OVERRIDE);
+  const envFaith = normalizeFaith(process.env.FAITH_OVERRIDE);
 
   const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
 
@@ -43,9 +50,14 @@ export async function getServerSideProps(ctx) {
     const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
     res.setHeader(
       "Set-Cookie",
-      `faith=${encodeURIComponent(qFaith)}; Max-Age=${oneYear}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`
+      `faith=${encodeURIComponent(
+        qFaith
+      )}; Max-Age=${oneYear}; Path=/; SameSite=Lax${
+        isHttps ? "; Secure" : ""
+      }`
     );
   }
+
   return { props: { faith } };
 }
 
@@ -105,24 +117,75 @@ export default function HomePage({ faith }) {
       if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
     const update = () => {
-      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
+      const has = (n) =>
+        typeof document !== "undefined" && document.cookie.includes(`${n}=`);
       const isDevBypass =
         typeof window !== "undefined" &&
-        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" || has("ac_dev") || window.location.hostname === "localhost"));
-      const isRegistered = has("ac_registered") || has("ac_session") ||
-        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+          has("ac_dev") ||
+          window.location.hostname === "localhost");
+      const isRegistered =
+        has("ac_registered") ||
+        has("ac_session") ||
+        (typeof localStorage !== "undefined" &&
+          localStorage.getItem("ac_registered") === "1");
       setUnlocked(Boolean(isRegistered || isDevBypass));
     };
     update();
     const t = setTimeout(update, 80);
     window.addEventListener?.("storage", update);
-    return () => { clearTimeout(t); window.removeEventListener?.("storage", update); };
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
   }, []);
 
   const locked = !unlocked;
 
+  const siteUrl =
+    typeof window !== "undefined"
+      ? window.location.origin
+      : process.env.NEXT_PUBLIC_SITE_URL || "https://totaliora.com";
+
   return (
     <div className="page">
+      <Head>
+        <title>Total-iora Voice – Spiritual Guidance & Sacred Notes</title>
+        <meta
+          name="description"
+          content="Faith-aware voice and text guidance (Imam, Priest, Rabbi, Monk) with beautiful atmospheres—Mosque, Church, Synagogue, Temple—plus a private Sacred Notes space."
+        />
+        <meta
+          name="keywords"
+          content="Total-iora, spiritual guidance, oracle, imam, priest, rabbi, mosque, church, synagogue, temple, sacred notes, meditation, faith AI"
+        />
+        <link rel="canonical" href={`${siteUrl}/homepage`} />
+        <meta property="og:title" content="Total-iora Voice" />
+        <meta
+          property="og:description"
+          content="Speak privately with a guide aligned to your tradition. Choose your atmosphere: Beach, Nature, Library, Sun Rays, or your sacred place."
+        />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={`${siteUrl}/homepage`} />
+        <script
+          type="application/ld+json"
+          // SiteNavigationElement helps crawlers understand sections
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              url: siteUrl,
+              name: "Total-iora Voice",
+              potentialAction: {
+                "@type": "SearchAction",
+                target: `${siteUrl}/homepage?query={search_term_string}`,
+                "query-input": "required name=search_term_string",
+              },
+            }),
+          }}
+        />
+      </Head>
+
       {/* Top nav button is always readable */}
       <nav className="topnav">
         <Link href="/register" legacyBehavior>
@@ -132,7 +195,7 @@ export default function HomePage({ faith }) {
 
       <section className="hero">
         {/* Smaller logo card */}
-        <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
+        <img src="/TotalIora_Logo.png" alt="Total-iora Logo" className="logo" />
 
         {/* Atmosphere (faith-filtered) right under the logo */}
         <div className="hero-atmo">
@@ -161,15 +224,26 @@ export default function HomePage({ faith }) {
             <header className="h">
               <div className="pill">Sacred Notes</div>
               <h3>Leave a private note • Light a candle</h3>
-              <p>Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.<strong> Nothing is stored or kept.</strong></p>
+              <p>
+                Your quiet place. Write, cry, pray, whisper. Light a candle. We
+                don’t read or judge.<strong> Nothing is stored or kept.</strong>
+              </p>
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Open</Link>
+                <Link href="/login" className="btn accent" aria-disabled="true">
+                  Log in to Open
+                </Link>
               ) : (
-                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+                <Link href="/sacred-space" className="btn accent">
+                  Open Sacred Notes
+                </Link>
               )}
-              <div className="disc">This is your space. Do whatever you like on this page. We have no responsibility for anything you write, and nothing is saved on our servers.</div>
+              <div className="disc">
+                This is your space. Do whatever you like on this page. We have
+                no responsibility for anything you write, and nothing is saved
+                on our servers.
+              </div>
             </footer>
           </article>
 
@@ -177,15 +251,24 @@ export default function HomePage({ faith }) {
             <header className="h">
               <div className="pill">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
-              <p>Ask questions by typing or voice and get grounded answers. Download your write-up when it’s ready.</p>
+              <p>
+                Ask questions by typing or voice and get grounded answers.
+                Download your write-up when it’s ready.
+              </p>
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Get Yours</Link>
+                <Link href="/login" className="btn accent" aria-disabled="true">
+                  Log in to Get Yours
+                </Link>
               ) : (
-                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+                <Link href="/oracle-universe-dna" className="btn accent">
+                  Get Your Oracle Universe DNA
+                </Link>
               )}
-              <div className="disc">Spiritual guidance only. No medical, legal, or financial advice.</div>
+              <div className="disc">
+                Spiritual guidance only. No medical, legal, or financial advice.
+              </div>
             </footer>
           </article>
         </div>
@@ -193,15 +276,22 @@ export default function HomePage({ faith }) {
 
       {unlocked ? (
         <>
-          {faith === "Universal" ? <HeritageSelector path={path} onChange={setPath} /> : null}
+          {faith === "Universal" ? (
+            <HeritageSelector path={path} onChange={setPath} />
+          ) : null}
           <OracleVoice path={path} />
         </>
       ) : (
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Log in (or register free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
-            <Link href="/login" className="btn accent">Log in</Link>
+            <p>
+              Log in (or register free) to start a private, one-to-one voice
+              conversation with a guide aligned to your tradition.
+            </p>
+            <Link href="/login" className="btn accent">
+              Log in
+            </Link>
           </div>
         </section>
       )}
@@ -213,129 +303,266 @@ export default function HomePage({ faith }) {
 
       {/* ------------------------------- styles ------------------------------- */}
       <style jsx>{`
-        .page { min-height:100vh; background:transparent; }
-        .topnav { display:flex; justify-content:center; padding:14px; z-index:3; }
-        .nav-btn, .nav-btn:link, .nav-btn:visited {
-          -webkit-appearance:none; appearance:none;
-          display:inline-block; padding:10px 18px; border-radius:9999px;
-          border:0; font-weight:800; font-size:14px; color:#fff;
-          text-decoration:none !important;
-          background:linear-gradient(135deg,#7c3aed,#14b8a6);
-          box-shadow:0 8px 20px rgba(2,6,23,.18);
+        .page {
+          min-height: 100vh;
+          background: transparent;
         }
-        .nav-btn:hover { transform:translateY(-1px); box-shadow:0 12px 26px rgba(2,6,23,.24); }
+        .topnav {
+          display: flex;
+          justify-content: center;
+          padding: 14px;
+          z-index: 3;
+        }
+        .nav-btn,
+        .nav-btn:link,
+        .nav-btn:visited {
+          -webkit-appearance: none;
+          appearance: none;
+          display: inline-block;
+          padding: 10px 18px;
+          border-radius: 9999px;
+          border: 0;
+          font-weight: 800;
+          font-size: 14px;
+          color: #fff;
+          text-decoration: none !important;
+          background: linear-gradient(135deg, #7c3aed, #14b8a6);
+          box-shadow: 0 8px 20px rgba(2, 6, 23, 0.18);
+        }
+        .nav-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 26px rgba(2, 6, 23, 0.24);
+        }
 
-        .hero { text-align:center; padding-top:8px; }
-        .logo { width:108px; margin:0 auto; display:block; border-radius:14px; box-shadow:0 8px 24px rgba(2,6,23,.15); }
-        .hero-atmo { margin:10px 0 6px; }
+        .hero {
+          text-align: center;
+          padding-top: 8px;
+        }
+        .logo {
+          width: 108px;
+          margin: 0 auto;
+          display: block;
+          border-radius: 14px;
+          box-shadow: 0 8px 24px rgba(2, 6, 23, 0.15);
+        }
+        .hero-atmo {
+          margin: 10px 0 6px;
+        }
 
         .note {
-          display:inline-block; margin:10px auto 0; padding:10px 14px;
-          background:#fff; border:1px solid rgba(15,23,42,.12); border-radius:12px;
-          box-shadow:0 8px 20px rgba(2,6,23,.08); color:#334155; max-width:820px;
+          display: inline-block;
+          margin: 10px auto 0;
+          padding: 10px 14px;
+          background: #fff;
+          border: 1px solid rgba(15, 23, 42, 0.12);
+          border-radius: 12px;
+          box-shadow: 0 8px 20px rgba(2, 6, 23, 0.08);
+          color: #334155;
+          max-width: 820px;
         }
 
-        .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
-        .grid { display:grid; gap:14px; grid-template-columns:1fr; }
-        @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
-        .card { background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); padding:18px; }
-        .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
-        h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
-        p { color:#475569; }
-        .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
-        .disc { color:#64748b; font-size:.92rem; }
-        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
-        .gatecard { text-align:center; }
-
-        .footer-card{
-          max-width:1100px; margin:14px auto 24px; padding:12px 16px;
-          background:rgba(255,255,255,0.96); border:1px solid rgba(15,23,42,.12);
-          border-radius:14px; box-shadow:0 8px 22px rgba(2,6,23,.12); backdrop-filter:blur(2px);
-          color:#0f172a; text-align:center;
+        .tiles {
+          max-width: 1100px;
+          margin: 10px auto 6px;
+          padding: 0 16px;
         }
-        .footer-card :global(a){ color:#0f172a; text-decoration:underline; }
-        .footer-card :global(a:hover){ color:#0b1220; }
+        .grid {
+          display: grid;
+          gap: 14px;
+          grid-template-columns: 1fr;
+        }
+        @media (min-width: 900px) {
+          .grid {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+        .card {
+          background: #fff;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 20px;
+          box-shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+          padding: 18px;
+        }
+        .pill {
+          display: inline-block;
+          padding: 6px 10px;
+          border: 1px solid #e2e8f0;
+          border-radius: 999px;
+          background: #fff;
+          color: #334155;
+          font-weight: 700;
+        }
+        h3 {
+          margin: 8px 0 4px;
+          font-size: 1.25rem;
+          font-weight: 800;
+          color: #0f172a;
+        }
+        p {
+          color: #475569;
+        }
+        .f {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .btn {
+          display: inline-block;
+          padding: 10px 16px;
+          border-radius: 14px;
+          font-weight: 800;
+          border: 1px solid rgba(15, 23, 42, 0.12);
+          background: #fff;
+        }
+        .btn.accent {
+          color: #fff;
+          background: linear-gradient(135deg, #7c3aed, #14b8a6);
+          border: none;
+        }
+        .disc {
+          color: #64748b;
+          font-size: 0.92rem;
+        }
+        .gate {
+          max-width: 1100px;
+          margin: 12px auto 20px;
+          padding: 0 16px;
+        }
+        .gatecard {
+          text-align: center;
+        }
+
+        .footer-card {
+          max-width: 1100px;
+          margin: 14px auto 24px;
+          padding: 12px 16px;
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(15, 23, 42, 0.12);
+          border-radius: 14px;
+          box-shadow: 0 8px 22px rgba(2, 6, 23, 0.12);
+          backdrop-filter: blur(2px);
+          color: #0f172a;
+          text-align: center;
+        }
+        .footer-card :global(a) {
+          color: #0f172a;
+          text-decoration: underline;
+        }
+        .footer-card :global(a:hover) {
+          color: #0b1220;
+        }
       `}</style>
 
       {/* Global-ish: faith icons + Atmosphere hard overrides (with data-key support) */}
       <style jsx global>{`
-        .faith-icon { width:48px; height:48px; margin:8px auto 0; display:block; }
-        .gold { fill: gold; filter: drop-shadow(0 0 2px gold); }
-        .blue { fill: #0057b8; filter: drop-shadow(0 0 2px #0057b8); }
-        .faith-icon.jewish { width:48px; height:48px; margin:8px auto 0; display:block; }
+        .faith-icon {
+          width: 48px;
+          height: 48px;
+          margin: 8px auto 0;
+          display: block;
+        }
+        .gold {
+          fill: gold;
+          filter: drop-shadow(0 0 2px gold);
+        }
+        .blue {
+          fill: #0057b8;
+          filter: drop-shadow(0 0 2px #0057b8);
+        }
+        .faith-icon.jewish {
+          width: 48px;
+          height: 48px;
+          margin: 8px auto 0;
+          display: block;
+        }
 
-        /* --- Atmosphere UI: large rounded trigger + colorful pills --- */
+        /* Atmosphere trigger: big rounded button */
         .hero-atmo .atmo-btn,
-        .hero-atmo button[aria-haspopup="listbox"]{
-          -webkit-appearance:none; appearance:none;
-          padding:14px 22px !important;
-          border-radius:9999px !important;
-          border:0 !important;
-          font-weight:800; font-size:16px;
-          color:#fff !important;
-          background:linear-gradient(135deg,#7c3aed,#14b8a6) !important;
-          box-shadow:0 8px 22px rgba(2,6,23,.22);
-          cursor:pointer;
+        .hero-atmo button[aria-haspopup="listbox"] {
+          -webkit-appearance: none;
+          appearance: none;
+          padding: 14px 22px !important;
+          border-radius: 9999px !important;
+          border: 0 !important;
+          font-weight: 800;
+          font-size: 16px;
+          color: #fff !important;
+          background: linear-gradient(135deg, #7c3aed, #14b8a6) !important;
+          box-shadow: 0 8px 22px rgba(2, 6, 23, 0.22);
+          cursor: pointer;
         }
         .hero-atmo .atmo-btn:hover,
-        .hero-atmo button[aria-haspopup="listbox"]:hover{
-          transform:translateY(-1px);
-          box-shadow:0 12px 28px rgba(2,6,23,.26);
+        .hero-atmo button[aria-haspopup="listbox"]:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 28px rgba(2, 6, 23, 0.26);
         }
 
-        .hero-atmo .atmo-menu{
-          display:flex !important;
-          flex-wrap:nowrap !important;
-          gap:14px !important;
-          justify-content:center;
-          max-width:96vw;
-          padding:8px 6px !important;
-          background:transparent !important;
-          overflow-x:auto; -webkit-overflow-scrolling:touch;
+        /* Options row + colorful pills */
+        .hero-atmo .atmo-menu {
+          display: flex !important;
+          flex-wrap: nowrap !important;
+          gap: 14px !important;
+          justify-content: center;
+          max-width: 96vw;
+          padding: 8px 6px !important;
+          background: transparent !important;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
         }
-
-        /* Base pill styling (covers old/new class names) */
         .hero-atmo .atmo-menu button,
         .hero-atmo .atmo-menu .atmo-opt,
-        .hero-atmo .atmo-menu .atmo-pill{
-          -webkit-appearance:none; appearance:none;
-          display:inline-flex; align-items:center; gap:10px;
-          padding:14px 18px !important;
-          border-radius:9999px !important;
-          border:0 !important;
-          font-weight:800; font-size:16px;
-          color:#fff !important; white-space:nowrap; cursor:pointer;
-          box-shadow:0 8px 20px rgba(2,6,23,.18);
+        .hero-atmo .atmo-menu .atmo-pill {
+          -webkit-appearance: none;
+          appearance: none;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 14px 18px !important;
+          border-radius: 9999px !important;
+          border: 0 !important;
+          font-weight: 800;
+          font-size: 16px;
+          color: #fff !important;
+          white-space: nowrap;
+          cursor: pointer;
+          box-shadow: 0 8px 20px rgba(2, 6, 23, 0.18);
         }
-
-        /* Precise coloring (uses data-key from component) */
-        .hero-atmo .atmo-menu [data-key="beach"]    { background:linear-gradient(135deg,#4f46e5,#14b8a6) !important; }
-        .hero-atmo .atmo-menu [data-key="nature"]   { background:linear-gradient(135deg,#22c55e,#a7f3d0) !important; color:#0b2e18 !important; }
-        .hero-atmo .atmo-menu [data-key="library"]  { background:linear-gradient(135deg,#3b82f6,#6366f1) !important; }
-        .hero-atmo .atmo-menu [data-key="sunrays"]  { background:linear-gradient(135deg,#f59e0b,#fde047) !important; color:#1f2937 !important; }
+        /* precise colors (thanks to data-key from component) */
+        .hero-atmo .atmo-menu [data-key="beach"] {
+          background: linear-gradient(135deg, #4f46e5, #14b8a6) !important;
+        }
+        .hero-atmo .atmo-menu [data-key="nature"] {
+          background: linear-gradient(135deg, #22c55e, #a7f3d0) !important;
+          color: #0b2e18 !important;
+        }
+        .hero-atmo .atmo-menu [data-key="library"] {
+          background: linear-gradient(135deg, #3b82f6, #6366f1) !important;
+        }
+        .hero-atmo .atmo-menu [data-key="sunrays"] {
+          background: linear-gradient(135deg, #f59e0b, #fde047) !important;
+          color: #1f2937 !important;
+        }
         .hero-atmo .atmo-menu [data-key="mosque"],
         .hero-atmo .atmo-menu [data-key="church"],
         .hero-atmo .atmo-menu [data-key="synagogue"],
-        .hero-atmo .atmo-menu [data-key="temple"]   { background:linear-gradient(135deg,#a855f7,#ec4899) !important; }
-
-        /* Fallback coloring if data-key isn't present (keeps current order) */
-        .hero-atmo .atmo-menu > *:nth-child(1){ background:linear-gradient(135deg,#4f46e5,#14b8a6) !important; }
-        .hero-atmo .atmo-menu > *:nth-child(2){ background:linear-gradient(135deg,#22c55e,#a7f3d0) !important; color:#0b2e18 !important; }
-        .hero-atmo .atmo-menu > *:nth-child(3){ background:linear-gradient(135deg,#3b82f6,#6366f1) !important; }
-        .hero-atmo .atmo-menu > *:nth-child(4){ background:linear-gradient(135deg,#f59e0b,#fde047) !important; color:#1f2937 !important; }
-        .hero-atmo .atmo-menu > *:last-child  { background:linear-gradient(135deg,#a855f7,#ec4899) !important; }
-
-        /* Selected state ring */
-        .hero-atmo .atmo-menu .sel{
-          box-shadow:0 0 0 3px rgba(255,255,255,.85), 0 12px 28px rgba(2,6,23,.28) !important;
-          transform:translateY(-1px);
+        .hero-atmo .atmo-menu [data-key="temple"] {
+          background: linear-gradient(135deg, #a855f7, #ec4899) !important;
+        }
+        .hero-atmo .atmo-menu .sel {
+          box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85),
+            0 12px 28px rgba(2, 6, 23, 0.28) !important;
+          transform: translateY(-1px);
         }
 
         /* Let the background photo show when Atmosphere is active */
-        html.atmo-active, html.atmo-active body { background:transparent !important; }
-        html.atmo-active .page { background:transparent !important; }
+        html.atmo-active,
+        html.atmo-active body {
+          background: transparent !important;
+        }
+        html.atmo-active .page {
+          background: transparent !important;
+        }
       `}</style>
     </div>
   );
