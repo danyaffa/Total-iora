@@ -304,7 +304,7 @@ This README itself is optimized (keywords in headings, structured sections), but
 ## Contact
 
 Team Total-iora
-Email: [support@your-domain.com](mailto:support@your-domain.com)
+Email: [support@your-domain.com](mailto:support@totaliora.com)
 Issues & feature requests: open a GitHub Issue in this repo.
 
 ---
