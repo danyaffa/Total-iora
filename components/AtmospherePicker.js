@@ -153,7 +153,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
                 key={opt.key}
                 role="option"
                 aria-selected={atmo === opt.key}
-                className={`atmo-pill ${atmo === opt.key ? "sel" : ""}`}
+                className={`atmo-pill atmo-opt ${atmo === opt.key ? "sel" : ""}`}
                 onClick={() => { setAtmo(opt.key); setOpen(false); }}
               >
                 <span className="ico">{opt.icon}</span>
@@ -169,7 +169,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
         .atmo-bg { position: fixed; inset: 0; z-index: -1; }
       `}</style>
 
-      {/* dynamic background + UI styles */}
+      {/* strong, defensive styles so globals can't override */}
       <style jsx>{`
         .atmo-bg {
           ${Object.entries(bgStyle).map(([k,v]) => `${camelToKebab(k)}:${v};`).join("")}
@@ -181,65 +181,68 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
           pointer-events:none;
         }
 
-        /* Bigger, round CTA like your accent buttons */
         .atmo-ctl.floating { position: fixed; right:16px; bottom:16px; z-index:1000; }
         .atmo-ctl.inline { position: relative; display:flex; justify-content:center; margin-top:8px; z-index:2; }
+
+        /* MAIN CTA */
         .atmo-btn {
-          padding:12px 18px;
-          border-radius:999px;
-          border:none;
-          font-weight:800;
-          font-size:15px;
-          color:#fff;
-          background: linear-gradient(135deg,#7c3aed,#14b8a6);
-          box-shadow:0 6px 18px rgba(2,6,23,.18);
-          cursor:pointer;
+          -webkit-appearance: none; appearance: none;
+          padding: 12px 20px !important;
+          border-radius: 9999px !important;
+          border: 0 !important;
+          font-weight: 800;
+          font-size: 15px;
+          color: #fff !important;
+          background: linear-gradient(135deg,#7c3aed,#14b8a6) !important;
+          box-shadow: 0 6px 18px rgba(2,6,23,.18);
+          cursor: pointer;
         }
         .atmo-btn:hover { transform: translateY(-1px); box-shadow:0 10px 24px rgba(2,6,23,.22); }
 
-        /* Separate, rounded pills in one long line (wraps if needed) */
+        /* MENU: one long row, pills separated; scrolls horizontally on small screens */
         .atmo-menu {
           position:absolute;
           ${mode === "inline" ? "top:56px; left:50%; transform:translateX(-50%);" : "bottom:56px; right:0;"}
           display:flex;
-          flex-wrap:wrap;
-          gap:12px;
+          flex-wrap: nowrap;              /* keep in one row */
+          gap: 12px;
           justify-content:center;
-          max-width:96vw;
-          padding:6px 4px;
+          max-width: 96vw;
+          padding: 6px 4px;
           background: transparent;
+          overflow-x: auto;               /* allow horizontal scroll if needed */
+          -webkit-overflow-scrolling: touch;
         }
-        .atmo-pill {
-          display:inline-flex;
-          align-items:center;
-          gap:10px;
-          padding:12px 16px;
-          border-radius:999px;
-          border:1px solid rgba(15,23,42,.18);
-          background:#ffffff;
-          color:#0f172a;
-          font-weight:800;
-          font-size:15px;
-          box-shadow:0 6px 16px rgba(2,6,23,.15);
-          cursor:pointer;
-          white-space:nowrap;
+
+        /* OPTION PILLS — also target .atmo-opt to catch older markup */
+        .atmo-pill, .atmo-opt {
+          -webkit-appearance: none; appearance: none;
+          display:inline-flex; align-items:center; gap:10px;
+          padding:12px 16px !important;
+          border-radius: 9999px !important;
+          border: 0 !important;
+          background: #ffffff !important;
+          color: #0f172a !important;
+          font-weight: 800;
+          font-size: 15px;
+          box-shadow: 0 6px 16px rgba(2,6,23,.15);
+          cursor: pointer;
+          white-space: nowrap;
         }
-        .atmo-pill.sel {
-          color:#fff;
-          border-color:transparent;
-          background: linear-gradient(135deg,#7c3aed,#14b8a6);
+        .atmo-pill.sel, .atmo-opt.sel {
+          color:#fff !important;
+          background: linear-gradient(135deg,#7c3aed,#14b8a6) !important;
           box-shadow:0 8px 20px rgba(2,6,23,.22);
         }
-        .atmo-pill:hover { transform: translateY(-1px); }
         .ico { width:20px; text-align:center; }
         .lbl { font-size:15px; }
         @media (max-width:480px){
-          .atmo-btn{ font-size:14px; padding:10px 16px; }
-          .atmo-pill{ font-size:14px; padding:10px 14px; }
+          .atmo-btn{ font-size:14px; padding:10px 18px !important; }
+          .atmo-pill, .atmo-opt{ font-size:14px; padding:10px 14px !important; }
         }
       `}</style>
 
-      {/* global override to let the photo show through */}
+      {/* global override so the full photo shows through */}
       <style jsx global>{`
         html.atmo-active body { background: transparent !important; }
         html.atmo-active .page { background: transparent !important; }
