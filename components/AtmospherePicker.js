@@ -1,7 +1,7 @@
 // FILE: /components/AtmospherePicker.js
 import { useEffect, useMemo, useState } from "react";
 
-/* ---------------- cookie helpers ---------------- */
+/* cookies */
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
@@ -16,63 +16,62 @@ function getCookie(name) {
     ?.split("=")[1] || "";
 }
 
-/* ---------------- base options ---------------- */
+/* option catalog */
 const ALL_OPTIONS = [
-  { key: "minimal",   label: "Minimal",   icon: "🎛️" },
-  { key: "nature",    label: "Nature",    icon: "🌲" },
   { key: "beach",     label: "Beach",     icon: "🏖️" },
+  { key: "nature",    label: "Nature",    icon: "🌲" },
   { key: "library",   label: "Library",   icon: "📚" },
+  { key: "sunrays",   label: "Sun Rays",  icon: "🌤️" },
   { key: "church",    label: "Church",    icon: "⛪" },
   { key: "synagogue", label: "Synagogue", icon: "✡️" },
   { key: "mosque",    label: "Mosque",    icon: "🕌" },
   { key: "temple",    label: "Temple",    icon: "🛕" },
 ];
 
-/* 
-  Backgrounds: use a photo if present at /public/atmo/<key>.jpg
-  and fall back to a tasteful gradient. This produces a TRUE page background.
-*/
+/* photo map (photos preferred; graceful CSS fallback if missing) */
 const BG_MAP = {
-  minimal:   { photo: "/atmo/minimal.jpg",   gradient: "linear-gradient(135deg, #0f172a, #111827)" },
-  nature:    { photo: "/atmo/nature.jpg",    gradient: "linear-gradient(135deg, rgba(6,78,59,.7), rgba(15,118,110,.7))" },
-  beach:     { photo: "/atmo/beach.jpg",     gradient: "linear-gradient(135deg, rgba(2,132,199,.65), rgba(253,224,71,.55))" },
-  library:   { photo: "/atmo/library.jpg",   gradient: "linear-gradient(135deg, rgba(68,64,60,.75), rgba(120,113,108,.6))" },
-  church:    { photo: "/atmo/church.jpg",    gradient: "linear-gradient(135deg, rgba(100,116,139,.7), rgba(30,27,75,.7))" },
-  synagogue: { photo: "/atmo/synagogue.jpg", gradient: "linear-gradient(135deg, rgba(37,99,235,.65), rgba(147,197,253,.55))" },
-  mosque:    { photo: "/atmo/mosque.jpg",    gradient: "linear-gradient(135deg, rgba(16,185,129,.65), rgba(34,197,94,.55))" },
-  temple:    { photo: "/atmo/temple.jpg",    gradient: "linear-gradient(135deg, rgba(217,119,6,.6), rgba(244,63,94,.55))" },
+  beach:     { photo: "/atmo/beach.jpg",            gradient: "linear-gradient(135deg,#9bd7ff,#ffe9a3)" },
+  nature:    { photo: "/atmo/nature.jpg",           gradient: "linear-gradient(135deg,#6fbf8f,#a7d8b7)" },
+  library:   { photo: "/atmo/library.jpg",          gradient: "linear-gradient(135deg,#7b6f67,#b9b2ad)" },
+  sunrays:   { photo: "/atmo/sunrays.jpg",          gradient: "radial-gradient(circle at 15% 10%, rgba(255,255,200,.85), rgba(255,255,255,0) 40%), linear-gradient(#e2f3ff,#fff4d6)" },
+  church:    { photo: "/atmo/church-vatican.jpg",   gradient: "linear-gradient(135deg,#9fb0c7,#b3a9d8)" },
+  synagogue: { photo: "/atmo/synagogue-kotel.jpg",  gradient: "linear-gradient(135deg,#b9a079,#e8d2ae)" },
+  mosque:    { photo: "/atmo/mosque-mecca.jpg",     gradient: "linear-gradient(135deg,#8bd3b7,#bde5cf)" },
+  temple:    { photo: "/atmo/temple.jpg",           gradient: "linear-gradient(135deg,#dcb08a,#f2c7b5)" },
 };
 
-/* filter by faith */
+/* faith filter */
 function allowedKeysByFaith(faith) {
-  const neutral = ["minimal", "nature", "beach", "library"];
+  const neutral = ["beach", "nature", "library", "sunrays"];
   switch ((faith || "Universal").toLowerCase()) {
     case "muslim":    return [...neutral, "mosque"];
     case "christian": return [...neutral, "church"];
     case "jewish":    return [...neutral, "synagogue"];
     case "eastern":   return [...neutral, "temple"];
-    case "universal":
-    default:          return neutral; // no religious buildings in Universal
+    default:          return neutral;
   }
 }
 
 /**
  * Props:
- *  - mode: "inline" (button sits in flow) | "floating" (bottom-right). Default "floating".
+ *  - mode: "inline" | "floating"
  *  - faith: "Muslim" | "Christian" | "Jewish" | "Eastern" | "Universal"
  */
-export default function AtmospherePicker({ mode = "floating", faith = "Universal" }) {
+export default function AtmospherePicker({ mode = "inline", faith = "Universal" }) {
   const allowed = allowedKeysByFaith(faith);
   const OPTIONS = ALL_OPTIONS.filter(o => allowed.includes(o.key));
 
-  const initial = decodeURIComponent(getCookie("ac_atmo") || "") || OPTIONS[0]?.key || "minimal";
+  const cookieVal = decodeURIComponent(getCookie("ac_atmo") || "");
+  const initial = allowed.includes(cookieVal) ? cookieVal : (OPTIONS[0]?.key || "nature");
+
   const [open, setOpen] = useState(false);
-  const [atmo, setAtmo] = useState(allowed.includes(initial) ? initial : OPTIONS[0]?.key || "minimal");
+  const [atmo, setAtmo] = useState(initial);
+  const [photoReady, setPhotoReady] = useState({}); // key -> boolean
 
   /* remember choice */
   useEffect(() => { setCookie("ac_atmo", atmo); }, [atmo]);
 
-  /* make the underlying page truly transparent so the background shows FULL PAGE */
+  /* ensure page can show full background */
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
@@ -80,20 +79,34 @@ export default function AtmospherePicker({ mode = "floating", faith = "Universal
     return () => root.classList.remove("atmo-active");
   }, []);
 
-  /* prepare background layers */
+  /* preload images for allowed options; mark availability */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const updates = {};
+    allowed.forEach((k) => {
+      const url = BG_MAP[k]?.photo;
+      if (!url) return (updates[k] = false);
+      const img = new Image();
+      img.onload = () => setPhotoReady(prev => ({ ...prev, [k]: true }));
+      img.onerror = () => setPhotoReady(prev => ({ ...prev, [k]: false }));
+      img.src = url;
+    });
+  }, [faith]);
+
   const bgStyle = useMemo(() => {
-    const cfg = BG_MAP[atmo] || BG_MAP.minimal;
-    const photoLayer = `url("${cfg.photo}")`;
-    const layers = [photoLayer, cfg.gradient];
+    const cfg = BG_MAP[atmo] || {};
+    const usePhoto = photoReady[atmo] && cfg.photo;
+    const layers = [];
+    if (usePhoto) layers.push(`url("${cfg.photo}")`);
+    layers.push(cfg.gradient || "linear-gradient(#e6eef6,#f7f9fc)");
     return {
       backgroundImage: layers.join(", "),
-      backgroundSize: "cover, cover",
+      backgroundSize: usePhoto ? "cover, cover" : "cover",
       backgroundPosition: "center center, center center",
-      backgroundAttachment: "fixed, fixed"
+      backgroundAttachment: "fixed, fixed",
     };
-  }, [atmo]);
+  }, [atmo, photoReady]);
 
-  /* inline vs floating control container */
   const ctlClass = mode === "inline" ? "atmo-ctl inline" : "atmo-ctl floating";
 
   return (
@@ -101,7 +114,7 @@ export default function AtmospherePicker({ mode = "floating", faith = "Universal
       {/* full-screen background */}
       <div className="atmo-bg" aria-hidden="true" />
 
-      {/* control */}
+      {/* picker */}
       <div className={ctlClass}>
         <button
           className="atmo-btn"
@@ -131,92 +144,54 @@ export default function AtmospherePicker({ mode = "floating", faith = "Universal
         )}
       </div>
 
-      {/* local styles */}
+      {/* local/dynamic styles */}
       <style jsx>{`
-        .atmo-bg {
-          position: fixed;
-          inset: 0;
-          z-index: -1;
-        }
+        .atmo-bg { position: fixed; inset: 0; z-index: -1; }
       `}</style>
-
-      {/* dynamic background injection */}
       <style jsx>{`
         .atmo-bg {
-          ${Object.entries(bgStyle).map(([k, v]) => `${camelToKebab(k)}:${v};`).join("")}
+          ${Object.entries(bgStyle).map(([k,v]) => `${camelToKebab(k)}:${v};`).join("")}
         }
         .atmo-bg::after {
-          content: "";
-          position: absolute;
-          inset: 0;
+          content:"";
+          position:absolute; inset:0;
           background:
-            radial-gradient(circle at 20% 10%, rgba(0,0,0,.35), transparent 40%),
-            radial-gradient(circle at 80% 90%, rgba(0,0,0,.35), transparent 45%),
-            linear-gradient(rgba(0,0,0,.18), rgba(0,0,0,.18));
-          pointer-events: none;
+            linear-gradient(rgba(0,0,0,.10), rgba(0,0,0,.10)); /* subtle for readability */
+          pointer-events:none;
         }
 
-        .atmo-ctl.floating {
-          position: fixed;
-          right: 16px;
-          bottom: 16px;
-          z-index: 1000;
-        }
-        .atmo-ctl.inline {
-          position: relative;
-          display: flex;
-          justify-content: center;
-          margin-top: 6px;
-          z-index: 2;
-        }
+        .atmo-ctl.floating { position: fixed; right:16px; bottom:16px; z-index:1000; }
+        .atmo-ctl.inline { position: relative; display:flex; justify-content:center; margin-top:6px; z-index:2; }
+
         .atmo-btn {
-          padding: 10px 14px;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,.25);
+          padding:10px 14px; border-radius:999px;
+          border:1px solid rgba(255,255,255,.25);
           background: rgba(0,0,0,.55);
           backdrop-filter: blur(6px);
-          color: #fff;
-          font-size: 14px;
-          cursor: pointer;
+          color:#fff; font-size:14px; cursor:pointer;
         }
         .atmo-btn:hover { background: rgba(0,0,0,.7); }
 
         .atmo-menu {
-          position: absolute;
-          ${mode === "inline" ? "top: 44px; left: 50%; transform: translateX(-50%);" : "bottom: 48px; right: 0;"}
-          width: 240px;
-          max-height: 60vh;
-          overflow: auto;
-          padding: 8px;
-          border-radius: 14px;
-          background: rgba(0,0,0,.72);
-          backdrop-filter: blur(10px);
-          box-shadow: 0 10px 30px rgba(0,0,0,.45);
+          position:absolute;
+          ${mode === "inline" ? "top:44px; left:50%; transform:translateX(-50%);" : "bottom:48px; right:0;"}
+          width:260px; max-height:60vh; overflow:auto; padding:8px;
+          border-radius:14px; background:rgba(0,0,0,.72);
+          backdrop-filter: blur(10px); box-shadow:0 10px 30px rgba(0,0,0,.45);
         }
         .atmo-opt {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          width: 100%;
-          padding: 10px 12px;
-          margin: 4px 0;
-          border-radius: 10px;
-          border: 1px solid rgba(255,255,255,.12);
-          background: rgba(255,255,255,.05);
-          color: #fff;
-          cursor: pointer;
-          text-align: left;
+          display:flex; align-items:center; gap:10px; width:100%;
+          padding:10px 12px; margin:4px 0; border-radius:10px;
+          border:1px solid rgba(255,255,255,.12);
+          background:rgba(255,255,255,.05); color:#fff; cursor:pointer; text-align:left;
         }
-        .atmo-opt.sel { border-color: rgba(255,255,255,.35); background: rgba(255,255,255,.12); }
-        .ico { width: 22px; text-align: center; }
-        .lbl { flex: 1; font-size: 14px; }
-        @media (max-width: 480px) {
-          .atmo-btn { font-size: 13px; padding: 8px 12px; }
-          .atmo-menu { width: 200px; }
-        }
+        .atmo-opt.sel { border-color:rgba(255,255,255,.35); background:rgba(255,255,255,.12); }
+        .ico { width:22px; text-align:center; }
+        .lbl { flex:1; font-size:14px; }
+        @media (max-width:480px){ .atmo-btn{font-size:13px;padding:8px 12px;} .atmo-menu{width:220px;} }
       `}</style>
 
-      {/* global overrides to ensure FULL-PAGE background is visible */}
+      {/* global: ensure the page itself is transparent so the photo is visible */}
       <style jsx global>{`
         html.atmo-active body { background: transparent !important; }
         html.atmo-active .page { background: transparent !important; }
@@ -226,6 +201,4 @@ export default function AtmospherePicker({ mode = "floating", faith = "Universal
 }
 
 /* utils */
-function camelToKebab(s) {
-  return s.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
-}
+function camelToKebab(s){ return s.replace(/[A-Z]/g, m => "-"+m.toLowerCase()); }
