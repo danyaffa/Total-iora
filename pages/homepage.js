@@ -4,6 +4,7 @@ import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
+import AtmospherePicker from "../components/AtmospherePicker"; // NEW
 
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
@@ -175,6 +176,8 @@ export default function HomePage({ faith }) {
           </div>
         </section>
       )}
+
+      <AtmospherePicker /> {/* NEW: floating atmosphere chooser (background + button) */}
 
       <Footer />
 
