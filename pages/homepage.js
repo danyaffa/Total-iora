@@ -6,31 +6,43 @@ import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 import AtmospherePicker from "../components/AtmospherePicker";
 
+/* ------------------------------- utilities ------------------------------- */
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
-  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+  const isHttps =
+    typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(
+    value
+  )}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 
 function normalizeFaith(s) {
   switch (String(s || "").toLowerCase()) {
-    case "muslim": return "Muslim";
-    case "christian": return "Christian";
-    case "jewish": return "Jewish";
-    case "eastern": return "Eastern";
-    case "universal": return "Universal";
-    default: return null;
+    case "muslim":
+      return "Muslim";
+    case "christian":
+      return "Christian";
+    case "jewish":
+      return "Jewish";
+    case "eastern":
+      return "Eastern";
+    case "universal":
+      return "Universal";
+    default:
+      return null;
   }
 }
 
+/* --------------------------- server-side props --------------------------- */
 export async function getServerSideProps(ctx) {
   const { req, res, query } = ctx;
 
-  const qFaith      = normalizeFaith(query?.faith);
+  const qFaith = normalizeFaith(query?.faith);
   const headerFaith = normalizeFaith(req.headers["x-faith"]);
   const cookieFaith = normalizeFaith(req.cookies?.faith);
-  const envFaith    = normalizeFaith(process.env.FAITH_OVERRIDE);
+  const envFaith = normalizeFaith(process.env.FAITH_OVERRIDE);
+
   const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
 
   if (qFaith && qFaith !== cookieFaith) {
@@ -38,13 +50,18 @@ export async function getServerSideProps(ctx) {
     const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
     res.setHeader(
       "Set-Cookie",
-      `faith=${encodeURIComponent(qFaith)}; Max-Age=${oneYear}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`
+      `faith=${encodeURIComponent(
+        qFaith
+      )}; Max-Age=${oneYear}; Path=/; SameSite=Lax${
+        isHttps ? "; Secure" : ""
+      }`
     );
   }
 
   return { props: { faith } };
 }
 
+/* --------------------------------- icons --------------------------------- */
 function FaithIcon({ faith }) {
   if (faith === "Muslim") {
     return (
@@ -70,6 +87,7 @@ function FaithIcon({ faith }) {
   return null;
 }
 
+/* --------------------------------- page ---------------------------------- */
 export default function HomePage({ faith }) {
   const [path, setPath] = useState(faith);
   const [unlocked, setUnlocked] = useState(false);
@@ -80,44 +98,63 @@ export default function HomePage({ faith }) {
       if (usp.get("dev") === "on") setCookie("ac_dev", "1", 30);
     }
     const update = () => {
-      const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
-      const isDevBypass = (typeof window !== "undefined" &&
-        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" || has("ac_dev") || window.location.hostname === "localhost"));
-      const isRegistered = has("ac_registered") || has("ac_session") ||
-        (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
+      const has = (n) =>
+        typeof document !== "undefined" && document.cookie.includes(`${n}=`);
+      const isDevBypass =
+        typeof window !== "undefined" &&
+        (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" ||
+          has("ac_dev") ||
+          window.location.hostname === "localhost");
+      const isRegistered =
+        has("ac_registered") ||
+        has("ac_session") ||
+        (typeof localStorage !== "undefined" &&
+          localStorage.getItem("ac_registered") === "1");
       setUnlocked(Boolean(isRegistered || isDevBypass));
     };
     update();
     const t = setTimeout(update, 80);
     window.addEventListener?.("storage", update);
-    return () => { clearTimeout(t); window.removeEventListener?.("storage", update); };
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener?.("storage", update);
+    };
   }, []);
 
   const locked = !unlocked;
 
   return (
     <div className="page">
+      {/* Top nav: always readable rounded pill */}
       <nav className="topnav">
-        <Link href="/register" className="btn cta">Register — Free Access</Link>
+        <Link href="/register" legacyBehavior>
+          <a className="nav-btn">Register — Free Access</a>
+        </Link>
       </nav>
 
       <section className="hero">
+        {/* Smaller logo card */}
         <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
+
+        {/* Atmosphere picker (faith-filtered) right under the logo */}
         <div className="hero-atmo">
           <AtmospherePicker mode="inline" faith={path || faith} />
         </div>
 
         <FaithIcon faith={faith} />
+
+        {/* Readable white note card */}
         <p className="note">
-          Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your spiritual heritage,
-          or start with Sacred Notes.
+          Advanced Voice is now <strong>Total-Iora Voice</strong>. Choose your
+          spiritual heritage, or start with Sacred Notes.
         </p>
       </section>
 
       {locked && (
         <div className="previewBanner" role="status">
-          You’re viewing a read-only preview. <Link href="/login">Log in</Link> or{" "}
-          <Link href="/register">Register</Link> to use the interactive features.
+          You’re viewing a read-only preview. <Link href="/login">Log in</Link>{" "}
+          or <Link href="/register">Register</Link> to use the interactive
+          features.
         </div>
       )}
 
@@ -127,15 +164,26 @@ export default function HomePage({ faith }) {
             <header className="h">
               <div className="pill">Sacred Notes</div>
               <h3>Leave a private note • Light a candle</h3>
-              <p>Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or judge.<strong> Nothing is stored or kept.</strong></p>
+              <p>
+                Your quiet place. Write, cry, pray, whisper. Light a candle. We
+                don’t read or judge.<strong> Nothing is stored or kept.</strong>
+              </p>
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Open</Link>
+                <Link href="/login" className="btn accent" aria-disabled="true">
+                  Log in to Open
+                </Link>
               ) : (
-                <Link href="/sacred-space" className="btn accent">Open Sacred Notes</Link>
+                <Link href="/sacred-space" className="btn accent">
+                  Open Sacred Notes
+                </Link>
               )}
-              <div className="disc">This is your space. Do whatever you like on this page. We have no responsibility for anything you write, and nothing is saved on our servers.</div>
+              <div className="disc">
+                This is your space. Do whatever you like on this page. We have
+                no responsibility for anything you write, and nothing is saved
+                on our servers.
+              </div>
             </footer>
           </article>
 
@@ -143,15 +191,24 @@ export default function HomePage({ faith }) {
             <header className="h">
               <div className="pill">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
-              <p>Ask questions by typing or voice and get grounded answers. Download your write-up when it’s ready.</p>
+              <p>
+                Ask questions by typing or voice and get grounded answers.
+                Download your write-up when it’s ready.
+              </p>
             </header>
             <footer className="f">
               {locked ? (
-                <Link href="/login" className="btn accent" aria-disabled="true">Log in to Get Yours</Link>
+                <Link href="/login" className="btn accent" aria-disabled="true">
+                  Log in to Get Yours
+                </Link>
               ) : (
-                <Link href="/oracle-universe-dna" className="btn accent">Get Your Oracle Universe DNA</Link>
+                <Link href="/oracle-universe-dna" className="btn accent">
+                  Get Your Oracle Universe DNA
+                </Link>
               )}
-              <div className="disc">Spiritual guidance only. No medical, legal, or financial advice.</div>
+              <div className="disc">
+                Spiritual guidance only. No medical, legal, or financial advice.
+              </div>
             </footer>
           </article>
         </div>
@@ -159,60 +216,210 @@ export default function HomePage({ faith }) {
 
       {unlocked ? (
         <>
-          {faith === "Universal" ? <HeritageSelector path={path} onChange={setPath} /> : null}
+          {faith === "Universal" ? (
+            <HeritageSelector path={path} onChange={setPath} />
+          ) : null}
           <OracleVoice path={path} />
         </>
       ) : (
         <section className="gate">
           <div className="card gatecard">
             <h3>Speak to the Oracle</h3>
-            <p>Log in (or register free) to start a private, one-to-one voice conversation with a guide aligned to your tradition.</p>
-            <Link href="/login" className="btn accent">Log in</Link>
+            <p>
+              Log in (or register free) to start a private, one-to-one voice
+              conversation with a guide aligned to your tradition.
+            </p>
+            <Link href="/login" className="btn accent">
+              Log in
+            </Link>
           </div>
         </section>
       )}
 
-      <Footer />
+      {/* White rounded footer card for readability on photo backgrounds */}
+      <div className="footer-card">
+        <Footer />
+      </div>
 
+      {/* ------------------------------- styles ------------------------------- */}
       <style jsx>{`
-        .page { min-height:100vh; background:transparent; }
-        .topnav { display:flex; justify-content:center; padding:14px; }
-        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
-        .hero { text-align:center; padding-top:8px; }
-        /* smaller logo with softer card feel */
-        .logo { width:108px; margin:0 auto; display:block; border-radius:14px; box-shadow:0 8px 24px rgba(2,6,23,.15); }
-        .hero-atmo { margin:10px 0 6px; }
-        /* white framed note for readability */
+        .page {
+          min-height: 100vh;
+          background: transparent; /* Atmosphere shows through */
+        }
+
+        /* Top nav button: rounded, readable on any background */
+        .topnav {
+          display: flex;
+          justify-content: center;
+          padding: 14px;
+          z-index: 3;
+        }
+        .nav-btn,
+        .nav-btn:link,
+        .nav-btn:visited {
+          -webkit-appearance: none;
+          appearance: none;
+          display: inline-block;
+          padding: 10px 18px;
+          border-radius: 9999px;
+          border: 0;
+          font-weight: 800;
+          font-size: 14px;
+          color: #fff;
+          text-decoration: none !important;
+          background: linear-gradient(135deg, #7c3aed, #14b8a6);
+          box-shadow: 0 8px 20px rgba(2, 6, 23, 0.18);
+        }
+        .nav-btn:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 26px rgba(2, 6, 23, 0.24);
+        }
+        .nav-btn:focus-visible {
+          outline: 2px solid rgba(124, 58, 237, 0.6);
+          outline-offset: 2px;
+          border-radius: 9999px;
+        }
+
+        .hero {
+          text-align: center;
+          padding-top: 8px;
+        }
+        /* smaller logo with soft card feel */
+        .logo {
+          width: 108px;
+          margin: 0 auto;
+          display: block;
+          border-radius: 14px;
+          box-shadow: 0 8px 24px rgba(2, 6, 23, 0.15);
+        }
+        .hero-atmo {
+          margin: 10px 0 6px;
+        }
+
+        /* white framed note under the cross */
         .note {
           display: inline-block;
           margin: 10px auto 0;
           padding: 10px 14px;
           background: #fff;
-          border: 1px solid rgba(15,23,42,.12);
+          border: 1px solid rgba(15, 23, 42, 0.12);
           border-radius: 12px;
-          box-shadow: 0 8px 20px rgba(2,6,23,.08);
+          box-shadow: 0 8px 20px rgba(2, 6, 23, 0.08);
           color: #334155;
+          max-width: 820px;
         }
 
-        .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
-        .grid { display:grid; gap:14px; grid-template-columns:1fr; }
-        @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
-        .card { background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); padding:18px; }
-        .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
-        h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
-        p { color:#475569; }
-        .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-        .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
-        .disc { color:#64748b; font-size:.92rem; }
-        .gate { max-width:1100px; margin:12px auto 20px; padding:0 16px; }
-        .gatecard { text-align:center; }
+        .tiles {
+          max-width: 1100px;
+          margin: 10px auto 6px;
+          padding: 0 16px;
+        }
+        .grid {
+          display: grid;
+          gap: 14px;
+          grid-template-columns: 1fr;
+        }
+        @media (min-width: 900px) {
+          .grid {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+        .card {
+          background: #fff;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 20px;
+          box-shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+          padding: 18px;
+        }
+        .pill {
+          display: inline-block;
+          padding: 6px 10px;
+          border: 1px solid #e2e8f0;
+          border-radius: 999px;
+          background: #fff;
+          color: #334155;
+          font-weight: 700;
+        }
+        h3 {
+          margin: 8px 0 4px;
+          font-size: 1.25rem;
+          font-weight: 800;
+          color: #0f172a;
+        }
+        p {
+          color: #475569;
+        }
+        .f {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 8px;
+        }
+        .btn {
+          display: inline-block;
+          padding: 10px 16px;
+          border-radius: 14px;
+          font-weight: 800;
+          border: 1px solid rgba(15, 23, 42, 0.12);
+          background: #fff;
+        }
+        .btn.accent {
+          color: #fff;
+          background: linear-gradient(135deg, #7c3aed, #14b8a6);
+          border: none;
+        }
+        .disc {
+          color: #64748b;
+          font-size: 0.92rem;
+        }
+        .gate {
+          max-width: 1100px;
+          margin: 12px auto 20px;
+          padding: 0 16px;
+        }
+        .gatecard {
+          text-align: center;
+        }
+
+        /* footer readability over photos */
+        .footer-card {
+          max-width: 1100px;
+          margin: 14px auto 24px;
+          padding: 12px 16px;
+          background: rgba(255, 255, 255, 0.96);
+          border: 1px solid rgba(15, 23, 42, 0.12);
+          border-radius: 14px;
+          box-shadow: 0 8px 22px rgba(2, 6, 23, 0.12);
+          backdrop-filter: blur(2px);
+          color: #0f172a;
+          text-align: center;
+        }
+        .footer-card :global(a) {
+          color: #0f172a;
+          text-decoration: underline;
+        }
+        .footer-card :global(a:hover) {
+          color: #0b1220;
+        }
       `}</style>
 
+      {/* faith icon colors (global-ish) */}
       <style jsx global>{`
-        .faith-icon { width:48px; height:48px; margin:8px auto 0; display:block; }
-        .gold { fill: gold; filter: drop-shadow(0 0 2px gold); }
-        .blue { fill: #0057b8; filter: drop-shadow(0 0 2px #0057b8); }
+        .faith-icon {
+          width: 48px;
+          height: 48px;
+          margin: 8px auto 0;
+          display: block;
+        }
+        .gold {
+          fill: gold;
+          filter: drop-shadow(0 0 2px gold);
+        }
+        .blue {
+          fill: #0057b8;
+          filter: drop-shadow(0 0 2px #0057b8);
+        }
       `}</style>
     </div>
   );
