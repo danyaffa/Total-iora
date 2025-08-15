@@ -169,7 +169,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
         .atmo-bg { position: fixed; inset: 0; z-index: -1; }
       `}</style>
 
-      {/* dynamic background */}
+      {/* dynamic background + UI styles */}
       <style jsx>{`
         .atmo-bg {
           ${Object.entries(bgStyle).map(([k,v]) => `${camelToKebab(k)}:${v};`).join("")}
@@ -181,7 +181,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
           pointer-events:none;
         }
 
-        /* --- NEW: larger round CTA like other homepage buttons --- */
+        /* Bigger, round CTA like your accent buttons */
         .atmo-ctl.floating { position: fixed; right:16px; bottom:16px; z-index:1000; }
         .atmo-ctl.inline { position: relative; display:flex; justify-content:center; margin-top:8px; z-index:2; }
         .atmo-btn {
@@ -191,43 +191,51 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
           font-weight:800;
           font-size:15px;
           color:#fff;
-          background: linear-gradient(135deg,#7c3aed,#14b8a6); /* match .btn.accent */
+          background: linear-gradient(135deg,#7c3aed,#14b8a6);
           box-shadow:0 6px 18px rgba(2,6,23,.18);
           cursor:pointer;
         }
         .atmo-btn:hover { transform: translateY(-1px); box-shadow:0 10px 24px rgba(2,6,23,.22); }
 
-        /* --- NEW: pill menu layout --- */
+        /* Separate, rounded pills in one long line (wraps if needed) */
         .atmo-menu {
           position:absolute;
-          ${mode === "inline" ? "top:54px; left:50%; transform:translateX(-50%);" : "bottom:56px; right:0;"}
-          display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
-          max-width:92vw;
-          background: transparent; /* no dark panel behind */
+          ${mode === "inline" ? "top:56px; left:50%; transform:translateX(-50%);" : "bottom:56px; right:0;"}
+          display:flex;
+          flex-wrap:wrap;
+          gap:12px;
+          justify-content:center;
+          max-width:96vw;
           padding:6px 4px;
+          background: transparent;
         }
         .atmo-pill {
-          display:inline-flex; align-items:center; gap:10px;
-          padding:10px 14px;
-          border:none;
+          display:inline-flex;
+          align-items:center;
+          gap:10px;
+          padding:12px 16px;
           border-radius:999px;
+          border:1px solid rgba(15,23,42,.18);
+          background:#ffffff;
+          color:#0f172a;
           font-weight:800;
-          font-size:14px;
-          color:#fff;
-          background: linear-gradient(135deg,#6366f1,#14b8a6);
-          box-shadow:0 6px 16px rgba(2,6,23,.18);
+          font-size:15px;
+          box-shadow:0 6px 16px rgba(2,6,23,.15);
           cursor:pointer;
           white-space:nowrap;
         }
         .atmo-pill.sel {
+          color:#fff;
+          border-color:transparent;
           background: linear-gradient(135deg,#7c3aed,#14b8a6);
+          box-shadow:0 8px 20px rgba(2,6,23,.22);
         }
-        .atmo-pill:hover { transform: translateY(-1px); box-shadow:0 10px 22px rgba(2,6,23,.22); }
+        .atmo-pill:hover { transform: translateY(-1px); }
         .ico { width:20px; text-align:center; }
-        .lbl { font-size:14px; }
+        .lbl { font-size:15px; }
         @media (max-width:480px){
           .atmo-btn{ font-size:14px; padding:10px 16px; }
-          .atmo-pill{ font-size:13px; padding:9px 12px; }
+          .atmo-pill{ font-size:14px; padding:10px 14px; }
         }
       `}</style>
 
