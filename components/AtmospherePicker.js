@@ -28,7 +28,7 @@ const ALL_OPTIONS = [
   { key: "nature", label: "Nature", icon: "🌲" },
   { key: "library", label: "Library", icon: "📚" },
   { key: "sunrays", label: "Sun Rays", icon: "🌤️" },
-  // Faith-specific last (only one will be shown per faith)
+  // Faith-specific last (only one shown per faith)
   { key: "church", label: "Church", icon: "⛪" },
   { key: "synagogue", label: "Synagogue", icon: "✡️" },
   { key: "mosque", label: "Mosque", icon: "🕌" },
@@ -176,7 +176,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
             {OPTIONS.map((opt) => (
               <button
                 key={opt.key}
-                data-key={opt.key}                 {/* ← TWEAK: precise CSS hooks */}
+                data-key={opt.key}
                 role="option"
                 aria-selected={atmo === opt.key}
                 className={`atmo-pill ${atmo === opt.key ? "sel" : ""}`}
@@ -193,7 +193,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
         )}
       </div>
 
-      {/* local styles (nice defaults; your homepage adds the colorful overrides) */}
+      {/* local styles (defaults; homepage adds colorful overrides) */}
       <style jsx>{`
         .atmo-bg { position: fixed; inset: 0; z-index: -1; }
       `}</style>
