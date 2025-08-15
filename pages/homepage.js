@@ -66,9 +66,28 @@ function FaithIcon({ faith }) {
     );
   }
   if (faith === "Jewish") {
+    // Blue Star of David (outline) on a white rounded square background
     return (
-      <svg className="faith-icon blue" viewBox="0 0 64 64" aria-label="Star of David">
-        <polygon points="32,6 40,20 56,20 44,32 50,48 32,40 14,48 20,32 8,20 24,20" />
+      <svg
+        className="faith-icon jewish"
+        viewBox="0 0 128 128"
+        aria-label="Star of David"
+      >
+        <rect x="0" y="0" width="128" height="128" rx="16" fill="#ffffff" />
+        <polygon
+          points="64,12 12,108 116,108"
+          fill="none"
+          stroke="#0037FF"
+          strokeWidth="18"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points="64,116 12,20 116,20"
+          fill="none"
+          stroke="#0037FF"
+          strokeWidth="18"
+          strokeLinejoin="round"
+        />
       </svg>
     );
   }
@@ -87,7 +106,8 @@ export default function HomePage({ faith }) {
     }
     const update = () => {
       const has = (n) => (typeof document !== "undefined" && document.cookie.includes(`${n}=`));
-      const isDevBypass = (typeof window !== "undefined" &&
+      const isDevBypass =
+        typeof window !== "undefined" &&
         (process.env.NEXT_PUBLIC_DEV_BYPASS === "1" || has("ac_dev") || window.location.hostname === "localhost"));
       const isRegistered = has("ac_registered") || has("ac_session") ||
         (typeof localStorage !== "undefined" && localStorage.getItem("ac_registered") === "1");
@@ -244,6 +264,7 @@ export default function HomePage({ faith }) {
         .faith-icon { width:48px; height:48px; margin:8px auto 0; display:block; }
         .gold { fill: gold; filter: drop-shadow(0 0 2px gold); }
         .blue { fill: #0057b8; filter: drop-shadow(0 0 2px #0057b8); }
+        .faith-icon.jewish { width:48px; height:48px; margin:8px auto 0; display:block; }
 
         /* --- Atmosphere UI: large rounded trigger + colorful pills --- */
         .hero-atmo .atmo-btn,
@@ -289,7 +310,7 @@ export default function HomePage({ faith }) {
           box-shadow:0 8px 20px rgba(2,6,23,.18);
         }
 
-        /* Preferred precise coloring (after you add data-key in the component) */
+        /* Precise coloring (uses data-key from component) */
         .hero-atmo .atmo-menu [data-key="beach"]    { background:linear-gradient(135deg,#4f46e5,#14b8a6) !important; }
         .hero-atmo .atmo-menu [data-key="nature"]   { background:linear-gradient(135deg,#22c55e,#a7f3d0) !important; color:#0b2e18 !important; }
         .hero-atmo .atmo-menu [data-key="library"]  { background:linear-gradient(135deg,#3b82f6,#6366f1) !important; }
@@ -299,20 +320,20 @@ export default function HomePage({ faith }) {
         .hero-atmo .atmo-menu [data-key="synagogue"],
         .hero-atmo .atmo-menu [data-key="temple"]   { background:linear-gradient(135deg,#a855f7,#ec4899) !important; }
 
-        /* Fallback coloring if data-key isn't present yet (keeps your current menu order) */
+        /* Fallback coloring if data-key isn't present (keeps current order) */
         .hero-atmo .atmo-menu > *:nth-child(1){ background:linear-gradient(135deg,#4f46e5,#14b8a6) !important; }
         .hero-atmo .atmo-menu > *:nth-child(2){ background:linear-gradient(135deg,#22c55e,#a7f3d0) !important; color:#0b2e18 !important; }
         .hero-atmo .atmo-menu > *:nth-child(3){ background:linear-gradient(135deg,#3b82f6,#6366f1) !important; }
         .hero-atmo .atmo-menu > *:nth-child(4){ background:linear-gradient(135deg,#f59e0b,#fde047) !important; color:#1f2937 !important; }
         .hero-atmo .atmo-menu > *:last-child  { background:linear-gradient(135deg,#a855f7,#ec4899) !important; }
 
-        /* Selected state = a touch brighter + ring */
+        /* Selected state ring */
         .hero-atmo .atmo-menu .sel{
           box-shadow:0 0 0 3px rgba(255,255,255,.85), 0 12px 28px rgba(2,6,23,.28) !important;
           transform:translateY(-1px);
         }
 
-        /* Let the background photo show site-wide when Atmosphere is active */
+        /* Let the background photo show when Atmosphere is active */
         html.atmo-active, html.atmo-active body { background:transparent !important; }
         html.atmo-active .page { background:transparent !important; }
       `}</style>
