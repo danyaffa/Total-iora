@@ -1,34 +1,41 @@
 // FILE: /components/AtmospherePicker.js
 import { useEffect, useMemo, useState } from "react";
 
-/* cookies */
+/* ------------------------------ cookie helpers ----------------------------- */
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
   const maxAge = maxAgeDays * 24 * 3600;
-  const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+  const isHttps =
+    typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(
+    value
+  )}; Max-Age=${maxAge}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`;
 }
 function getCookie(name) {
   if (typeof document === "undefined") return "";
-  return (document.cookie || "")
-    .split("; ")
-    .find((c) => c.startsWith(name + "="))
-    ?.split("=")[1] || "";
+  return (
+    (document.cookie || "")
+      .split("; ")
+      .find((c) => c.startsWith(name + "="))
+      ?.split("=")[1] || ""
+  );
 }
 
-/* option catalog */
+/* ---------------------------------- catalog -------------------------------- */
 const ALL_OPTIONS = [
-  { key: "beach",     label: "Beach",     icon: "🏖️" },
-  { key: "nature",    label: "Nature",    icon: "🌲" },
-  { key: "library",   label: "Library",   icon: "📚" },
-  { key: "sunrays",   label: "Sun Rays",  icon: "🌤️" },
-  { key: "church",    label: "Church",    icon: "⛪" },
+  // Neutral first (order matters for :nth-child fallback)
+  { key: "beach", label: "Beach", icon: "🏖️" },
+  { key: "nature", label: "Nature", icon: "🌲" },
+  { key: "library", label: "Library", icon: "📚" },
+  { key: "sunrays", label: "Sun Rays", icon: "🌤️" },
+  // Faith-specific last (only one will be shown per faith)
+  { key: "church", label: "Church", icon: "⛪" },
   { key: "synagogue", label: "Synagogue", icon: "✡️" },
-  { key: "mosque",    label: "Mosque",    icon: "🕌" },
-  { key: "temple",    label: "Temple",    icon: "🛕" },
+  { key: "mosque", label: "Mosque", icon: "🕌" },
+  { key: "temple", label: "Temple", icon: "🛕" },
 ];
 
-/* filenames to try (first existing wins) */
+/* Candidate filenames (first that loads will be used) */
 const PHOTO_CANDIDATES = {
   beach: ["/atmo/beach.jpg"],
   nature: ["/atmo/nature-meadow.jpg", "/atmo/nature.jpg"],
@@ -44,61 +51,76 @@ const PHOTO_CANDIDATES = {
   temple: ["/atmo/temple.jpg"],
 };
 
-/* soft fallbacks if photo missing */
+/* Soft fallback gradients (used until a photo is found) */
 const GRADIENTS = {
-  beach:     "linear-gradient(135deg,#9bd7ff,#ffe9a3)",
-  nature:    "linear-gradient(135deg,#a6e3b3,#e8f7cf)",
-  library:   "linear-gradient(135deg,#7b6f67,#b9b2ad)",
-  sunrays:   "radial-gradient(circle at 15% 10%, rgba(255,255,210,.85), rgba(255,255,255,0) 40%), linear-gradient(#e2f3ff,#fff4d6)",
-  church:    "linear-gradient(135deg,#9fb0c7,#b3a9d8)",
+  beach: "linear-gradient(135deg,#9bd7ff,#ffe9a3)",
+  nature: "linear-gradient(135deg,#a6e3b3,#e8f7cf)",
+  library: "linear-gradient(135deg,#7b6f67,#b9b2ad)",
+  sunrays:
+    "radial-gradient(circle at 15% 10%, rgba(255,255,210,.85), rgba(255,255,255,0) 40%), linear-gradient(#e2f3ff,#fff4d6)",
+  church: "linear-gradient(135deg,#9fb0c7,#b3a9d8)",
   synagogue: "linear-gradient(135deg,#b9a079,#e8d2ae)",
-  mosque:    "linear-gradient(135deg,#8bd3b7,#bde5cf)",
-  temple:    "linear-gradient(135deg,#dcb08a,#f2c7b5)",
+  mosque: "linear-gradient(135deg,#8bd3b7,#bde5cf)",
+  temple: "linear-gradient(135deg,#dcb08a,#f2c7b5)",
 };
 
+/* Which options to show for each faith */
 function allowedKeysByFaith(faith) {
   const neutral = ["beach", "nature", "library", "sunrays"];
   switch ((faith || "Universal").toLowerCase()) {
-    case "muslim":    return [...neutral, "mosque"];
-    case "christian": return [...neutral, "church"];
-    case "jewish":    return [...neutral, "synagogue"];
-    case "eastern":   return [...neutral, "temple"];
-    default:          return neutral;
+    case "muslim":
+      return [...neutral, "mosque"];
+    case "christian":
+      return [...neutral, "church"];
+    case "jewish":
+      return [...neutral, "synagogue"];
+    case "eastern":
+      return [...neutral, "temple"];
+    default:
+      return neutral;
   }
 }
 
+/* Try candidate photos in order; use the first that loads */
 function findFirstExistingPhoto(key, onFound) {
   const list = PHOTO_CANDIDATES[key] || [];
   let i = 0;
   const tryNext = () => {
     if (i >= list.length) return onFound(null);
-    const candidate = list[i++];
+    const url = list[i++];
     const img = new Image();
-    img.onload = () => onFound(candidate);
+    img.onload = () => onFound(url);
     img.onerror = tryNext;
-    img.src = candidate;
+    img.src = url;
   };
   tryNext();
 }
 
 /**
+ * AtmospherePicker
  * Props:
- *  - mode: "inline" | "floating"
- *  - faith: "Muslim" | "Christian" | "Jewish" | "Eastern" | "Universal"
+ *   - mode: "inline" | "floating"
+ *   - faith: "Muslim" | "Christian" | "Jewish" | "Eastern" | "Universal"
  */
 export default function AtmospherePicker({ mode = "inline", faith = "Universal" }) {
   const allowed = allowedKeysByFaith(faith);
-  const OPTIONS = ALL_OPTIONS.filter(o => allowed.includes(o.key));
+  const OPTIONS = ALL_OPTIONS.filter((o) => allowed.includes(o.key));
 
   const cookieVal = decodeURIComponent(getCookie("ac_atmo") || "");
-  const initial = allowed.includes(cookieVal) ? cookieVal : (OPTIONS[0]?.key || "nature");
+  const initial = allowed.includes(cookieVal)
+    ? cookieVal
+    : OPTIONS[0]?.key || "nature";
 
   const [open, setOpen] = useState(false);
   const [atmo, setAtmo] = useState(initial);
-  const [photoFor, setPhotoFor] = useState({});
+  const [photoFor, setPhotoFor] = useState({}); // key -> chosen photo URL or null
 
-  useEffect(() => { setCookie("ac_atmo", atmo); }, [atmo]);
+  /* remember choice */
+  useEffect(() => {
+    setCookie("ac_atmo", atmo);
+  }, [atmo]);
 
+  /* ensure page background can show */
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
@@ -106,10 +128,13 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
     return () => root.classList.remove("atmo-active");
   }, []);
 
+  /* resolve photos for allowed options */
   useEffect(() => {
     allowed.forEach((key) => {
       findFirstExistingPhoto(key, (url) =>
-        setPhotoFor((prev) => (prev[key] === url ? prev : { ...prev, [key]: url }))
+        setPhotoFor((prev) =>
+          prev[key] === url ? prev : { ...prev, [key]: url }
+        )
       );
     });
   }, [faith]);
@@ -131,14 +156,14 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
 
   return (
     <>
-      {/* full-screen bg */}
+      {/* full-screen background layer */}
       <div className="atmo-bg" aria-hidden="true" />
 
       {/* control */}
       <div className={ctlClass}>
         <button
           className="atmo-btn"
-          onClick={() => setOpen(v => !v)}
+          onClick={() => setOpen((v) => !v)}
           aria-haspopup="listbox"
           aria-expanded={open ? "true" : "false"}
           title="Choose atmosphere"
@@ -148,13 +173,17 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
 
         {open && (
           <div className="atmo-menu" role="listbox" tabIndex={-1}>
-            {OPTIONS.map(opt => (
+            {OPTIONS.map((opt) => (
               <button
                 key={opt.key}
+                data-key={opt.key}                 {/* ← TWEAK: precise CSS hooks */}
                 role="option"
                 aria-selected={atmo === opt.key}
-                className={`atmo-pill atmo-opt ${atmo === opt.key ? "sel" : ""}`}
-                onClick={() => { setAtmo(opt.key); setOpen(false); }}
+                className={`atmo-pill ${atmo === opt.key ? "sel" : ""}`}
+                onClick={() => {
+                  setAtmo(opt.key);
+                  setOpen(false);
+                }}
               >
                 <span className="ico">{opt.icon}</span>
                 <span className="lbl">{opt.label}</span>
@@ -164,85 +193,72 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
         )}
       </div>
 
-      {/* local styles */}
+      {/* local styles (nice defaults; your homepage adds the colorful overrides) */}
       <style jsx>{`
         .atmo-bg { position: fixed; inset: 0; z-index: -1; }
       `}</style>
-
-      {/* strong, defensive styles so globals can't override */}
       <style jsx>{`
         .atmo-bg {
-          ${Object.entries(bgStyle).map(([k,v]) => `${camelToKebab(k)}:${v};`).join("")}
+          ${Object.entries(bgStyle)
+            .map(([k, v]) => `${camelToKebab(k)}:${v};`)
+            .join("")}
         }
         .atmo-bg::after {
-          content:"";
-          position:absolute; inset:0;
+          content: "";
+          position: absolute; inset: 0;
           background: linear-gradient(rgba(0,0,0,.08), rgba(0,0,0,.08));
-          pointer-events:none;
+          pointer-events: none;
         }
 
-        .atmo-ctl.floating { position: fixed; right:16px; bottom:16px; z-index:1000; }
-        .atmo-ctl.inline { position: relative; display:flex; justify-content:center; margin-top:8px; z-index:2; }
+        .atmo-ctl.floating { position: fixed; right: 16px; bottom: 16px; z-index: 1000; }
+        .atmo-ctl.inline { position: relative; display: flex; justify-content: center; margin-top: 8px; z-index: 2; }
 
-        /* MAIN CTA */
         .atmo-btn {
           -webkit-appearance: none; appearance: none;
-          padding: 12px 20px !important;
-          border-radius: 9999px !important;
-          border: 0 !important;
+          padding: 10px 16px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.25);
+          background: rgba(0,0,0,.55);
+          color: #fff;
           font-weight: 800;
-          font-size: 15px;
-          color: #fff !important;
-          background: linear-gradient(135deg,#7c3aed,#14b8a6) !important;
-          box-shadow: 0 6px 18px rgba(2,6,23,.18);
           cursor: pointer;
+          backdrop-filter: blur(6px);
         }
-        .atmo-btn:hover { transform: translateY(-1px); box-shadow:0 10px 24px rgba(2,6,23,.22); }
+        .atmo-btn:hover { background: rgba(0,0,0,.7); }
 
-        /* MENU: one long row, pills separated; scrolls horizontally on small screens */
         .atmo-menu {
-          position:absolute;
-          ${mode === "inline" ? "top:56px; left:50%; transform:translateX(-50%);" : "bottom:56px; right:0;"}
-          display:flex;
-          flex-wrap: nowrap;              /* keep in one row */
-          gap: 12px;
-          justify-content:center;
-          max-width: 96vw;
-          padding: 6px 4px;
-          background: transparent;
-          overflow-x: auto;               /* allow horizontal scroll if needed */
-          -webkit-overflow-scrolling: touch;
+          position: absolute;
+          top: 52px; left: 50%; transform: translateX(-50%);
+          display: flex; flex-wrap: wrap; gap: 10px; justify-content: center;
+          max-width: 92vw; padding: 6px 4px; background: transparent;
         }
-
-        /* OPTION PILLS — also target .atmo-opt to catch older markup */
-        .atmo-pill, .atmo-opt {
+        .atmo-pill {
           -webkit-appearance: none; appearance: none;
-          display:inline-flex; align-items:center; gap:10px;
-          padding:12px 16px !important;
-          border-radius: 9999px !important;
-          border: 0 !important;
-          background: #ffffff !important;
-          color: #0f172a !important;
+          display: inline-flex; align-items: center; gap: 10px;
+          padding: 12px 16px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.12);
+          background: rgba(255,255,255,.9);
+          color: #0f172a;
           font-weight: 800;
-          font-size: 15px;
-          box-shadow: 0 6px 16px rgba(2,6,23,.15);
           cursor: pointer;
           white-space: nowrap;
+          box-shadow: 0 6px 16px rgba(2,6,23,.15);
         }
-        .atmo-pill.sel, .atmo-opt.sel {
-          color:#fff !important;
-          background: linear-gradient(135deg,#7c3aed,#14b8a6) !important;
-          box-shadow:0 8px 20px rgba(2,6,23,.22);
+        .atmo-pill.sel {
+          border-color: rgba(255,255,255,.35);
+          background: rgba(255,255,255,1);
         }
-        .ico { width:20px; text-align:center; }
-        .lbl { font-size:15px; }
-        @media (max-width:480px){
-          .atmo-btn{ font-size:14px; padding:10px 18px !important; }
-          .atmo-pill, .atmo-opt{ font-size:14px; padding:10px 14px !important; }
+        .ico { width: 20px; text-align: center; }
+        .lbl { font-size: 14px; }
+
+        @media (max-width: 480px) {
+          .atmo-menu { gap: 8px; }
+          .atmo-pill { padding: 10px 14px; font-size: 14px; }
         }
       `}</style>
 
-      {/* global override so the full photo shows through */}
+      {/* global: allow photo to show through the page */}
       <style jsx global>{`
         html.atmo-active body { background: transparent !important; }
         html.atmo-active .page { background: transparent !important; }
@@ -251,5 +267,7 @@ export default function AtmospherePicker({ mode = "inline", faith = "Universal" 
   );
 }
 
-/* utils */
-function camelToKebab(s){ return s.replace(/[A-Z]/g, m => "-" + m.toLowerCase()); }
+/* --------------------------------- utils ---------------------------------- */
+function camelToKebab(s) {
+  return s.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+}
