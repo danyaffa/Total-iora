@@ -4,7 +4,7 @@ import Link from "next/link";
 import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
-import AtmospherePicker from "../components/AtmospherePicker"; // uses photos
+import AtmospherePicker from "../components/AtmospherePicker";
 
 function setCookie(name, value, maxAgeDays = 365) {
   if (typeof document === "undefined") return;
@@ -26,29 +26,47 @@ function normalizeFaith(s) {
 
 export async function getServerSideProps(ctx) {
   const { req, res, query } = ctx;
+
   const qFaith      = normalizeFaith(query?.faith);
   const headerFaith = normalizeFaith(req.headers["x-faith"]);
   const cookieFaith = normalizeFaith(req.cookies?.faith);
   const envFaith    = normalizeFaith(process.env.FAITH_OVERRIDE);
+
   const faith = qFaith || headerFaith || cookieFaith || envFaith || "Universal";
 
   if (qFaith && qFaith !== cookieFaith) {
     const oneYear = 60 * 60 * 24 * 365;
     const isHttps = (req.headers["x-forwarded-proto"] || "").includes("https");
-    res.setHeader("Set-Cookie", `faith=${encodeURIComponent(qFaith)}; Max-Age=${oneYear}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`);
+    res.setHeader(
+      "Set-Cookie",
+      `faith=${encodeURIComponent(qFaith)}; Max-Age=${oneYear}; Path=/; SameSite=Lax${isHttps ? "; Secure" : ""}`
+    );
   }
+
   return { props: { faith } };
 }
 
 function FaithIcon({ faith }) {
   if (faith === "Muslim") {
-    return (<svg className="faith-icon gold" viewBox="0 0 52 52" aria-label="Muslim Crescent"><path d="M32 2 C18.7 2 8 12.7 8 26 C8 39.3 18.7 50 32 50 C33.7 50 35.4 49.8 37 49.5 C26.5 47.5 19 37.9 19 26 C19 14.1 26.5 4.5 37 2.5 C35.4 2.2 33.7 2 32 2Z" /></svg>);
+    return (
+      <svg className="faith-icon gold" viewBox="0 0 52 52" aria-label="Muslim Crescent">
+        <path d="M32 2 C18.7 2 8 12.7 8 26 C8 39.3 18.7 50 32 50 C33.7 50 35.4 49.8 37 49.5 C26.5 47.5 19 37.9 19 26 C19 14.1 26.5 4.5 37 2.5 C35.4 2.2 33.7 2 32 2Z" />
+      </svg>
+    );
   }
   if (faith === "Christian") {
-    return (<svg className="faith-icon gold" viewBox="0 0 64 64" aria-label="Christian Cross"><path d="M28 8h8v16h12v8H36v24h-8V32H16v-8h12z" /></svg>);
+    return (
+      <svg className="faith-icon gold" viewBox="0 0 64 64" aria-label="Christian Cross">
+        <path d="M28 8h8v16h12v8H36v24h-8V32H16v-8h12z" />
+      </svg>
+    );
   }
   if (faith === "Jewish") {
-    return (<svg className="faith-icon blue" viewBox="0 0 64 64" aria-label="Star of David"><polygon points="32,6 40,20 56,20 44,32 50,48 32,40 14,48 20,32 8,20 24,20" /></svg>);
+    return (
+      <svg className="faith-icon blue" viewBox="0 0 64 64" aria-label="Star of David">
+        <polygon points="32,6 40,20 56,20 44,32 50,48 32,40 14,48 20,32 8,20 24,20" />
+      </svg>
+    );
   }
   return null;
 }
@@ -86,7 +104,6 @@ export default function HomePage({ faith }) {
 
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="TotalIora Logo" className="logo" />
-        {/* Atmosphere button under logo */}
         <div className="hero-atmo">
           <AtmospherePicker mode="inline" faith={path || faith} />
         </div>
@@ -164,7 +181,8 @@ export default function HomePage({ faith }) {
         .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
         .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
         .hero { text-align:center; padding-top:8px; }
-        .logo { width:148px; margin:0 auto; display:block; }
+        /* SMALLER logo card */
+        .logo { width:112px; margin:0 auto; display:block; border-radius:10px; }
         .hero-atmo { margin:10px 0 2px; }
         .note { max-width:820px; margin:10px auto 0; color:#475569; padding:0 12px; }
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
