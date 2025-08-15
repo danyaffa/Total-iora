@@ -1,13 +1,35 @@
-.faith-icon {
-  width: 48px;
-  height: 48px;
-  margin-top: 8px;
+/* --- Atmosphere: let the background image show site-wide --- */
+html.atmo-active,
+html.atmo-active body { background: transparent !important; }
+html.atmo-active .page { background: transparent !important; }
+
+/* --- Shared CTA look (matches the big buttons) --- */
+:root {
+  --accent-from: #7c3aed;
+  --accent-to: #14b8a6;
 }
-.gold {
-  filter: drop-shadow(0 0 2px gold);
-  fill: gold;
+.btn-gradient,
+.btn.accent {
+  background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
+  color: #fff;
+  border: 0;
+  border-radius: 14px;
+  font-weight: 800;
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.18);
 }
-.blue {
-  filter: drop-shadow(0 0 2px #0057b8);
-  fill: #0057b8;
+.btn-gradient:hover,
+.btn.accent:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.22);
+}
+
+/* --- Optional: white note card readability anywhere --- */
+.note-card {
+  display: inline-block;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.08);
+  color: #334155;
 }
