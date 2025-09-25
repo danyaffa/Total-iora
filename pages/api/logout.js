@@ -1,21 +1,31 @@
 // FILE: /pages/api/logout.js
-import { serialize } from "cookie";
 
 export default function handler(req, res) {
-  const isProd = process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+  const isProd =
+    process.env.VERCEL_ENV === "production" ||
+    process.env.NODE_ENV === "production";
+
   const host = req.headers.host || "";
   const domain = host.endsWith("totaliora.com") ? ".totaliora.com" : undefined;
 
-  // Clear the cookie by setting its maxAge to 0
-  const cookie = serialize("ac_session", "", {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: "lax",
-    path: "/",
-    domain,
-    maxAge: 0,
-  });
+  // Add/adjust names if your app sets more cookies
+  const names = ["ac_session"]; // e.g., ["ac_session", "token", "refreshToken", "ac_dev"]
 
-  res.setHeader("Set-Cookie", cookie);
+  const attrs = [
+    "Path=/",
+    "SameSite=Lax",
+    "HttpOnly",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+  ];
+
+  if (isProd) attrs.push("Secure");
+  if (domain) attrs.push(`Domain=${domain}`);
+
+  const setCookies = names.map(
+    (n) => `${encodeURIComponent(n)}=; ${attrs.join("; ")}`
+  );
+
+  res.setHeader("Set-Cookie", setCookies);
   res.status(200).json({ ok: true });
 }
