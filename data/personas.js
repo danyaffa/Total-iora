@@ -1,22 +1,31 @@
 // FILE: /data/personas.js
-// Keep/merge your current data; below is a safe shape with both default + named exports.
 
+// Base list of paths
 export const PATHS = [
-  { id: "Muslim",    title: "Muslim"    },
+  { id: "Muslim",    title: "Muslim" },
   { id: "Christian", title: "Christian" },
-  { id: "Jewish",    title: "Jewish"    },
-  { id: "Eastern",   title: "Eastern"   },
+  { id: "Jewish",    title: "Jewish" },
+  { id: "Eastern",   title: "Eastern" },
   { id: "Universal", title: "Universal" },
 ];
 
-export const PERSONAS_LIST = PATHS.map(p => p.id);
+// Main personas array used by /guide/[id]
+export const PERSONAS = PATHS.map((p) => ({
+  id: p.id,
+  slug: p.id.toLowerCase(), // e.g. "muslim"
+  title: p.title,
+  blurb: `Guidance room for ${p.title}-aligned souls.`,
+}));
 
-// If you already have richer persona defs, merge them here:
-export const personas = PATHS.reduce((acc, p) => {
-  acc[p.id] = { id: p.id, title: p.title };
+// Simple ID list
+export const PERSONAS_LIST = PERSONAS.map((p) => p.id);
+
+// Object map by id
+export const personas = PERSONAS.reduce((acc, p) => {
+  acc[p.id] = p;
   return acc;
 }, {});
 
-// Default export (so `import PersonasModule from '../../data/personas'` also works)
-const PersonasModule = { PATHS, PERSONAS_LIST, personas };
+// Default export so `import PersonasModule from '../../data/personas'` also works
+const PersonasModule = { PATHS, PERSONAS, PERSONAS_LIST, personas };
 export default PersonasModule;
