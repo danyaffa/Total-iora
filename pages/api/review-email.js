@@ -1,6 +1,7 @@
 // FILE: /pages/api/review-email.js
-
-// Uses Firebase Admin + Resend to store / email 4★–5★ reviews.
+//
+// Clean, stable, production-safe review email handler
+// Sends email via Resend + stores in Firestore (server-side backup)
 
 import { Resend } from "resend";
 import { adminDb } from "../../utils/firebaseAdmin";
@@ -14,65 +15,78 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { rating, text, comment, email, appName } = req.body || {};
+    // Normalise incoming data
+    const {
+      rating = null,
+      text = "",
+      comment = "",
+      email = "",
+      appName = APP_NAME,
+    } = req.body || {};
 
-    const bodyText = ((text ?? comment) || "").toString();
-    if (!bodyText.trim()) {
+    // Use whichever text exists
+    const reviewText = (text || comment || "").toString().trim();
+
+    if (!reviewText) {
       return res.status(400).json({ error: "Missing review text" });
     }
 
-    const appLabel = appName || APP_NAME;
     const createdAt = new Date().toISOString();
-    let docId = null;
+    let firestoreId = null;
 
-    // Save to Firestore (server) – note: we already store via client for >=4★,
-    // but this is a safe backup; if adminDb not ready we skip.
-    if (!adminDb) {
-      console.warn("⚠ Firebase admin not initialised – skipping Firestore write.");
-    } else {
-      const docRef = await adminDb.collection("reviews").add({
-        rating: typeof rating === "number" ? rating : null,
-        text: bodyText,
-        email: email || "",
-        appName: appLabel,
-        createdAt,
-      });
-      docId = docRef.id;
+    // --- FIRESTORE WRITE ----------------------------------------------------
+    try {
+      if (!adminDb) {
+        console.warn("⚠ Firebase admin not initialised – skipping Firestore write.");
+      } else {
+        const docRef = await adminDb.collection("reviews").add({
+          rating: typeof rating === "number" ? rating : null,
+          text: reviewText,
+          email: email || "",
+          appName,
+          createdAt,
+        });
+        firestoreId = docRef.id;
+      }
+    } catch (err) {
+      console.error("❌ Firestore write failed:", err);
     }
 
-    // Email via Resend
-    if (process.env.RESEND_API_KEY && process.env.REVIEW_RECEIVER_EMAIL) {
+    // --- EMAIL SEND ---------------------------------------------------------
+    const hasEnv =
+      process.env.RESEND_API_KEY &&
+      process.env.REVIEW_RECEIVER_EMAIL &&
+      typeof process.env.REVIEW_RECEIVER_EMAIL === "string";
+
+    if (hasEnv) {
       try {
-        const result = await resend.emails.send({
+        await resend.emails.send({
           from: "Reviews <onboarding@resend.dev>",
           to: process.env.REVIEW_RECEIVER_EMAIL,
-          subject: `New ${appLabel} review – ${rating ?? "no"}★`,
+          subject: `New ${appName} review – ${rating ?? "no"}★`,
           text: [
-            `App: ${appLabel}`,
+            `App: ${appName}`,
             `Rating: ${rating ?? "n/a"} stars`,
-            `From email: ${email || "anonymous"}`,
+            `From: ${email || "anonymous"}`,
             `Created at: ${createdAt}`,
-            docId ? `Firestore ID: ${docId}` : "",
+            firestoreId ? `Firestore ID: ${firestoreId}` : "",
             "",
             "Review text:",
-            bodyText,
+            reviewText,
           ]
             .filter(Boolean)
             .join("\n"),
         });
-        console.log("Resend email result:", result);
       } catch (err) {
-        console.error("Resend email send error:", err);
+        console.error("❌ Resend email send error:", err);
       }
     } else {
-      console.warn(
-        "⚠ RESEND_API_KEY or REVIEW_RECEIVER_EMAIL not set – skipping email send."
-      );
+      console.warn("⚠ Email skipped – RESEND_API_KEY or REVIEW_RECEIVER_EMAIL missing.");
     }
 
     return res.status(200).json({ success: true });
   } catch (err) {
-    console.error("Review error:", err);
+    console.error("❌ Review handler error:", err);
     return res.status(500).json({ error: "Failed to submit review" });
   }
 }
