@@ -9,6 +9,10 @@ import { APP_NAME } from "../../lib/appConfig";
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
+  console.log("🔔 /api/review-email called");
+  console.log("🔑 RESEND_API_KEY set?", !!process.env.RESEND_API_KEY);
+  console.log("📧 REVIEW_RECEIVER_EMAIL:", process.env.REVIEW_RECEIVER_EMAIL);
+
   if (req.method !== "POST") {
     return res
       .status(405)
@@ -22,6 +26,7 @@ export default async function handler(req, res) {
     const bodyText = (text ?? comment ?? "").toString();
 
     if (!bodyText.trim()) {
+      console.log("⚠ Missing review text");
       return res
         .status(400)
         .json({ success: false, error: "Missing review text" });
@@ -31,25 +36,31 @@ export default async function handler(req, res) {
     const createdAt = new Date().toISOString();
     let docId = null;
 
-    // Save to Firestore (if adminDb is ready)
-    if (!adminDb) {
-      console.warn(
-        "⚠ Firebase admin not initialised – skipping Firestore write."
-      );
-    } else {
-      const docRef = await adminDb.collection("reviews").add({
-        rating: rating ?? null,
-        text: bodyText,
-        email: email || "",
-        appName: appLabel,
-        createdAt,
-      });
-      docId = docRef.id;
+    // ---- Save to Firestore (if adminDb is ready) --------------------------
+    try {
+      if (!adminDb) {
+        console.warn(
+          "⚠ Firebase admin not initialised – skipping Firestore write."
+        );
+      } else {
+        const docRef = await adminDb.collection("reviews").add({
+          rating: rating ?? null,
+          text: bodyText,
+          email: email || "",
+          appName: appLabel,
+          createdAt,
+        });
+        docId = docRef.id;
+        console.log("✅ Firestore write OK, id =", docId);
+      }
+    } catch (err) {
+      console.error("❌ Firestore write error:", err);
     }
 
-    // Send email via Resend (optional)
+    // ---- Send email via Resend (optional) ---------------------------------
     if (process.env.RESEND_API_KEY && process.env.REVIEW_RECEIVER_EMAIL) {
       try {
+        console.log("🚀 Sending email via Resend…");
         const result = await resend.emails.send({
           from: "Reviews <onboarding@resend.dev>",
           to: process.env.REVIEW_RECEIVER_EMAIL,
@@ -68,9 +79,9 @@ export default async function handler(req, res) {
             .join("\n"),
         });
 
-        console.log("Resend email result:", result);
+        console.log("✅ Resend email result:", result);
       } catch (err) {
-        console.error("Resend email send error:", err);
+        console.error("❌ Resend email send error:", err);
         // Still return success so the user sees "Thanks for your feedback"
       }
     } else {
@@ -81,7 +92,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true });
   } catch (err) {
-    console.error("Review error:", err);
+    console.error("❌ Review error:", err);
     return res
       .status(500)
       .json({ success: false, error: "Failed to submit review" });
