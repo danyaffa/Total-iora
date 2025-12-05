@@ -1,15 +1,16 @@
 // FILE: /pages/skills/[id].js
 import { useRouter } from "next/router";
-import Footer from "@/components/Footer";
-import OracleVoice from "@/components/OracleVoice";
+import Footer from "../../components/Footer";
+import OracleVoice from "../../components/OracleVoice";
 
 const META = {
-  muslim:     { id: "Muslim",     title: "Life Skills with Islamic Wisdom", blurb: "Adab & akhlaq, Qur’an & hadith, and Sufi practice applied to daily life." },
-  christian:  { id: "Christian",  title: "Life Skills with Christian Tradition", blurb: "Gospels, Fathers, and the saints—habits of virtue and mercy." },
-  jewish:     { id: "Jewish",     title: "Life Skills with Rambam & Sages", blurb: "Maimonides (Rambam) on character (Hilchot De’ot), Mussar, and practical halacha." },
-  eastern:    { id: "Eastern",    title: "Life Skills with Eastern Paths", blurb: "Eightfold Path, Taoist balance, and Vedic disciplines for everyday living." },
-  universal:  { id: "Universal",  title: "Life Skills (Universal)", blurb: "Humanist, open, and gentle—clarity, compassion, and simple practices." },
+  muslim:     { id: "Muslim",     title: "Life Skills with Islam...q, Qur’an & hadith, and Sufi practice applied to daily life." },
+  christian:  { id: "Christian",  title: "Life Skills with Chris...Gospels, Fathers, and the saints—habits of virtue and mercy." },
+  jewish:     { id: "Jewish",     title: "Life Skills with Ramba...on character (Hilchot De’ot), Mussar, and practical halacha." },
+  eastern:    { id: "Eastern",    title: "Life Skills with Easte..., Taoist balance, and Vedic disciplines for everyday living." },
+  universal:  { id: "Universal",  title: "Life Skills (Universal... open, and gentle—clarity, compassion, and simple practices." },
 };
+
 
 export default function SkillsRoom() {
   const { query } = useRouter();
