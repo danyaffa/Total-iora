@@ -1,13 +1,18 @@
 /* --- Atmosphere: let the background image show site-wide --- */
 html.atmo-active,
-html.atmo-active body { background: transparent !important; }
-html.atmo-active .page { background: transparent !important; }
+html.atmo-active body {
+  background: transparent !important;
+}
+html.atmo-active .page {
+  background: transparent !important;
+}
 
 /* --- Shared CTA look (matches the big buttons) --- */
 :root {
   --accent-from: #7c3aed;
   --accent-to: #14b8a6;
 }
+
 .btn-gradient,
 .btn.accent {
   background: linear-gradient(135deg, var(--accent-from), var(--accent-to));
@@ -17,6 +22,7 @@ html.atmo-active .page { background: transparent !important; }
   font-weight: 800;
   box-shadow: 0 6px 18px rgba(2, 6, 23, 0.18);
 }
+
 .btn-gradient:hover,
 .btn.accent:hover {
   transform: translateY(-1px);
@@ -32,4 +38,43 @@ html.atmo-active .page { background: transparent !important; }
   border-radius: 12px;
   box-shadow: 0 8px 20px rgba(2, 6, 23, 0.08);
   color: #334155;
+}
+
+/* ---------- EXTRA HELPERS (NEW) ---------- */
+
+/* Soft secondary buttons */
+.btn-soft {
+  background: rgba(15, 23, 42, 0.82);
+  color: #e5e7eb;
+  border-radius: 999px;
+  padding: 0.75rem 1.2rem;
+  font-size: 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.btn-soft:hover {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+/* Link look for subtle nav items */
+.link-soft {
+  color: #cbd5f5;
+  font-size: 0.9rem;
+}
+
+.link-soft:hover {
+  color: #f9fafb;
+}
+
+/* Pill tag style */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e5e7eb;
 }
