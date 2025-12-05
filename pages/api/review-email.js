@@ -1,7 +1,6 @@
 // FILE: /pages/api/review-email.js
-//
-// Clean, stable, production-safe review email handler
-// Sends email via Resend + stores in Firestore (server-side backup)
+// Uses Resend + Firestore via firebase-admin.
+// Only called by the ReviewWidget component.
 
 import { Resend } from "resend";
 import { adminDb } from "../../utils/firebaseAdmin";
@@ -11,82 +10,80 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res
+      .status(405)
+      .json({ success: false, error: "Method not allowed" });
   }
 
   try {
-    // Normalise incoming data
-    const {
-      rating = null,
-      text = "",
-      comment = "",
-      email = "",
-      appName = APP_NAME,
-    } = req.body || {};
+    const { rating, text, comment, email, appName } = req.body || {};
 
-    // Use whichever text exists
-    const reviewText = (text || comment || "").toString().trim();
+    // Accept both "text" and "comment"
+    const bodyText = (text ?? comment ?? "").toString();
 
-    if (!reviewText) {
-      return res.status(400).json({ error: "Missing review text" });
+    if (!bodyText.trim()) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing review text" });
     }
 
+    const appLabel = appName || APP_NAME;
     const createdAt = new Date().toISOString();
-    let firestoreId = null;
+    let docId = null;
 
-    // --- FIRESTORE WRITE ----------------------------------------------------
-    try {
-      if (!adminDb) {
-        console.warn("⚠ Firebase admin not initialised – skipping Firestore write.");
-      } else {
-        const docRef = await adminDb.collection("reviews").add({
-          rating: typeof rating === "number" ? rating : null,
-          text: reviewText,
-          email: email || "",
-          appName,
-          createdAt,
-        });
-        firestoreId = docRef.id;
-      }
-    } catch (err) {
-      console.error("❌ Firestore write failed:", err);
+    // Save to Firestore (if adminDb is ready)
+    if (!adminDb) {
+      console.warn(
+        "⚠ Firebase admin not initialised – skipping Firestore write."
+      );
+    } else {
+      const docRef = await adminDb.collection("reviews").add({
+        rating: rating ?? null,
+        text: bodyText,
+        email: email || "",
+        appName: appLabel,
+        createdAt,
+      });
+      docId = docRef.id;
     }
 
-    // --- EMAIL SEND ---------------------------------------------------------
-    const hasEnv =
-      process.env.RESEND_API_KEY &&
-      process.env.REVIEW_RECEIVER_EMAIL &&
-      typeof process.env.REVIEW_RECEIVER_EMAIL === "string";
-
-    if (hasEnv) {
+    // Send email via Resend (optional)
+    if (process.env.RESEND_API_KEY && process.env.REVIEW_RECEIVER_EMAIL) {
       try {
-        await resend.emails.send({
+        const result = await resend.emails.send({
           from: "Reviews <onboarding@resend.dev>",
           to: process.env.REVIEW_RECEIVER_EMAIL,
-          subject: `New ${appName} review – ${rating ?? "no"}★`,
+          subject: `New ${appLabel} review – ${rating ?? "no"}★`,
           text: [
-            `App: ${appName}`,
+            `App: ${appLabel}`,
             `Rating: ${rating ?? "n/a"} stars`,
-            `From: ${email || "anonymous"}`,
+            `From email: ${email || "anonymous"}`,
             `Created at: ${createdAt}`,
-            firestoreId ? `Firestore ID: ${firestoreId}` : "",
+            docId ? `Firestore ID: ${docId}` : "",
             "",
             "Review text:",
-            reviewText,
+            bodyText,
           ]
             .filter(Boolean)
             .join("\n"),
         });
+
+        console.log("Resend email result:", result);
       } catch (err) {
-        console.error("❌ Resend email send error:", err);
+        console.error("Resend email send error:", err);
+        // Still return success so the user sees "Thanks for your feedback"
       }
     } else {
-      console.warn("⚠ Email skipped – RESEND_API_KEY or REVIEW_RECEIVER_EMAIL missing.");
+      console.warn(
+        "⚠ RESEND_API_KEY or REVIEW_RECEIVER_EMAIL not set – skipping email send."
+      );
     }
 
     return res.status(200).json({ success: true });
   } catch (err) {
-    console.error("❌ Review handler error:", err);
-    return res.status(500).json({ error: "Failed to submit review" });
+    console.error("Review error:", err);
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to submit review" });
   }
 }
