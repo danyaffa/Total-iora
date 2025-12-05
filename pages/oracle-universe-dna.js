@@ -1,6 +1,6 @@
 // FILE: /pages/oracle-universe-dna.js
 import { useState, useRef } from "react";
-import Footer from "@/components/Footer";
+import Footer from "../components/Footer";
 
 export default function OracleUniverseDNA() {
   const [form, setForm] = useState({ name: "", birth: "", place: "", path: "Universal", question: "" });
