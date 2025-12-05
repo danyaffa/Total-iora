@@ -171,3 +171,251 @@ const ReviewWidgets = ({ appStoreUrl }) => {
           setStats((prev) => {
             if (!prev) {
               return {
+                count: 1,
+                average: currentRating,
+              };
+            }
+            const oldAvg =
+              prev.average == null ? currentRating : prev.average;
+            const newCount = prev.count + 1;
+            const newAvg = (oldAvg * prev.count + currentRating) / newCount;
+            return { count: newCount, average: newAvg };
+          });
+        } else {
+          // 1–3★ → internal feedback only, optional email if you want:
+          try {
+            await fetch("/api/review-email", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                rating: currentRating,
+                comment: currentComment,
+                text: currentComment,
+                appName: APP_NAME,
+              }),
+            });
+          } catch (err) {
+            console.error("Low-rating email failed:", err);
+          }
+        }
+      } catch (err) {
+        console.error("Review submit flow error:", err);
+      }
+    })();
+
+    // Immediately move UI to "Thank you" state
+    setSubmitted(true);
+    setLoading(false);
+  };
+
+  const handleOpenStore = () => {
+    if (!storeUrl || !isPromotable) return;
+    try {
+      window.open(storeUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Failed to open store URL:", err);
+    }
+  };
+
+  const renderPillText = () => {
+    if (statsLoading) {
+      return (
+        <>
+          <span style={{ color: "#eab308" }}>★★★★★</span>
+          <span>Loading reviews…</span>
+        </>
+      );
+    }
+
+    if (stats && stats.count > 0) {
+      const avg = stats.average == null ? 4.9 : stats.average;
+      return (
+        <>
+          <span style={{ color: "#eab308" }}>★★★★★</span>
+          <span>
+            {avg.toFixed(1)}/5 • {stats.count} review
+            {stats.count === 1 ? "" : "s"}
+          </span>
+        </>
+      );
+    }
+
+    return (
+      <>
+        <span style={{ color: "#eab308" }}>★★★★★</span>
+        <span>4.9/5 Reviews</span>
+      </>
+    );
+  };
+
+  // Closed pill
+  if (!isOpen) {
+    return (
+      <div onClick={() => setIsOpen(true)} style={pillStyle}>
+        {renderPillText()}
+      </div>
+    );
+  }
+
+  // Open modal
+  return (
+    <div style={modalStyle}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 10,
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: 16 }}>Rate {APP_NAME}</h3>
+        <button
+          onClick={() => {
+            setIsOpen(false);
+            setSubmitted(false);
+            setComment("");
+          }}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#94a3b8",
+            cursor: "pointer",
+            fontSize: 16,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      {submitted ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "12px 0 4px",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              marginBottom: 10,
+              color: "#4ade80",
+              fontWeight: 600,
+            }}
+          >
+            Thank you for your feedback!
+          </p>
+
+          {isPromotable ? (
+            <>
+              <p
+                style={{
+                  margin: 0,
+                  marginBottom: 12,
+                  fontSize: 13,
+                  color: "#cbd5f5",
+                }}
+              >
+                If the store page didn’t open yet, tap below to leave a
+                quick review in the app store. It helps more people
+                discover {APP_NAME}.
+              </p>
+
+              <button
+                onClick={handleOpenStore}
+                style={{
+                  ...buttonBase,
+                  background: "#facc15",
+                  color: "#0f172a",
+                  marginBottom: 8,
+                }}
+              >
+                💛 Leave a review in the app store
+              </button>
+            </>
+          ) : (
+            <p
+              style={{
+                margin: 0,
+                marginBottom: 12,
+                fontSize: 13,
+                color: "#cbd5f5",
+              }}
+            >
+              We really appreciate your honest feedback – it helps us
+              improve {APP_NAME} for you.
+            </p>
+          )}
+
+          <button
+            onClick={() => {
+              setIsOpen(false);
+              setSubmitted(false);
+              setComment("");
+            }}
+            style={{
+              ...buttonBase,
+              background: "#0f172a",
+              color: "#e5e7eb",
+              fontWeight: 500,
+              fontSize: 13,
+            }}
+          >
+            Close
+          </button>
+        </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              marginBottom: 12,
+              justifyContent: "center",
+            }}
+          >
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => setRating(star)}
+                style={{
+                  ...starButton,
+                  color: star <= rating ? "#eab308" : "#475569",
+                }}
+              >
+                ★
+              </button>
+            ))}
+          </div>
+
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder={`Tell us what you think about ${APP_NAME}...`}
+            style={{
+              ...inputBase,
+              height: 80,
+              marginBottom: 12,
+              resize: "none",
+            }}
+          />
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            style={{
+              ...buttonBase,
+              background: "#38bdf8",
+              color: "#0f172a",
+              opacity: loading ? 0.7 : 1,
+              cursor: loading ? "default" : "pointer",
+            }}
+          >
+            {loading ? "Sending..." : "Submit Review"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default ReviewWidgets;
+export const ReviewWidget = ReviewWidgets;
