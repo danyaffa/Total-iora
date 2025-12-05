@@ -1,22 +1,16 @@
-// FILE: /components/ReviewWidgets.tsx
+// FILE: /components/ReviewWidget.js
 
 "use client";
 
-import React, { useState, useEffect, type CSSProperties } from "react";
+import React, { useState, useEffect } from "react";
 import { addReview } from "../lib/firestore";
 import { APP_NAME } from "../lib/appConfig";
-
-export type ReviewWidgetProps = {
-  appName?: string;
-  appStoreUrl?: string; // optional override for the app-store review page
-  feedbackEndpoint?: string; // kept for compatibility, not used
-};
 
 // 👉 CHANGE THIS TO YOUR REAL APP-STORE REVIEW URL
 const DEFAULT_APP_STORE_URL =
   "https://example.com/your-app-store-review-page";
 
-const pillStyle: CSSProperties = {
+const pillStyle = {
   position: "fixed",
   bottom: 24,
   right: 24,
@@ -35,7 +29,7 @@ const pillStyle: CSSProperties = {
   border: "1px solid #e2e8f0",
 };
 
-const modalStyle: CSSProperties = {
+const modalStyle = {
   position: "fixed",
   bottom: 24,
   right: 24,
@@ -49,14 +43,14 @@ const modalStyle: CSSProperties = {
   border: "1px solid #334155",
 };
 
-const starButton: CSSProperties = {
+const starButton = {
   background: "transparent",
   border: "none",
   fontSize: 24,
   cursor: "pointer",
 };
 
-const inputBase: CSSProperties = {
+const inputBase = {
   width: "100%",
   borderRadius: 8,
   padding: 8,
@@ -66,7 +60,7 @@ const inputBase: CSSProperties = {
   fontSize: 14,
 };
 
-const buttonBase: CSSProperties = {
+const buttonBase = {
   width: "100%",
   padding: "10px",
   borderRadius: 8,
@@ -76,23 +70,18 @@ const buttonBase: CSSProperties = {
   fontSize: 14,
 };
 
-type ReviewStats = {
-  count: number;
-  average: number | null;
-};
-
-const ReviewWidgets: React.FC<ReviewWidgetProps> = ({ appStoreUrl }) => {
+const ReviewWidgets = ({ appStoreUrl }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [stats, setStats] = useState<ReviewStats | null>(null);
+  const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
   const storeUrl = appStoreUrl || DEFAULT_APP_STORE_URL;
-  const isPromotable = rating >= 4; // only 4★–5★ get store CTA + auto-open
+  const isPromotable = rating >= 4; // only 4–5★ get store CTA + auto-open
 
   // 🔢 Load dynamic review stats for the pill (count + average)
   useEffect(() => {
@@ -103,11 +92,7 @@ const ReviewWidgets: React.FC<ReviewWidgetProps> = ({ appStoreUrl }) => {
         if (!res.ok) {
           throw new Error("Failed to load review stats");
         }
-        const data = (await res.json()) as {
-          success: boolean;
-          count?: number;
-          average?: number | null;
-        };
+        const data = await res.json();
         if (data.success && typeof data.count === "number") {
           setStats({
             count: data.count,
@@ -128,7 +113,7 @@ const ReviewWidgets: React.FC<ReviewWidgetProps> = ({ appStoreUrl }) => {
   useEffect(() => {
     if (!submitted || !isPromotable || !storeUrl) return;
 
-    let timer: number | undefined;
+    let timer;
 
     try {
       timer = window.setTimeout(() => {
@@ -417,6 +402,7 @@ const ReviewWidgets: React.FC<ReviewWidgetProps> = ({ appStoreUrl }) => {
 
 export default ReviewWidgets;
 
-// Keep named export so `import { ReviewWidget } from "../components/ReviewWidgets"`
-// still works.
+// Keep named export so existing imports like
+//   import { ReviewWidget } from "../components/ReviewWidget";
+// still work if you use them.
 export const ReviewWidget = ReviewWidgets;
