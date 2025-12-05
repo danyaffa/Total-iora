@@ -1,16 +1,22 @@
-// FILE: /components/ReviewWidget.js
+// FILE: /components/ReviewWidgets.tsx
 
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { addReview } from "../lib/firestore";
+import React, { useState, useEffect, type CSSProperties } from "react";
 import { APP_NAME } from "../lib/appConfig";
+
+export type ReviewWidgetProps = {
+  appName?: string;
+  appStoreUrl?: string;
+  // optional override for the app-store review page
+  feedbackEndpoint?: string; // kept for compatibility, not used
+};
 
 // 👉 CHANGE THIS TO YOUR REAL APP-STORE REVIEW URL
 const DEFAULT_APP_STORE_URL =
   "https://example.com/your-app-store-review-page";
 
-const pillStyle = {
+const pillStyle: CSSProperties = {
   position: "fixed",
   bottom: 24,
   right: 24,
@@ -29,7 +35,7 @@ const pillStyle = {
   border: "1px solid #e2e8f0",
 };
 
-const modalStyle = {
+const modalStyle: CSSProperties = {
   position: "fixed",
   bottom: 24,
   right: 24,
@@ -43,14 +49,14 @@ const modalStyle = {
   border: "1px solid #334155",
 };
 
-const starButton = {
+const starButton: CSSProperties = {
   background: "transparent",
   border: "none",
   fontSize: 24,
   cursor: "pointer",
 };
 
-const inputBase = {
+const inputBase: CSSProperties = {
   width: "100%",
   borderRadius: 8,
   padding: 8,
@@ -60,7 +66,7 @@ const inputBase = {
   fontSize: 14,
 };
 
-const buttonBase = {
+const buttonBase: CSSProperties = {
   width: "100%",
   padding: "10px",
   borderRadius: 8,
@@ -70,20 +76,24 @@ const buttonBase = {
   fontSize: 14,
 };
 
-const ReviewWidgets = ({ appStoreUrl }) => {
+type ReviewStats = {
+  count: number;
+  average: number | null;
+};
+
+const ReviewWidgets: React.FC<ReviewWidgetProps> = ({ appStoreUrl }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState<ReviewStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
   const storeUrl = appStoreUrl || DEFAULT_APP_STORE_URL;
   const isPromotable = rating >= 4; // only 4–5★ get store CTA + auto-open
 
-  // 🔢 Load dynamic review stats for the pill (count + average)
+  // 🔢 Load dynamic review stats for the pill (count + average of 4★–5★)
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -92,7 +102,11 @@ const ReviewWidgets = ({ appStoreUrl }) => {
         if (!res.ok) {
           throw new Error("Failed to load review stats");
         }
-        const data = await res.json();
+        const data = (await res.json()) as {
+          success: boolean;
+          count?: number;
+          average?: number | null;
+        };
         if (data.success && typeof data.count === "number") {
           setStats({
             count: data.count,
@@ -109,11 +123,11 @@ const ReviewWidgets = ({ appStoreUrl }) => {
     fetchStats();
   }, []);
 
-  // ⏱ After submit (4–5★), wait a few seconds, then open store page
+  // ⏱ After submit (4–5★), wait 4000ms, then open store page
   useEffect(() => {
     if (!submitted || !isPromotable || !storeUrl) return;
 
-    let timer;
+    let timer: number | undefined;
 
     try {
       timer = window.setTimeout(() => {
@@ -122,7 +136,7 @@ const ReviewWidgets = ({ appStoreUrl }) => {
         } catch (err) {
           console.error("Failed to open store URL on delayed auto-open:", err);
         }
-      }, 4000); // ~4 seconds to read the thank-you
+      }, 4000); // 4 seconds to read the thank-you
     } catch (err) {
       console.error("Timer setup failed:", err);
     }
@@ -139,33 +153,24 @@ const ReviewWidgets = ({ appStoreUrl }) => {
 
     setLoading(true);
     try {
-      const shouldUpload = rating >= 4; // only good reviews stored + emailed
+      // 1) ALWAYS send review to backend so you get ALL feedback (good + bad)
+      try {
+        await fetch("/api/review-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rating,
+            comment,
+            text: comment,
+            appName: APP_NAME,
+          }),
+        });
+      } catch (err) {
+        console.error("Review email send failed:", err);
+      }
 
-      if (shouldUpload) {
-        // 1) Save to Firestore
-        try {
-          await addReview("guest", rating, comment, APP_NAME);
-        } catch (err) {
-          console.error("addReview failed:", err);
-        }
-
-        // 2) Email notification (via API)
-        try {
-          await fetch("/api/review-email", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              rating,
-              comment,
-              text: comment,
-              appName: APP_NAME,
-            }),
-          });
-        } catch (err) {
-          console.error("Review email send failed:", err);
-        }
-
-        // 3) Optimistic stats update in UI
+      // 2) For 4–5★, keep local stats updated
+      if (isPromotable) {
         setStats((prev) => {
           if (!prev) {
             return {
@@ -183,7 +188,7 @@ const ReviewWidgets = ({ appStoreUrl }) => {
         });
       }
 
-      // 4) Show thank-you confirmation (auto-open handled by useEffect)
+      // 3) Show thank-you (auto-open is handled by useEffect above)
       setSubmitted(true);
     } finally {
       setLoading(false);
@@ -315,17 +320,20 @@ const ReviewWidgets = ({ appStoreUrl }) => {
               </button>
             </>
           ) : (
-            <p
-              style={{
-                margin: 0,
-                marginBottom: 12,
-                fontSize: 13,
-                color: "#cbd5f5",
-              }}
-            >
-              We really appreciate your honest feedback – it helps us improve{" "}
-              {APP_NAME} for you.
-            </p>
+            <>
+              {/* 1–3★: internal feedback only, NO app-store CTA */}
+              <p
+                style={{
+                  margin: 0,
+                  marginBottom: 12,
+                  fontSize: 13,
+                  color: "#cbd5f5",
+                }}
+              >
+                We really appreciate your honest feedback and will use it to
+                improve {APP_NAME}.
+              </p>
+            </>
           )}
 
           <button
@@ -402,7 +410,6 @@ const ReviewWidgets = ({ appStoreUrl }) => {
 
 export default ReviewWidgets;
 
-// Keep named export so existing imports like
-//   import { ReviewWidget } from "../components/ReviewWidget";
-// still work if you use them.
+// Keep named export so `import { ReviewWidget } from "../components/ReviewWidgets"`
+// still works.
 export const ReviewWidget = ReviewWidgets;
