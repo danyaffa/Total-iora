@@ -1,6 +1,6 @@
 // FILE: /pages/_app.js
 
-import "@/styles/globals.css";
+import "../styles/globals.css";
 import ReviewWidget from "../components/ReviewWidget";
 
 export default function App({ Component, pageProps }) {
