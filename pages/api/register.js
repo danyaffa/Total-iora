@@ -1,73 +1,149 @@
-// FILE: /pages/api/register.js
-// Stores registrations. Today: optional Supabase; otherwise returns 200 so UX flows.
-// To persist, set env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_TABLE (default: registrations)
+// FILE: /pages/register.js
+// UPDATED: keep layout, remove "Free", redirect to Stripe after register
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+import { useState } from "react";
+import Link from "next/link";
 
-  const { name = "", email = "", phone = "", marketing = false, usage = false } = req.body || {};
-  if (!name.trim() || !email.trim() || !phone.trim()) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/fZufZh9oObuo2YPbFO4F20f";
 
-  const SUPABASE_URL = process.env.SUPABASE_URL || "";
-  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
-  const SUPABASE_TABLE = process.env.SUPABASE_TABLE || "registrations";
+export default function Register() {
+  const [form, setForm] = useState({
+    username: "",
+    email: "",
+    phone: "+1 ",
+    password: "",
+  });
+  const [showPw, setShowPw] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
-  // If Supabase is configured, insert row via PostgREST
-  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+  const upd = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || ""));
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setMsg("");
+
+    const { username, email, phone, password } = form;
+    if (!username.trim() || !validEmail(email) || !phone.trim() || password.length < 8) {
+      setMsg("Please complete all fields (password min 8 characters).");
+      return;
+    }
+
+    setBusy(true);
     try {
-      const row = {
-        name,
-        email: email.toLowerCase(),
-        phone,
-        marketing: !!marketing,
-        usage: !!usage,
-        created_at: new Date().toISOString(),
-      };
-      const r = await fetch(`${SUPABASE_URL}/rest/v1/${encodeURIComponent(SUPABASE_TABLE)}`, {
+      const r = await fetch("/api/register", {
         method: "POST",
-        headers: {
-          apikey: SUPABASE_SERVICE_KEY,
-          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify(row),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: username,
+          email,
+          phone,
+        }),
       });
 
-      if (!r.ok) {
-        const t = await r.text();
-        return res.status(502).json({ error: "Failed to store signup", detail: t });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data?.ok) {
+        setMsg(data?.error || "Registration failed.");
+        setBusy(false);
+        return;
       }
-      const data = await r.json();
-      return res.status(200).json({ ok: true, message: "Registered. Welcome!", id: data?.[0]?.id });
-    } catch (e) {
-      return res.status(500).json({ error: "Unexpected error", detail: String(e?.message || e) });
+
+      // redirect to Stripe payment
+      window.location.href = STRIPE_PAYMENT_LINK;
+    } catch {
+      setMsg("Registration error. Please try again.");
+      setBusy(false);
     }
   }
 
-  // Fallback: no DB configured yet (free mode). Return OK so UX isn’t blocked.
-  console.log("[register] Dev mode signup:", { name, email, phone, marketing, usage });
-  return res.status(200).json({
-    ok: true,
-    message: "Registered. Welcome!",
-    devMode: true,
-  });
+  return (
+    <div className="wrap">
+      <header className="hero">
+        <h1>Create your private sanctuary</h1>
+        <p>Register to enter. Only you can access your notes and questions.</p>
+      </header>
+
+      <main className="card">
+        <form onSubmit={onSubmit} className="form">
+          <label>
+            Username
+            <input
+              value={form.username}
+              onChange={upd("username")}
+              placeholder="Your username"
+              required
+            />
+          </label>
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={form.email}
+              onChange={upd("email")}
+              placeholder="you@example.com"
+              required
+            />
+          </label>
+
+          <label>
+            Mobile
+            <input
+              inputMode="tel"
+              value={form.phone}
+              onChange={upd("phone")}
+              placeholder="+1 XXX XXX XXXX"
+              required
+            />
+          </label>
+
+          <label>
+            Password (min 8)
+            <input
+              type={showPw ? "text" : "password"}
+              value={form.password}
+              onChange={upd("password")}
+              placeholder="********"
+              minLength={8}
+              required
+            />
+          </label>
+
+          <label className="ck">
+            <input
+              type="checkbox"
+              checked={showPw}
+              onChange={(e) => setShowPw(e.target.checked)}
+            />
+            Show password
+          </label>
+
+          <button className="btn accent" type="submit" disabled={busy}>
+            {busy ? "Creating…" : "Register & Continue to Payment"}
+          </button>
+
+          {msg && <p className="err">{msg}</p>}
+
+          <p className="small">
+            Already registered? <Link href="/login">Log in</Link>.
+          </p>
+        </form>
+      </main>
+
+      <style jsx>{`
+        .wrap { min-height:100vh; background:linear-gradient(#fff,#f8fafc); padding:22px 12px 40px; }
+        .hero { text-align:center; }
+        h1 { margin:8px 0 6px; font-size:1.9rem; font-weight:800; color:#0f172a; }
+        .card { max-width:800px; margin:12px auto 0; background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; padding:16px; box-shadow:0 10px 30px rgba(2,6,23,.08); }
+        .form { display:grid; gap:12px; }
+        label { color:#334155; font-weight:700; font-size:.95rem; display:flex; flex-direction:column; gap:6px; }
+        input { border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; }
+        .ck { flex-direction:row; align-items:center; gap:8px; font-weight:600; color:#475569; }
+        .btn { margin-top:8px; padding:12px 18px; border-radius:14px; font-weight:800; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); color:#fff; }
+        .err { color:#b91c1c; font-weight:700; }
+        .small { color:#94a3b8; margin-top:10px; }
+      `}</style>
+    </div>
+  );
 }
-
-/*
-Supabase quick table (SQL):
-
-create table if not exists public.registrations (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamptz default now(),
-  name text not null,
-  email text not null,
-  phone text not null,
-  marketing boolean default false,
-  usage boolean default false
-);
-alter table public.registrations enable row level security;
-create policy "allow inserts from service role" on public.registrations for insert to public using (true) with check (true);
-*/
