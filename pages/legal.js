@@ -82,7 +82,7 @@ export default function LegalPage() {
 
           <h2>5. Indemnification</h2>
           <p>
-            You agree to defend, indemnify, and hold harmless <strong>Leffler International Investments</strong> 
+            You agree to defend, indemnify, and hold harmless <strong>Leffler International Investments</strong>, 
             and its employees/contractors from and against any claims, liabilities, damages, judgments, 
             awards, losses, costs, expenses, or fees (including reasonable attorneys' fees) arising out of 
             or relating to your violation of these Terms or your use of the Service.
