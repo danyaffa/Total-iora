@@ -1,8 +1,11 @@
-// STATIC PREVIEW ONLY — no OracleVoice, no API calls, just links to Register/Login and the full board.
+// STATIC PREVIEW ONLY — no OracleVoice, no API calls, just links to Register/Login and Pay.
+// Users can choose faith (stored locally) but cannot use the board until registered + paid.
 
 import Link from "next/link";
 import Footer from "../components/Footer";
 import { useEffect, useRef, useState } from "react";
+
+const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/fZufZh9oObuo2YPbFO4F20f";
 
 const FAITH_OPTIONS = [
   { id: "universal", label: "Universal / Open", symbol: "✨" },
@@ -15,10 +18,40 @@ const FAITH_OPTIONS = [
   { id: "spiritual", label: "Spiritual (Non-religious)", symbol: "🌿" },
 ];
 
+function safeLocalStorageGet(key) {
+  try {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function safeLocalStorageSet(key, val) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(key, val);
+  } catch {
+    // ignore
+  }
+}
+
 export default function IndexPreview() {
   const [faith, setFaith] = useState(FAITH_OPTIONS[0]);
   const [openFaithMenu, setOpenFaithMenu] = useState(false);
   const faithMenuRef = useRef(null);
+
+  // Load previously selected faith (preview only; used later after login)
+  useEffect(() => {
+    const saved = safeLocalStorageGet("totaliora_faith");
+    if (!saved) return;
+    const found = FAITH_OPTIONS.find((x) => x.id === saved);
+    if (found) setFaith(found);
+  }, []);
+
+  // Persist selection (preview only; used later after login)
+  useEffect(() => {
+    safeLocalStorageSet("totaliora_faith", faith.id);
+  }, [faith]);
 
   // Close dropdown on click-outside or ESC
   useEffect(() => {
@@ -43,22 +76,33 @@ export default function IndexPreview() {
 
   return (
     <div className="page">
-      {/* Top nav — ONLY Register / Log in are live */}
+      {/* Top nav — Register / Log in / Subscribe are live */}
       <nav className="topnav">
+        {/* ✅ changed label to ONLY "Register" */}
         <Link href="/register" className="btn cta">
-          Register — Free Access
+          Register
         </Link>
-        <span style={{ width: 8 }} />
+
         <Link href="/login" className="btn">
           Log in
         </Link>
+
+        {/* ✅ Stripe pay link */}
+        <a
+          href={STRIPE_PAYMENT_LINK}
+          className="btn pay"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Subscribe / Pay
+        </a>
       </nav>
 
-      {/* Logo + short line + Faith picker pill */}
+      {/* Logo + Faith picker + short line */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-iora" className="logo" />
 
-        {/* ✅ NEW: Choose Your Faith pill + dropdown */}
+        {/* ✅ Choose Faith pill + dropdown (allowed on static index) */}
         <div className="pillRow">
           <div className="faithPicker" ref={faithMenuRef}>
             <button
@@ -77,7 +121,11 @@ export default function IndexPreview() {
             </button>
 
             {openFaithMenu && (
-              <div className="faithMenu" role="listbox" aria-label="Choose your faith">
+              <div
+                className="faithMenu"
+                role="listbox"
+                aria-label="Choose your faith"
+              >
                 {FAITH_OPTIONS.map((opt) => (
                   <button
                     key={opt.id}
@@ -100,11 +148,12 @@ export default function IndexPreview() {
         </div>
 
         <p className="note">
-          Welcome to <strong>Total-Iora Voice</strong>. This is a preview only. After you
-          register (free) you’ll use the full board on the <strong>Home</strong> page.
+          Welcome to <strong>Total-Iora Voice</strong>. This is a{" "}
+          <strong>static preview</strong>. You can choose your spiritual heritage
+          here, but the board remains inactive until you{" "}
+          <strong>Register</strong> and <strong>Subscribe</strong>.
         </p>
 
-        {/* Optional: subtle hint showing selection (preview-only) */}
         <div className="selectionHint" aria-hidden="true">
           Selected: <strong>{faith.symbol}</strong> {faith.label}
         </div>
@@ -118,17 +167,23 @@ export default function IndexPreview() {
               <div className="pill">Sacred Notes</div>
               <h3>Leave a private note • Light a candle</h3>
               <p>
-                Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t read or
-                judge. <strong>Nothing is stored or kept.</strong>
+                Your quiet place. Write, cry, pray, whisper. Light a candle. We
+                don’t read or judge. <strong>Nothing is stored or kept.</strong>
               </p>
             </header>
             <footer className="f">
-              <span className="btn accent disabled" aria-disabled="true" role="button" tabIndex={-1}>
+              <span
+                className="btn accent disabled"
+                aria-disabled="true"
+                role="button"
+                tabIndex={-1}
+              >
                 Open Sacred Notes
               </span>
               <div className="disc">
-                This is your space. Do whatever you like on this page. We have no responsibility for
-                anything you write, and nothing is saved on our servers.
+                This is your space. Do whatever you like on this page. We have no
+                responsibility for anything you write, and nothing is saved on
+                our servers.
               </div>
             </footer>
           </article>
@@ -137,13 +192,23 @@ export default function IndexPreview() {
             <header className="h">
               <div className="pill">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
-              <p>Ask questions by typing or voice and get grounded answers. (Preview only here.)</p>
+              <p>
+                Ask questions by typing or voice and get grounded answers.
+                (Preview only here.)
+              </p>
             </header>
             <footer className="f">
-              <span className="btn accent disabled" aria-disabled="true" role="button" tabIndex={-1}>
+              <span
+                className="btn accent disabled"
+                aria-disabled="true"
+                role="button"
+                tabIndex={-1}
+              >
                 Get Your Oracle Universe DNA
               </span>
-              <div className="disc">Spiritual guidance only. No medical, legal, or financial advice.</div>
+              <div className="disc">
+                Spiritual guidance only. No medical, legal, or financial advice.
+              </div>
             </footer>
           </article>
         </div>
@@ -168,24 +233,40 @@ export default function IndexPreview() {
               </div>
             </div>
           </div>
+
           <div className="right">
             <div className="orb blue" />
             <div className="output" aria-hidden="true">
               <div className="label">Guide</div>
               <div className="bubble">—</div>
-              <div className="muted">This is a static preview. Open the full board to interact.</div>
+              <div className="muted">
+                This is a static preview. Register and Subscribe to use the full
+                board.
+              </div>
             </div>
           </div>
         </div>
 
         <p className="hint">
-          This is what you’ll see after sign-in <em>(interactive on the Home page)</em>.
+          Preview only. To unlock the board:{" "}
+          <strong>Register</strong> then <strong>Subscribe</strong>.
         </p>
 
-        <div style={{ textAlign: "center", marginTop: 8 }}>
-          <Link href="/homepage" className="btn cta">
-            Open the Full Board
+        <div style={{ textAlign: "center", marginTop: 8 }} className="ctaRow">
+          {/* ✅ Keep index static: do NOT link directly to /homepage */}
+          <Link href="/register" className="btn cta">
+            Register to Unlock
           </Link>
+
+          <a
+            href={STRIPE_PAYMENT_LINK}
+            className="btn pay"
+            target="_blank"
+            rel="noreferrer"
+            style={{ marginLeft: 10 }}
+          >
+            Subscribe / Pay
+          </a>
         </div>
       </section>
 
@@ -193,15 +274,43 @@ export default function IndexPreview() {
 
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
-        .topnav { display:flex; justify-content:center; padding:14px; flex-wrap:wrap; gap:8px; }
-        .btn { display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800; border:1px solid rgba(15,23,42,.12); background:#fff; }
-        .btn.cta { color:#fff; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); }
+
+        .topnav {
+          display:flex;
+          justify-content:center;
+          padding:14px;
+          flex-wrap:wrap;
+          gap:8px;
+        }
+
+        .btn {
+          display:inline-block;
+          padding:10px 16px;
+          border-radius:14px;
+          font-weight:800;
+          border:1px solid rgba(15,23,42,.12);
+          background:#fff;
+          color:#0f172a;
+          text-decoration:none;
+        }
+
+        .btn.cta {
+          color:#fff;
+          border:none;
+          background:linear-gradient(135deg,#7c3aed,#14b8a6);
+        }
+
+        .btn.pay {
+          color:#0f172a;
+          border:1px solid rgba(15,23,42,.12);
+          background:linear-gradient(135deg, rgba(255,255,255,1), rgba(248,250,252,1));
+        }
+
         .btn.disabled { opacity:.6; pointer-events:none; }
+
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; margin:0 auto; display:block; }
-        .note { max-width:900px; margin:10px auto 0; color:#475569; padding:0 12px; text-align:center; }
 
-        /* ✅ NEW: Faith pill row */
         .pillRow { display:flex; justify-content:center; margin-top:10px; padding:0 12px; }
         .faithPicker { position:relative; display:inline-block; }
 
@@ -219,7 +328,9 @@ export default function IndexPreview() {
           box-shadow:0 10px 24px rgba(2,6,23,.12);
           max-width:92vw;
         }
+
         .pillIcon { font-size:18px; line-height:1; }
+
         .pillValue{
           background:rgba(255,255,255,.16);
           border:1px solid rgba(255,255,255,.22);
@@ -231,6 +342,7 @@ export default function IndexPreview() {
           text-overflow:ellipsis;
           max-width:44vw;
         }
+
         .pillCaret{ margin-left:2px; font-weight:900; opacity:.9; }
 
         .faithMenu{
@@ -246,6 +358,7 @@ export default function IndexPreview() {
           overflow:hidden;
           min-width:260px;
         }
+
         @media (max-width:420px){
           .faithMenu{ min-width:unset; }
         }
@@ -263,10 +376,19 @@ export default function IndexPreview() {
           font-weight:800;
           color:#0f172a;
         }
+
         .faithItem:hover{ background:#f8fafc; }
         .faithItem.active{ background:#eef2ff; }
         .faithSymbol{ width:22px; display:inline-flex; justify-content:center; }
         .faithLabel{ flex:1; }
+
+        .note {
+          max-width:900px;
+          margin:10px auto 0;
+          color:#475569;
+          padding:0 12px;
+          text-align:center;
+        }
 
         .selectionHint{
           margin-top:8px;
@@ -277,19 +399,61 @@ export default function IndexPreview() {
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
-        .card { background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; box-shadow:0 10px 30px rgba(2,6,23,.08); padding:18px; }
-        .pill { display:inline-block; padding:6px 10px; border:1px solid #e2e8f0; border-radius:999px; background:#fff; color:#334155; font-weight:700; }
+
+        .card {
+          background:#fff;
+          border:1px solid rgba(15,23,42,.08);
+          border-radius:20px;
+          box-shadow:0 10px 30px rgba(2,6,23,.08);
+          padding:18px;
+        }
+
+        .pill {
+          display:inline-block;
+          padding:6px 10px;
+          border:1px solid #e2e8f0;
+          border-radius:999px;
+          background:#fff;
+          color:#334155;
+          font-weight:700;
+        }
+
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
+
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .disc { color:#64748b; font-size:.92rem; }
+
         .boardPreview { max-width:1100px; margin:6px auto 14px; padding:0 16px; }
+
         .board { display:grid; grid-template-columns:1fr; gap:12px; }
         @media(min-width:900px){ .board { grid-template-columns:1fr 1fr; } }
-        .left,.right { background:#fff; border:1px solid #e2e8f0; border-radius:18px; padding:12px; display:flex; gap:12px; align-items:flex-start; }
-        .orb { width:140px; height:140px; min-width:140px; border-radius:999px; background:radial-gradient(40% 40% at 50% 50%, rgba(124,58,237,.18), rgba(124,58,237,0)); border:1px solid rgba(124,58,237,.25); }
-        .orb.blue { background:radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0)); border-color:rgba(14,165,233,.25); }
+
+        .left,.right {
+          background:#fff;
+          border:1px solid #e2e8f0;
+          border-radius:18px;
+          padding:12px;
+          display:flex;
+          gap:12px;
+          align-items:flex-start;
+        }
+
+        .orb {
+          width:140px;
+          height:140px;
+          min-width:140px;
+          border-radius:999px;
+          background:radial-gradient(40% 40% at 50% 50%, rgba(124,58,237,.18), rgba(124,58,237,0));
+          border:1px solid rgba(124,58,237,.25);
+        }
+
+        .orb.blue {
+          background:radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0));
+          border-color:rgba(14,165,233,.25);
+        }
+
         .label{font-size:.86rem;color:#64748b;margin-bottom:6px;}
         .box{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;min-height:90px;color:#334155}
         .row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
