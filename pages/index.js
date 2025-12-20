@@ -80,22 +80,13 @@ export default function IndexPreview() {
     <div className="page">
       {/* Top nav — Register + Log in as pill buttons (NO duplicates) */}
       <nav className="topnav">
-        <Link href="/register" className="pillNav pillRegister">
+        <Link href="/register" className="pill pill-register">
           Register
         </Link>
 
-        <Link href="/login" className="pillNav pillLogin">
+        <Link href="/login" className="pill pill-login">
           Log in
         </Link>
-
-        <a
-          href={STRIPE_PAYMENT_LINK}
-          className="pillNav pillPay"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Subscribe / Pay
-        </a>
       </nav>
 
       {/* Logo + Faith picker + short line */}
@@ -160,7 +151,7 @@ export default function IndexPreview() {
         <div className="grid">
           <article className="card">
             <header className="h">
-              <div className="pill">Sacred Notes</div>
+              <div className="pillBadge">Sacred Notes</div>
               <h3>Leave a private note • Light a candle</h3>
               <p>
                 Your quiet place. Write, cry, pray, whisper. Light a candle. We don’t
@@ -181,7 +172,7 @@ export default function IndexPreview() {
 
           <article className="card">
             <header className="h">
-              <div className="pill">Oracle Universe DNA</div>
+              <div className="pillBadge">Oracle Universe DNA</div>
               <h3>Your personal map • Downloadable guidance</h3>
               <p>
                 Ask questions by typing or voice and get grounded answers. (Preview only
@@ -237,13 +228,13 @@ export default function IndexPreview() {
 
         <div style={{ textAlign: "center", marginTop: 10 }} className="ctaRow">
           {/* Keep index static: do NOT link directly to /homepage */}
-          <Link href="/register" className="pillNav pillRegister">
+          <Link href="/register" className="pill pill-register">
             Register to Unlock
           </Link>
 
           <a
             href={STRIPE_PAYMENT_LINK}
-            className="pillNav pillPay"
+            className="pill pill-pay"
             target="_blank"
             rel="noreferrer"
             style={{ marginLeft: 10 }}
@@ -260,39 +251,39 @@ export default function IndexPreview() {
 
         /* ✅ Top nav pill buttons */
         .topnav {
-          display:flex;
-          justify-content:center;
-          padding:14px;
-          flex-wrap:wrap;
-          gap:10px;
+          display: flex;
+          justify-content: center;
+          gap: 10px;
+          padding: 14px;
+          flex-wrap: wrap;
         }
 
-        .pillNav{
-          display:inline-flex;
-          align-items:center;
-          justify-content:center;
-          padding:10px 18px;
-          border-radius:999px;
-          font-weight:900;
-          text-decoration:none;
-          color:#fff;
-          border:1px solid rgba(255,255,255,.18);
-          box-shadow:0 10px 24px rgba(2,6,23,.14);
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 10px 18px;
+          border-radius: 999px;
+          font-weight: 900;
+          text-decoration: none;
+          color: #fff;
+          box-shadow: 0 10px 24px rgba(0,0,0,.12);
         }
 
-        .pillRegister{
-          background:linear-gradient(135deg,#7c3aed,#14b8a6);
+        .pill-register {
+          background: linear-gradient(135deg, #7c3aed, #14b8a6);
+          border: 1px solid rgba(255,255,255,.18);
         }
 
-        .pillLogin{
-          background:linear-gradient(135deg,#0ea5e9,#22c55e);
+        .pill-login {
+          background: linear-gradient(135deg, #0ea5e9, #22c55e);
+          border: 1px solid rgba(255,255,255,.18);
         }
 
-        .pillPay{
-          color:#0f172a;
-          background:linear-gradient(135deg,#ffffff,#f1f5f9);
-          border:1px solid rgba(15,23,42,.12);
-          box-shadow:0 10px 24px rgba(2,6,23,.10);
+        .pill-pay {
+          color: #0f172a;
+          background: linear-gradient(135deg, #ffffff, #f1f5f9);
+          border: 1px solid rgba(15,23,42,.12);
         }
 
         .hero { text-align:center; padding-top:8px; }
@@ -396,7 +387,7 @@ export default function IndexPreview() {
           padding:18px;
         }
 
-        .pill {
+        .pillBadge {
           display:inline-block;
           padding:6px 10px;
           border:1px solid #e2e8f0;
