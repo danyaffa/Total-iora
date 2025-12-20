@@ -64,13 +64,29 @@ export default function IndexPreview() {
 
   return (
     <div className="page">
-      {/* Top nav — Register + Log in as INVITING GRADIENT pill buttons */}
+      {/* Top nav — INLINE STYLES used to force colors over any global CSS */}
       <nav className="topnav">
-        <Link href="/register" className="pill pill-register">
+        <Link 
+          href="/register" 
+          className="pill"
+          style={{ 
+            background: "linear-gradient(135deg, #7c3aed, #14b8a6)", 
+            color: "white",
+            border: "1px solid rgba(255,255,255,0.25)"
+          }}
+        >
           Register (US$9/mo)
         </Link>
 
-        <Link href="/login" className="pill pill-login">
+        <Link 
+          href="/login" 
+          className="pill"
+          style={{ 
+            background: "linear-gradient(135deg, #0ea5e9, #22c55e)", 
+            color: "white",
+            border: "1px solid rgba(255,255,255,0.25)"
+          }}
+        >
           Log in
         </Link>
       </nav>
@@ -207,7 +223,6 @@ export default function IndexPreview() {
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
 
-        /* ✅ Top nav pill buttons - FORCED VIBRANT COLORS */
         .topnav {
           display: flex;
           justify-content: center;
@@ -215,6 +230,7 @@ export default function IndexPreview() {
           padding: 16px;
         }
 
+        /* Base pill styles (colors handled inline) */
         .pill {
           display: inline-flex;
           align-items: center;
@@ -223,24 +239,11 @@ export default function IndexPreview() {
           border-radius: 999px;
           font-weight: 800;
           text-decoration: none;
-          color: #fff !important;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
           transition: transform 0.2s;
         }
         .pill:hover { 
           transform: translateY(-2px); 
-        }
-
-        /* Matches the "Faith" button - Purple/Teal */
-        .pill-register {
-          background: linear-gradient(135deg, #7c3aed, #14b8a6) !important; 
-          border: 1px solid rgba(255,255,255,0.2) !important;
-        }
-
-        /* Matches the Blue orb vibe - Blue/Green */
-        .pill-login {
-          background: linear-gradient(135deg, #0ea5e9, #22c55e) !important; 
-          border: 1px solid rgba(255,255,255,0.2) !important;
         }
 
         .hero { text-align:center; padding-top:8px; }
