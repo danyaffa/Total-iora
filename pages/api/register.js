@@ -1,149 +1,45 @@
-// FILE: /pages/register.js
-// UPDATED: keep layout, remove "Free", redirect to Stripe after register
+// FILE: /pages/api/register.js
+import { getApps, initializeApp, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 
-import { useState } from "react";
-import Link from "next/link";
-
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/fZufZh9oObuo2YPbFO4F20f";
-
-export default function Register() {
-  const [form, setForm] = useState({
-    username: "",
-    email: "",
-    phone: "+1 ",
-    password: "",
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+    }),
   });
-  const [showPw, setShowPw] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+}
 
-  const upd = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const validEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || ""));
+const db = getFirestore();
 
-  async function onSubmit(e) {
-    e.preventDefault();
-    setMsg("");
-
-    const { username, email, phone, password } = form;
-    if (!username.trim() || !validEmail(email) || !phone.trim() || password.length < 8) {
-      setMsg("Please complete all fields (password min 8 characters).");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const r = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: username,
-          email,
-          phone,
-        }),
-      });
-
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data?.ok) {
-        setMsg(data?.error || "Registration failed.");
-        setBusy(false);
-        return;
-      }
-
-      // redirect to Stripe payment
-      window.location.href = STRIPE_PAYMENT_LINK;
-    } catch {
-      setMsg("Registration error. Please try again.");
-      setBusy(false);
-    }
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
-  return (
-    <div className="wrap">
-      <header className="hero">
-        <h1>Create your private sanctuary</h1>
-        <p>Register to enter. Only you can access your notes and questions.</p>
-      </header>
+  const { name = "", email = "", phone = "" } = req.body || {};
+  if (!name.trim() || !email.trim() || !phone.trim()) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
 
-      <main className="card">
-        <form onSubmit={onSubmit} className="form">
-          <label>
-            Username
-            <input
-              value={form.username}
-              onChange={upd("username")}
-              placeholder="Your username"
-              required
-            />
-          </label>
+  try {
+    const ref = db.collection("users").doc(email.toLowerCase());
 
-          <label>
-            Email
-            <input
-              type="email"
-              value={form.email}
-              onChange={upd("email")}
-              placeholder="you@example.com"
-              required
-            />
-          </label>
+    await ref.set(
+      {
+        name,
+        email: email.toLowerCase(),
+        phone,
+        isPaid: false,
+        createdAt: new Date(),
+      },
+      { merge: true }
+    );
 
-          <label>
-            Mobile
-            <input
-              inputMode="tel"
-              value={form.phone}
-              onChange={upd("phone")}
-              placeholder="+1 XXX XXX XXXX"
-              required
-            />
-          </label>
-
-          <label>
-            Password (min 8)
-            <input
-              type={showPw ? "text" : "password"}
-              value={form.password}
-              onChange={upd("password")}
-              placeholder="********"
-              minLength={8}
-              required
-            />
-          </label>
-
-          <label className="ck">
-            <input
-              type="checkbox"
-              checked={showPw}
-              onChange={(e) => setShowPw(e.target.checked)}
-            />
-            Show password
-          </label>
-
-          <button className="btn accent" type="submit" disabled={busy}>
-            {busy ? "Creating…" : "Register & Continue to Payment"}
-          </button>
-
-          {msg && <p className="err">{msg}</p>}
-
-          <p className="small">
-            Already registered? <Link href="/login">Log in</Link>.
-          </p>
-        </form>
-      </main>
-
-      <style jsx>{`
-        .wrap { min-height:100vh; background:linear-gradient(#fff,#f8fafc); padding:22px 12px 40px; }
-        .hero { text-align:center; }
-        h1 { margin:8px 0 6px; font-size:1.9rem; font-weight:800; color:#0f172a; }
-        .card { max-width:800px; margin:12px auto 0; background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px; padding:16px; box-shadow:0 10px 30px rgba(2,6,23,.08); }
-        .form { display:grid; gap:12px; }
-        label { color:#334155; font-weight:700; font-size:.95rem; display:flex; flex-direction:column; gap:6px; }
-        input { border:1px solid #e2e8f0; border-radius:12px; padding:10px 12px; font-size:1rem; }
-        .ck { flex-direction:row; align-items:center; gap:8px; font-weight:600; color:#475569; }
-        .btn { margin-top:8px; padding:12px 18px; border-radius:14px; font-weight:800; border:none; background:linear-gradient(135deg,#7c3aed,#14b8a6); color:#fff; }
-        .err { color:#b91c1c; font-weight:700; }
-        .small { color:#94a3b8; margin-top:10px; }
-      `}</style>
-    </div>
-  );
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: "Registration failed" });
+  }
 }
