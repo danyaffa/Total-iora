@@ -64,7 +64,7 @@ export default function IndexPreview() {
 
   return (
     <div className="page">
-      {/* Top nav — Register (WITH PRICE) + Log in as COLORFUL pill buttons */}
+      {/* Top nav — Register + Log in as INVITING GRADIENT pill buttons */}
       <nav className="topnav">
         <Link href="/register" className="pill pill-register">
           Register (US$9/mo)
@@ -200,8 +200,6 @@ export default function IndexPreview() {
           Preview only. To unlock the board: <strong>Register</strong> then{" "}
           <strong>Subscribe</strong>.
         </p>
-        
-        {/* DUPLICATE BUTTONS REMOVED */}
       </section>
 
       <Footer />
@@ -209,7 +207,7 @@ export default function IndexPreview() {
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
 
-        /* ✅ Top nav pill buttons - VIBRANT GRADIENTS (NO BLACK) */
+        /* ✅ Top nav pill buttons - INVITING GRADIENTS */
         .topnav {
           display: flex;
           justify-content: center;
@@ -221,23 +219,28 @@ export default function IndexPreview() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 10px 20px;
+          padding: 10px 22px;
           border-radius: 999px;
           font-weight: 800;
           text-decoration: none;
           color: #fff;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-          transition: transform 0.2s;
+          transition: transform 0.2s, box-shadow 0.2s;
         }
-        .pill:hover { transform: translateY(-1px); }
+        .pill:hover { 
+          transform: translateY(-2px); 
+          box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+        }
 
+        /* Matches the "Faith" button - Purple/Teal */
         .pill-register {
-          background: linear-gradient(135deg, #7c3aed, #14b8a6); /* Purple/Teal */
+          background: linear-gradient(135deg, #7c3aed, #14b8a6); 
           border: 1px solid rgba(255,255,255,0.2);
         }
 
+        /* Matches the Blue orb vibe - Blue/Green */
         .pill-login {
-          background: linear-gradient(135deg, #0ea5e9, #22c55e); /* Blue/Green */
+          background: linear-gradient(135deg, #0ea5e9, #22c55e); 
           border: 1px solid rgba(255,255,255,0.2);
         }
 
