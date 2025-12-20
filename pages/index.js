@@ -40,7 +40,6 @@ export default function IndexPreview() {
   const [openFaithMenu, setOpenFaithMenu] = useState(false);
   const faithMenuRef = useRef(null);
 
-  // Load previously selected faith (preview only)
   useEffect(() => {
     const saved = safeLocalStorageGet("totaliora_faith");
     if (!saved) return;
@@ -48,12 +47,10 @@ export default function IndexPreview() {
     if (found) setFaith(found);
   }, []);
 
-  // Persist selection
   useEffect(() => {
     safeLocalStorageSet("totaliora_faith", faith.id);
   }, [faith]);
 
-  // Close dropdown on click-outside
   useEffect(() => {
     function onDocMouseDown(e) {
       if (!openFaithMenu) return;
@@ -67,10 +64,10 @@ export default function IndexPreview() {
 
   return (
     <div className="page">
-      {/* Top nav — Register + Log in as INVITING pill buttons */}
+      {/* Top nav — Register (WITH PRICE) + Log in as COLORFUL pill buttons */}
       <nav className="topnav">
         <Link href="/register" className="pill pill-register">
-          Register
+          Register (US$9/mo)
         </Link>
 
         <Link href="/login" className="pill pill-login">
@@ -204,7 +201,7 @@ export default function IndexPreview() {
           <strong>Subscribe</strong>.
         </p>
         
-        {/* ✅ DUPLICATE BUTTONS REMOVED FROM HERE */}
+        {/* DUPLICATE BUTTONS REMOVED */}
       </section>
 
       <Footer />
@@ -212,7 +209,7 @@ export default function IndexPreview() {
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
 
-        /* ✅ Top nav pill buttons - INVITING GRADIENTS */
+        /* ✅ Top nav pill buttons - VIBRANT GRADIENTS (NO BLACK) */
         .topnav {
           display: flex;
           justify-content: center;
@@ -235,11 +232,13 @@ export default function IndexPreview() {
         .pill:hover { transform: translateY(-1px); }
 
         .pill-register {
-          background: linear-gradient(135deg, #8b5cf6, #06b6d4); /* Purple to Cyan */
+          background: linear-gradient(135deg, #7c3aed, #14b8a6); /* Purple/Teal */
+          border: 1px solid rgba(255,255,255,0.2);
         }
 
         .pill-login {
-          background: linear-gradient(135deg, #3b82f6, #10b981); /* Blue to Emerald */
+          background: linear-gradient(135deg, #0ea5e9, #22c55e); /* Blue/Green */
+          border: 1px solid rgba(255,255,255,0.2);
         }
 
         .hero { text-align:center; padding-top:8px; }
