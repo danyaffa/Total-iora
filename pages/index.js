@@ -6,8 +6,6 @@ import Link from "next/link";
 import Footer from "../components/Footer";
 import { useEffect, useRef, useState } from "react";
 
-const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/fZufZh9oObuo2YPbFO4F20f";
-
 const FAITH_OPTIONS = [
   { id: "universal", label: "Universal / Open", symbol: "✨" },
   { id: "christian", label: "Christian", symbol: "✝️" },
@@ -42,7 +40,7 @@ export default function IndexPreview() {
   const [openFaithMenu, setOpenFaithMenu] = useState(false);
   const faithMenuRef = useRef(null);
 
-  // Load previously selected faith (preview only; used later after login)
+  // Load previously selected faith (preview only)
   useEffect(() => {
     const saved = safeLocalStorageGet("totaliora_faith");
     if (!saved) return;
@@ -50,12 +48,12 @@ export default function IndexPreview() {
     if (found) setFaith(found);
   }, []);
 
-  // Persist selection (preview only; used later after login)
+  // Persist selection
   useEffect(() => {
     safeLocalStorageSet("totaliora_faith", faith.id);
   }, [faith]);
 
-  // Close dropdown on click-outside or ESC
+  // Close dropdown on click-outside
   useEffect(() => {
     function onDocMouseDown(e) {
       if (!openFaithMenu) return;
@@ -63,24 +61,15 @@ export default function IndexPreview() {
         setOpenFaithMenu(false);
       }
     }
-    function onKeyDown(e) {
-      if (!openFaithMenu) return;
-      if (e.key === "Escape") setOpenFaithMenu(false);
-    }
-
     document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [openFaithMenu]);
 
   return (
     <div className="page">
-      {/* Top nav — Register + Log in as pill buttons (NO duplicates) */}
+      {/* Top nav — Register + Log in as INVITING pill buttons */}
       <nav className="topnav">
-        <Link href="/register - US$9/month" className="pill pill-register">
+        <Link href="/register" className="pill pill-register">
           Register
         </Link>
 
@@ -89,30 +78,25 @@ export default function IndexPreview() {
         </Link>
       </nav>
 
-      {/* Logo + Faith picker + short line */}
+      {/* Logo + Faith picker */}
       <section className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-iora" className="logo" />
 
-        {/* Choose Faith pill + dropdown (allowed on static index) */}
         <div className="pillRow">
           <div className="faithPicker" ref={faithMenuRef}>
             <button
               type="button"
               className="pillButton"
               onClick={() => setOpenFaithMenu((v) => !v)}
-              aria-haspopup="listbox"
-              aria-expanded={openFaithMenu ? "true" : "false"}
             >
               <span className="pillIcon">{faith.symbol}</span>
               <span>Choose your faith</span>
               <span className="pillValue">{faith.label}</span>
-              <span className="pillCaret" aria-hidden="true">
-                ▾
-              </span>
+              <span className="pillCaret">▾</span>
             </button>
 
             {openFaithMenu && (
-              <div className="faithMenu" role="listbox" aria-label="Choose your faith">
+              <div className="faithMenu">
                 {FAITH_OPTIONS.map((opt) => (
                   <button
                     key={opt.id}
@@ -122,8 +106,6 @@ export default function IndexPreview() {
                       setFaith(opt);
                       setOpenFaithMenu(false);
                     }}
-                    role="option"
-                    aria-selected={opt.id === faith.id ? "true" : "false"}
                   >
                     <span className="faithSymbol">{opt.symbol}</span>
                     <span className="faithLabel">{opt.label}</span>
@@ -141,12 +123,12 @@ export default function IndexPreview() {
           <strong>Subscribe</strong>.
         </p>
 
-        <div className="selectionHint" aria-hidden="true">
+        <div className="selectionHint">
           Selected: <strong>{faith.symbol}</strong> {faith.label}
         </div>
       </section>
 
-      {/* Feature tiles — visually identical, buttons disabled on the index preview */}
+      {/* Feature tiles */}
       <section className="tiles">
         <div className="grid">
           <article className="card">
@@ -159,9 +141,7 @@ export default function IndexPreview() {
               </p>
             </header>
             <footer className="f">
-              <span className="btn accent disabled" aria-disabled="true" role="button" tabIndex={-1}>
-                Open Sacred Notes
-              </span>
+              <span className="btn accent disabled">Open Sacred Notes</span>
               <div className="disc">
                 This is your space. Do whatever you like on this page. We have no
                 responsibility for anything you write, and nothing is saved on our
@@ -180,21 +160,19 @@ export default function IndexPreview() {
               </p>
             </header>
             <footer className="f">
-              <span className="btn accent disabled" aria-disabled="true" role="button" tabIndex={-1}>
-                Get Your Oracle Universe DNA
-              </span>
+              <span className="btn accent disabled">Get Your Oracle Universe DNA</span>
               <div className="disc">Spiritual guidance only. No medical, legal, or financial advice.</div>
             </footer>
           </article>
         </div>
       </section>
 
-      {/* STATIC mock of the board (non-interactive) */}
+      {/* STATIC mock board */}
       <section className="boardPreview">
         <div className="board">
           <div className="left">
             <div className="orb" />
-            <div className="input" aria-hidden="true">
+            <div className="input">
               <div className="label">You</div>
               <div className="box">Type or speak here, then press Get Answer.</div>
               <div className="row">
@@ -211,7 +189,7 @@ export default function IndexPreview() {
 
           <div className="right">
             <div className="orb blue" />
-            <div className="output" aria-hidden="true">
+            <div className="output">
               <div className="label">Guide</div>
               <div className="bubble">—</div>
               <div className="muted">
@@ -225,23 +203,8 @@ export default function IndexPreview() {
           Preview only. To unlock the board: <strong>Register</strong> then{" "}
           <strong>Subscribe</strong>.
         </p>
-
-        <div style={{ textAlign: "center", marginTop: 10 }} className="ctaRow">
-          {/* Keep index static: do NOT link directly to /homepage */}
-          <Link href="/register" className="pill pill-register">
-            Register to Unlock
-          </Link>
-
-          <a
-            href={STRIPE_PAYMENT_LINK}
-            className="pill pill-pay"
-            target="_blank"
-            rel="noreferrer"
-            style={{ marginLeft: 10 }}
-          >
-            Subscribe / Pay
-          </a>
-        </div>
+        
+        {/* ✅ DUPLICATE BUTTONS REMOVED FROM HERE */}
       </section>
 
       <Footer />
@@ -249,47 +212,39 @@ export default function IndexPreview() {
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
 
-        /* ✅ Top nav pill buttons */
+        /* ✅ Top nav pill buttons - INVITING GRADIENTS */
         .topnav {
           display: flex;
           justify-content: center;
-          gap: 10px;
-          padding: 14px;
-          flex-wrap: wrap;
+          gap: 12px;
+          padding: 16px;
         }
 
         .pill {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          padding: 10px 18px;
+          padding: 10px 20px;
           border-radius: 999px;
-          font-weight: 900;
+          font-weight: 800;
           text-decoration: none;
           color: #fff;
-          box-shadow: 0 10px 24px rgba(0,0,0,.12);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          transition: transform 0.2s;
         }
+        .pill:hover { transform: translateY(-1px); }
 
         .pill-register {
-          background: linear-gradient(135deg, #7c3aed, #14b8a6);
-          border: 1px solid rgba(255,255,255,.18);
+          background: linear-gradient(135deg, #8b5cf6, #06b6d4); /* Purple to Cyan */
         }
 
         .pill-login {
-          background: linear-gradient(135deg, #0ea5e9, #22c55e);
-          border: 1px solid rgba(255,255,255,.18);
-        }
-
-        .pill-pay {
-          color: #0f172a;
-          background: linear-gradient(135deg, #ffffff, #f1f5f9);
-          border: 1px solid rgba(15,23,42,.12);
+          background: linear-gradient(135deg, #3b82f6, #10b981); /* Blue to Emerald */
         }
 
         .hero { text-align:center; padding-top:8px; }
         .logo { width:148px; margin:0 auto; display:block; }
 
-        /* Faith pill */
         .pillRow { display:flex; justify-content:center; margin-top:10px; padding:0 12px; }
         .faithPicker { position:relative; display:inline-block; }
 
@@ -309,7 +264,6 @@ export default function IndexPreview() {
         }
 
         .pillIcon { font-size:18px; line-height:1; }
-
         .pillValue{
           background:rgba(255,255,255,.16);
           border:1px solid rgba(255,255,255,.22);
@@ -321,132 +275,68 @@ export default function IndexPreview() {
           text-overflow:ellipsis;
           max-width:44vw;
         }
-
         .pillCaret{ margin-left:2px; font-weight:900; opacity:.9; }
 
         .faithMenu{
-          position:absolute;
-          top:52px;
-          left:0;
-          right:0;
-          z-index:50;
-          background:#fff;
-          border:1px solid #e2e8f0;
-          border-radius:16px;
-          box-shadow:0 20px 40px rgba(0,0,0,.14);
-          overflow:hidden;
-          min-width:260px;
+          position:absolute; top:52px; left:0; right:0; z-index:50;
+          background:#fff; border:1px solid #e2e8f0; border-radius:16px;
+          box-shadow:0 20px 40px rgba(0,0,0,.14); overflow:hidden; min-width:260px;
         }
-
-        @media (max-width:420px){
-          .faithMenu{ min-width:unset; }
-        }
+        @media (max-width:420px){ .faithMenu{ min-width:unset; } }
 
         .faithItem{
-          width:100%;
-          display:flex;
-          align-items:center;
-          gap:12px;
-          padding:12px 14px;
-          background:#fff;
-          border:none;
-          cursor:pointer;
-          text-align:left;
-          font-weight:800;
-          color:#0f172a;
+          width:100%; display:flex; align-items:center; gap:12px;
+          padding:12px 14px; background:#fff; border:none; cursor:pointer;
+          text-align:left; font-weight:800; color:#0f172a;
         }
-
         .faithItem:hover{ background:#f8fafc; }
         .faithItem.active{ background:#eef2ff; }
         .faithSymbol{ width:22px; display:inline-flex; justify-content:center; }
         .faithLabel{ flex:1; }
 
-        .note {
-          max-width:900px;
-          margin:10px auto 0;
-          color:#475569;
-          padding:0 12px;
-          text-align:center;
-        }
-
-        .selectionHint{
-          margin-top:8px;
-          font-size:.92rem;
-          color:#64748b;
-        }
+        .note { max-width:900px; margin:10px auto 0; color:#475569; padding:0 12px; text-align:center; }
+        .selectionHint{ margin-top:8px; font-size:.92rem; color:#64748b; }
 
         .tiles { max-width:1100px; margin:10px auto 6px; padding:0 16px; }
         .grid { display:grid; gap:14px; grid-template-columns:1fr; }
         @media (min-width:900px){ .grid { grid-template-columns:1fr 1fr; } }
 
         .card {
-          background:#fff;
-          border:1px solid rgba(15,23,42,.08);
-          border-radius:20px;
-          box-shadow:0 10px 30px rgba(2,6,23,.08);
-          padding:18px;
+          background:#fff; border:1px solid rgba(15,23,42,.08); border-radius:20px;
+          box-shadow:0 10px 30px rgba(2,6,23,.08); padding:18px;
         }
-
         .pillBadge {
-          display:inline-block;
-          padding:6px 10px;
-          border:1px solid #e2e8f0;
-          border-radius:999px;
-          background:#fff;
-          color:#334155;
-          font-weight:700;
+          display:inline-block; padding:6px 10px; border:1px solid #e2e8f0;
+          border-radius:999px; background:#fff; color:#334155; font-weight:700;
         }
-
         h3 { margin:8px 0 4px; font-size:1.25rem; font-weight:800; color:#0f172a; }
         p { color:#475569; }
-
         .f { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
-
         .btn {
-          display:inline-block;
-          padding:10px 16px;
-          border-radius:14px;
-          font-weight:800;
-          border:1px solid rgba(15,23,42,.12);
-          background:#fff;
-          color:#0f172a;
-          text-decoration:none;
+          display:inline-block; padding:10px 16px; border-radius:14px; font-weight:800;
+          border:1px solid rgba(15,23,42,.12); background:#fff; color:#0f172a; text-decoration:none;
         }
-
         .btn.accent { color:#fff; background:linear-gradient(135deg,#7c3aed,#14b8a6); border:none; }
         .btn.disabled { opacity:.6; pointer-events:none; }
-
         .disc { color:#64748b; font-size:.92rem; }
 
         .boardPreview { max-width:1100px; margin:6px auto 14px; padding:0 16px; }
-
         .board { display:grid; grid-template-columns:1fr; gap:12px; }
         @media(min-width:900px){ .board { grid-template-columns:1fr 1fr; } }
 
         .left,.right {
-          background:#fff;
-          border:1px solid #e2e8f0;
-          border-radius:18px;
-          padding:12px;
-          display:flex;
-          gap:12px;
-          align-items:flex-start;
+          background:#fff; border:1px solid #e2e8f0; border-radius:18px;
+          padding:12px; display:flex; gap:12px; align-items:flex-start;
         }
-
         .orb {
-          width:140px;
-          height:140px;
-          min-width:140px;
-          border-radius:999px;
+          width:140px; height:140px; min-width:140px; border-radius:999px;
           background:radial-gradient(40% 40% at 50% 50%, rgba(124,58,237,.18), rgba(124,58,237,0));
           border:1px solid rgba(124,58,237,.25);
         }
-
         .orb.blue {
           background:radial-gradient(40% 40% at 50% 50%, rgba(14,165,233,.18), rgba(14,165,233,0));
           border-color:rgba(14,165,233,.25);
         }
-
         .label{font-size:.86rem;color:#64748b;margin-bottom:6px;}
         .box{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;min-height:90px;color:#334155}
         .row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
