@@ -6,17 +6,11 @@ import Link from "next/link";
 
 const STRIPE_PAYMENT_LINK = "https://buy.stripe.com/fZufZh9oObuo2YPbFO4F20f";
 
-function setCookie(name, value, maxAgeDays = 365) {
-  const maxAge = maxAgeDays * 24 * 3600;
-  const secure = typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
-
 export default function Register() {
   const [form, setForm] = useState({
     username: "",
     email: "",
-    phone: "+1 ",
+    phone: "",
     password: "",
   });
   const [showPw, setShowPw] = useState(false);
@@ -38,11 +32,13 @@ export default function Register() {
 
     setBusy(true);
     try {
+      // 1. Create User Record (isPaid: false)
       const r = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
+        // Send 'name' so the backend stores it correctly
         body: JSON.stringify({
+          name: username,
           username,
           email,
           phone,
@@ -57,12 +53,10 @@ export default function Register() {
         return;
       }
 
-      // mark registered (not paid yet)
-      setCookie("ac_registered", "1", 365);
-
-      // redirect to Stripe payment
+      // 2. Redirect to Stripe for Payment
       window.location.href = STRIPE_PAYMENT_LINK;
-    } catch {
+    } catch (err) {
+      console.error(err);
       setMsg("Registration error. Please try again.");
       setBusy(false);
     }
@@ -132,7 +126,7 @@ export default function Register() {
           </label>
 
           <button className="btn accent" type="submit" disabled={busy}>
-            {busy ? "Creating…" : "Register & Continue to Payment"}
+            {busy ? "Processing…" : "Register & Continue to Payment ⟶"}
           </button>
 
           {msg && <p className="err">{msg}</p>}
@@ -184,6 +178,7 @@ export default function Register() {
           border-radius: 12px;
           padding: 10px 12px;
           font-size: 1rem;
+          width: 100%;
         }
         .ck {
           flex-direction: row;
@@ -201,14 +196,25 @@ export default function Register() {
           background: linear-gradient(135deg, #7c3aed, #14b8a6);
           color: #fff;
           cursor: pointer;
+          font-size: 1rem;
+        }
+        .btn:disabled {
+          opacity: 0.7;
         }
         .err {
           color: #b91c1c;
           font-weight: 700;
+          text-align: center;
         }
         .small {
           color: #94a3b8;
           margin-top: 10px;
+          text-align: center;
+        }
+        .small a {
+          color: #7c3aed;
+          text-decoration: none;
+          font-weight: 700;
         }
       `}</style>
     </div>
