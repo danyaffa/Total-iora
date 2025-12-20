@@ -207,7 +207,7 @@ export default function IndexPreview() {
       <style jsx>{`
         .page { min-height:100vh; background:linear-gradient(#ffffff,#f8fafc); }
 
-        /* ✅ Top nav pill buttons - INVITING GRADIENTS */
+        /* ✅ Top nav pill buttons - FORCED VIBRANT COLORS */
         .topnav {
           display: flex;
           justify-content: center;
@@ -223,25 +223,24 @@ export default function IndexPreview() {
           border-radius: 999px;
           font-weight: 800;
           text-decoration: none;
-          color: #fff;
+          color: #fff !important;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-          transition: transform 0.2s, box-shadow 0.2s;
+          transition: transform 0.2s;
         }
         .pill:hover { 
           transform: translateY(-2px); 
-          box-shadow: 0 6px 16px rgba(0,0,0,0.15);
         }
 
         /* Matches the "Faith" button - Purple/Teal */
         .pill-register {
-          background: linear-gradient(135deg, #7c3aed, #14b8a6); 
-          border: 1px solid rgba(255,255,255,0.2);
+          background: linear-gradient(135deg, #7c3aed, #14b8a6) !important; 
+          border: 1px solid rgba(255,255,255,0.2) !important;
         }
 
         /* Matches the Blue orb vibe - Blue/Green */
         .pill-login {
-          background: linear-gradient(135deg, #0ea5e9, #22c55e); 
-          border: 1px solid rgba(255,255,255,0.2);
+          background: linear-gradient(135deg, #0ea5e9, #22c55e) !important; 
+          border: 1px solid rgba(255,255,255,0.2) !important;
         }
 
         .hero { text-align:center; padding-top:8px; }
