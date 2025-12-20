@@ -9,10 +9,10 @@ import { useEffect, useRef, useState } from "react";
 const FAITH_OPTIONS = [
   { id: "universal", label: "Universal / Open", symbol: "✨" },
   { id: "christian", label: "Christian", symbol: "✝️" },
-  { id: "jewish", label: "Jewish", symbol: "✡️" },
   { id: "muslim", label: "Muslim", symbol: "☪️" },
   { id: "buddhist", label: "Buddhist", symbol: "☸️" },
   { id: "hindu", label: "Hindu", symbol: "🕉️" },
+  { id: "jewish", label: "Jewish", symbol: "✡️" },
   { id: "tao", label: "Taoist", symbol: "☯️" },
   { id: "spiritual", label: "Spiritual (Non-religious)", symbol: "🌿" },
 ];
@@ -218,6 +218,18 @@ export default function IndexPreview() {
         </p>
       </section>
 
+      {/* ✅ NEW DISCLAIMER SECTION */}
+      <section className="legalDisclaimer">
+        <p>
+          <strong>Disclaimer:</strong> Total-Iora is strictly for <strong>entertainment and spiritual reflection purposes only</strong>. 
+          We are <strong>not</strong> providing medical, psychological, financial, or legal treatments or recommendations. 
+          You are solely responsible for your own decisions and well-being.
+        </p>
+        <p className="legalLinkRow">
+          By using this site, you agree to our <Link href="/legal" className="legalLink">Full Legal Disclaimer & Liability Waiver</Link>.
+        </p>
+      </section>
+
       <Footer />
 
       <style jsx>{`
@@ -230,7 +242,6 @@ export default function IndexPreview() {
           padding: 16px;
         }
 
-        /* Base pill styles (colors handled inline) */
         .pill {
           display: inline-flex;
           align-items: center;
@@ -347,6 +358,26 @@ export default function IndexPreview() {
         .bubble{background:#eef6ff;border:1px solid #dbeafe;border-radius:12px;padding:10px 12px;min-height:44px;color:#0f172a}
         .muted{color:#94a3b8; font-size:.92rem; margin-top:6px;}
         .hint{ text-align:center; color:#64748b; margin:8px 0 0; }
+
+        /* LEGAL DISCLAIMER STYLES */
+        .legalDisclaimer {
+          max-width: 900px;
+          margin: 30px auto 20px;
+          padding: 16px;
+          text-align: center;
+          background: #fff;
+          border-top: 1px solid #e2e8f0;
+          color: #64748b;
+          font-size: 0.85rem;
+          line-height: 1.5;
+        }
+        .legalLinkRow { margin-top: 8px; }
+        .legalLink {
+          color: #7c3aed;
+          text-decoration: underline;
+          font-weight: 700;
+        }
+        .legalLink:hover { color: #5b21b6; }
       `}</style>
     </div>
   );
