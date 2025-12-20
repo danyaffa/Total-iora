@@ -80,7 +80,7 @@ export default function IndexPreview() {
     <div className="page">
       {/* Top nav — Register + Log in as pill buttons (NO duplicates) */}
       <nav className="topnav">
-        <Link href="/register" className="pill pill-register">
+        <Link href="/register" className="pill pill-register - US$9/month">
           Register
         </Link>
 
