@@ -81,13 +81,6 @@ export default function PrivacyPage() {
           <p>
             We employ industry-standard encryption (SSL/TLS) for all data in transit. Your account is protected by password hashing and secure session management.
           </p>
-
-          <h2>7. Contact Us</h2>
-          <p>
-            If you have questions about your privacy or wish to request data deletion, please contact us at:
-            <br />
-            <a href="mailto:support@totaliora.com" className="textLink">support@totaliora.com</a>
-          </p>
         </div>
       </main>
 
