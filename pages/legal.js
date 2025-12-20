@@ -87,12 +87,6 @@ export default function LegalPage() {
             awards, losses, costs, expenses, or fees (including reasonable attorneys' fees) arising out of 
             or relating to your violation of these Terms or your use of the Service.
           </p>
-
-          <h2>6. Contact</h2>
-          <p>
-            For legal inquiries, please contact us at: <br />
-            <a href="mailto:legal@totaliora.com" className="textLink">legal@totaliora.com</a>
-          </p>
         </div>
       </main>
 
