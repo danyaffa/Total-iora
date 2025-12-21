@@ -18,7 +18,9 @@ export default function Footer() {
           ·{" "}
           <a href="/legal" className="underline hover:text-slate-700">Legal</a>{" "}
           ·{" "}
-          <a href="/delete-account" className="underline hover:text-slate-700">Delete Account</a>
+          <a href="/delete-account" className="underline hover:text-slate-700">Delete Account</a>{" "}
+          ·{" "}
+          <a href="/contact" className="underline hover:text-slate-700">Contact Us</a>
         </p>
       </div>
     </footer>
