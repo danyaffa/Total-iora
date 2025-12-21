@@ -10,11 +10,15 @@ export default function Footer() {
         <p className="text-sm text-slate-600">
           © {new Date().getFullYear()} Total-iora · A sanctuary of reflection. No promises. Only presence.
         </p>
+
         <p className="mt-2 text-xs text-slate-500">
-          Use of this site constitutes acceptance of our{" "}
           <a href="/terms" className="underline hover:text-slate-700">Terms</a>{" "}
-          and{" "}
-          <a href="/privacy" className="underline hover:text-slate-700">Privacy Policy</a>.
+          ·{" "}
+          <a href="/privacy" className="underline hover:text-slate-700">Privacy</a>{" "}
+          ·{" "}
+          <a href="/legal" className="underline hover:text-slate-700">Legal</a>{" "}
+          ·{" "}
+          <a href="/delete-account" className="underline hover:text-slate-700">Delete Account</a>
         </p>
       </div>
     </footer>
