@@ -78,8 +78,7 @@ export default function DeleteAccountPage() {
           <h1>Delete Account &amp; Personal Data</h1>
           <p className="sub">
             This action is <strong>automatic</strong> and <strong>permanent</strong>.
-            It deletes your account record from <strong>Firestore</strong> and removes your
-            <strong> Firebase Authentication</strong> user.
+            It deletes your account <strong> Record</strong> user.
           </p>
 
           {!user ? (
