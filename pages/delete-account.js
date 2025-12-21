@@ -44,9 +44,7 @@ export default function DeleteAccountPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Deletion failed");
 
-      // Sign out locally after server deletion
       await signOut(getAuth());
-
       setStatus("✅ Your account and personal data have been deleted.");
       setUser(null);
     } catch (e) {
@@ -68,28 +66,21 @@ export default function DeleteAccountPage() {
       </Head>
 
       <nav className="topnav">
-        <Link href="/" className="backLink">
-          ← Back to Home
-        </Link>
+        <Link href="/" className="backLink">← Back to Home</Link>
       </nav>
 
       <main className="main">
         <section className="card">
           <h1>Delete Account &amp; Personal Data</h1>
+
           <p className="sub">
             This action is <strong>automatic</strong> and <strong>permanent</strong>.
-            It deletes your account <strong> Record</strong>.
+            It deletes your account record from our systems.
           </p>
 
           {!user ? (
             <div className="warn">
-              <p>
-                You are not logged in. Please{" "}
-                <Link href="/login" className="link">
-                  log in
-                </Link>{" "}
-                to delete your account.
-              </p>
+              You are not logged in. Please <Link href="/login" className="link">log in</Link> to continue.
             </div>
           ) : (
             <>
@@ -101,29 +92,41 @@ export default function DeleteAccountPage() {
               <button className="danger" onClick={doDelete} disabled={busy}>
                 {busy ? "Deleting..." : "DELETE MY ACCOUNT NOW"}
               </button>
-
-              <p className="tiny">
-                If you only want to stop payments, use the payment provider’s cancellation tools.
-              </p>
             </>
           )}
 
           {status && <div className="status">{status}</div>}
 
+          {/* SHADOWED PAYMENT SECTION */}
+          <div className="shadowBox">
+            <p className="shadowTitle">Payment Information</p>
+            <p className="shadowText">
+              If you wish to remove saved payment details (Stripe / Link), use the
+              provider’s self-service page below. No contact is required.
+            </p>
+
+            <a
+              href="https://support.link.com/how-to-delete-your-saved-payment-information"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shadowLink"
+            >
+              https://support.link.com/how-to-delete-your-saved-payment-information
+            </a>
+
+            <p className="shadowText small">
+              Termination is effective on the date your account is closed.
+            </p>
+          </div>
+
           <hr className="hr" />
 
           <div className="linksRow">
-            <Link href="/privacy" className="link">
-              Privacy
-            </Link>
+            <Link href="/privacy" className="link">Privacy</Link>
             <span>·</span>
-            <Link href="/terms" className="link">
-              Terms
-            </Link>
+            <Link href="/terms" className="link">Terms</Link>
             <span>·</span>
-            <Link href="/legal" className="link">
-              Legal
-            </Link>
+            <Link href="/legal" className="link">Legal</Link>
           </div>
         </section>
       </main>
@@ -165,7 +168,7 @@ export default function DeleteAccountPage() {
         .sub {
           color: #475569;
           line-height: 1.7;
-          margin: 0 0 18px;
+          margin-bottom: 18px;
         }
         .warn {
           background: #fff7ed;
@@ -189,52 +192,65 @@ export default function DeleteAccountPage() {
         .value {
           margin-top: 4px;
           font-weight: 900;
-          color: #0f172a;
           word-break: break-word;
         }
         .danger {
           width: 100%;
-          margin-top: 6px;
           padding: 12px 14px;
           border-radius: 14px;
           border: none;
           background: #ef4444;
           color: white;
           font-weight: 900;
-          letter-spacing: 0.3px;
           cursor: pointer;
-          box-shadow: 0 10px 24px rgba(239, 68, 68, 0.28);
-        }
-        .danger:disabled {
-          opacity: 0.65;
-          cursor: not-allowed;
-          box-shadow: none;
-        }
-        .tiny {
-          margin-top: 10px;
-          font-size: 0.9rem;
-          color: #64748b;
         }
         .status {
           margin-top: 16px;
           padding: 12px 14px;
           border-radius: 14px;
-          border: 1px solid #e2e8f0;
           background: #f1f5f9;
-          color: #0f172a;
+          border: 1px solid #e2e8f0;
           font-weight: 800;
         }
+
+        /* SHADOWED PAYMENT AREA */
+        .shadowBox {
+          margin-top: 24px;
+          padding: 16px 18px;
+          border-radius: 16px;
+          background: #f8fafc;
+          border: 1px dashed #cbd5f5;
+          opacity: 0.75;
+        }
+        .shadowTitle {
+          font-weight: 900;
+          color: #334155;
+          margin-bottom: 6px;
+        }
+        .shadowText {
+          font-size: 0.9rem;
+          color: #64748b;
+          margin-bottom: 6px;
+        }
+        .shadowLink {
+          font-size: 0.85rem;
+          color: #6366f1;
+          text-decoration: underline;
+          word-break: break-all;
+        }
+        .shadowText.small {
+          font-size: 0.8rem;
+          margin-top: 8px;
+        }
+
         .hr {
           margin: 18px 0 14px;
-          border: none;
           border-top: 1px solid #e2e8f0;
         }
         .linksRow {
           display: flex;
           gap: 10px;
           justify-content: center;
-          align-items: center;
-          color: #94a3b8;
           flex-wrap: wrap;
         }
         .link {
