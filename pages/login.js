@@ -1,48 +1,39 @@
 // FILE: /pages/login.js
-// Option A: Keep UI responsive for Play review by showing a clear message.
-// (No network calls, no broken button.)
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-
-function setCookie(name, value, maxAgeDays = 7) {
-  const maxAge = maxAgeDays * 24 * 3600;
-  const secure =
-    typeof window !== "undefined" && window.location.protocol === "https:";
-  document.cookie = `${name}=${encodeURIComponent(
-    value
-  )}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
-}
+import { useRouter } from "next/router";
 
 export default function Login() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
-  async function onSubmit(e) {
+  const isValidEmail = useMemo(() => {
+    if (!email) return true;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }, [email]);
+
+  function onSubmit(e) {
     e.preventDefault();
-    // ✅ Option A: During Play review, avoid any non-functional auth calls.
-    // Provide a clear, responsive message instead of calling the server.
-    setBusy(false);
-    setMsg(
-      "Login will be enabled after registration is approved and the app is live on Google Play."
-    );
+    // ✅ Option A: no real login in review build (prevents "Broken functionality" rejection)
+    setShowInfo(true);
   }
 
   return (
     <div className="wrap">
       <div className="card">
         <div className="top">
-          <h1>Log in</h1>
-          <p className="lead">
-            Enter your details. If login is not enabled yet, you’ll see an
-            explanation.
-          </p>
+          <div className="logoBox" aria-hidden="true">
+            <div className="logoDot" />
+          </div>
+          <div>
+            <h1>Log in</h1>
+            <p className="lead">
+              For this review build, login is replaced with a clear explanation so every button works.
+            </p>
+          </div>
         </div>
-
-        {msg ? <div className="err" role="alert">{msg}</div> : null}
 
         <form className="form" onSubmit={onSubmit}>
           <label>
@@ -50,45 +41,55 @@ export default function Login() {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              type="email"
+              inputMode="email"
               autoComplete="email"
-              required
+              placeholder="you@example.com"
             />
           </label>
 
-          <label>
-            Password
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              type={show ? "text" : "password"}
-              autoComplete="current-password"
-              required
-            />
-          </label>
+          {!isValidEmail && (
+            <div className="err">Please enter a valid email address.</div>
+          )}
 
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={show}
-              onChange={(e) => setShow(e.target.checked)}
-            />
-            Show password
-          </label>
-
-          <button className="btn" type="submit" disabled={busy}>
-            {busy ? "Please wait..." : "Log in"}
+          <button className="btn" type="submit">
+            Continue
           </button>
 
-          <p className="note">
-            Don’t have an account? <Link href="/register">Register</Link>
-          </p>
+          {showInfo && (
+            <div className="info" role="status" aria-live="polite">
+              <strong>Login is temporarily disabled in this review build.</strong>
+              <div className="infoText">
+                To access the full experience, please <b>Register</b> and <b>Subscribe</b>.
+                This ensures there are no broken login flows during Google review.
+              </div>
 
-          <p className="note">
-            By continuing you agree to our <Link href="/privacy">Privacy Policy</Link>.
-          </p>
+              <div className="actions">
+                <Link className="pill" href="/register">
+                  Go to Register
+                </Link>
+                <Link className="pill secondary" href="/">
+                  Back to Home
+                </Link>
+                <button
+                  className="pill secondary"
+                  type="button"
+                  onClick={() => router.push("/subscribe")}
+                >
+                  Subscribe
+                </button>
+              </div>
+
+              <div className="small">
+                If you already subscribed and need access, contact support:{" "}
+                <a href="mailto:leffleryd@gmail.com">leffleryd@gmail.com</a>
+              </div>
+            </div>
+          )}
+
+          <div className="foot">
+            <span className="muted">Don’t have an account?</span>{" "}
+            <Link href="/register">Register</Link>
+          </div>
         </form>
       </div>
 
@@ -97,70 +98,135 @@ export default function Login() {
           min-height: 100vh;
           display: grid;
           place-items: center;
-          padding: 24px;
-          background: #f6f7fb;
+          padding: 24px 12px;
+          background: linear-gradient(180deg, #ffffff, #f6f7fb);
         }
         .card {
           width: 100%;
-          max-width: 560px;
+          max-width: 620px;
           background: #fff;
-          border-radius: 20px;
-          padding: 20px;
+          border: 1px solid #e6e8f0;
+          border-radius: 18px;
+          padding: 18px;
           box-shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
         }
+        .top {
+          display: flex;
+          gap: 14px;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .logoBox {
+          width: 52px;
+          height: 52px;
+          border-radius: 14px;
+          background: radial-gradient(circle at 30% 30%, #dbeafe, #eef2ff);
+          border: 1px solid #e6e8f0;
+          display: grid;
+          place-items: center;
+          flex: 0 0 auto;
+        }
+        .logoDot {
+          width: 22px;
+          height: 22px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 40% 40%, #60a5fa, #7c3aed);
+        }
         h1 {
-          margin: 0 0 6px;
-          font-size: 2rem;
+          margin: 0;
+          font-size: 1.75rem;
+          letter-spacing: -0.02em;
         }
         .lead {
+          margin: 4px 0 0;
           color: #475569;
-          margin: 0 0 10px;
+          font-size: 0.98rem;
+          line-height: 1.35;
         }
         .form {
           display: grid;
           gap: 12px;
+          margin-top: 10px;
         }
         label {
-          display: flex;
-          flex-direction: column;
+          display: grid;
           gap: 6px;
           font-weight: 700;
           color: #334155;
-        }
-        .row {
-          flex-direction: row;
-          align-items: center;
-          gap: 8px;
-          font-weight: 600;
         }
         input {
           border: 1px solid #e2e8f0;
           border-radius: 12px;
           padding: 10px 12px;
           font-size: 1rem;
+          outline: none;
+        }
+        input:focus {
+          border-color: #93c5fd;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
         }
         .btn {
-          margin-top: 6px;
-          padding: 12px 18px;
+          padding: 12px 16px;
           border-radius: 14px;
+          border: none;
+          cursor: pointer;
           font-weight: 800;
           color: #fff;
-          cursor: pointer;
-          background: linear-gradient(135deg, #7c3aed, #14b8a6);
-          border: none;
+          background: linear-gradient(135deg, #2563eb, #7c3aed);
         }
-        .btn:disabled {
-          opacity: 0.7;
-          cursor: not-allowed;
+        .btn:active {
+          transform: translateY(1px);
         }
         .err {
           color: #b91c1c;
-          font-weight: 700;
-          margin-bottom: 10px;
+          font-weight: 800;
         }
-        .note {
+        .info {
+          margin-top: 6px;
+          border: 1px solid #e2e8f0;
+          background: #f8fafc;
+          border-radius: 14px;
+          padding: 12px;
+          color: #0f172a;
+        }
+        .infoText {
+          margin-top: 6px;
+          color: #334155;
+          line-height: 1.35;
+        }
+        .actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 10px;
+        }
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 10px 12px;
+          border-radius: 999px;
+          text-decoration: none;
+          font-weight: 800;
+          color: #0f172a;
+          background: #fff;
+          border: 1px solid #dbeafe;
+          cursor: pointer;
+        }
+        .pill.secondary {
+          border-color: #e2e8f0;
+        }
+        .small {
+          margin-top: 10px;
+          color: #475569;
+          font-size: 0.92rem;
+        }
+        .foot {
+          margin-top: 4px;
+          color: #475569;
+        }
+        .muted {
           color: #64748b;
-          margin: 0;
         }
       `}</style>
     </div>
