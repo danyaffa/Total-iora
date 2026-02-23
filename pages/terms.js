@@ -64,7 +64,7 @@ export default function TermsPage() {
           </p>
           <ul>
             <li>Prices and features are subject to change.</li>
-            <li>Payments are processed securely via Stripe.</li>
+            <li>Payments are processed securely via PayPal.</li>
             <li>Subscriptions typically auto-renew unless cancelled.</li>
             <li>Refunds are not provided for partial months unless required by applicable law.</li>
           </ul>

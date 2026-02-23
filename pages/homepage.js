@@ -6,6 +6,7 @@ import Footer from "../components/Footer";
 import HeritageSelector from "../components/HeritageSelector";
 import OracleVoice from "../components/OracleVoice";
 import AtmospherePicker from "../components/AtmospherePicker";
+import InstallAppButton from "../components/InstallAppButton";
 
 /* ------------------------------- utilities ------------------------------- */
 function setCookie(name, value, maxAgeDays = 365) {
@@ -151,6 +152,7 @@ export default function HomePage({ faith }) {
     <div className="page">
       <Head>
         <title>Total-iora Voice – Spiritual Guidance & Sacred Notes</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta
           name="description"
           content="Faith-aware voice and text guidance (Imam, Priest, Rabbi, Monk) with beautiful atmospheres—Mosque, Church, Synagogue, Temple—plus a private Sacred Notes space."
@@ -191,6 +193,7 @@ export default function HomePage({ faith }) {
         <Link href="/register" legacyBehavior>
           <a className="nav-btn">Register — Free Access</a>
         </Link>
+        <InstallAppButton variant="compact" />
       </nav>
 
       <section className="hero">
@@ -310,8 +313,23 @@ export default function HomePage({ faith }) {
         .topnav {
           display: flex;
           justify-content: center;
+          align-items: center;
+          gap: 10px;
           padding: 14px;
           z-index: 3;
+          flex-wrap: wrap;
+        }
+        .previewBanner {
+          max-width: 800px;
+          margin: 8px auto;
+          padding: 10px 16px;
+          background: #fef3c7;
+          border: 1px solid #fcd34d;
+          border-radius: 12px;
+          text-align: center;
+          color: #92400e;
+          font-size: 0.9rem;
+          font-weight: 600;
         }
         .nav-btn,
         .nav-btn:link,
@@ -451,6 +469,32 @@ export default function HomePage({ faith }) {
         }
         .footer-card :global(a:hover) {
           color: #0b1220;
+        }
+
+        @media (max-width: 480px) {
+          .topnav {
+            padding: 10px 8px;
+            gap: 8px;
+          }
+          .nav-btn,
+          .nav-btn:link,
+          .nav-btn:visited {
+            padding: 8px 14px;
+            font-size: 13px;
+          }
+          .logo {
+            width: 80px;
+          }
+          .note {
+            font-size: 0.9rem;
+            padding: 8px 12px;
+          }
+          h3 {
+            font-size: 1.05rem;
+          }
+          .disc {
+            font-size: 0.85rem;
+          }
         }
       `}</style>
 
