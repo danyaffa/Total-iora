@@ -1,3 +1,30 @@
+/* --- Global reset & base --- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Safe area padding for notched devices */
+@supports (padding: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
 /* --- Atmosphere: let the background image show site-wide --- */
 html.atmo-active,
 html.atmo-active body {
@@ -40,7 +67,7 @@ html.atmo-active .page {
   color: #334155;
 }
 
-/* ---------- EXTRA HELPERS (NEW) ---------- */
+/* ---------- EXTRA HELPERS ---------- */
 
 /* Soft secondary buttons */
 .btn-soft {
@@ -77,4 +104,37 @@ html.atmo-active .page {
   border: 1px solid rgba(148, 163, 184, 0.4);
   background: rgba(15, 23, 42, 0.8);
   color: #e5e7eb;
+}
+
+/* --- PWA standalone mode adjustments --- */
+@media all and (display-mode: standalone) {
+  body {
+    overscroll-behavior-y: contain;
+  }
+}
+
+/* --- Mobile-first touch improvements --- */
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+input,
+textarea,
+select {
+  font-size: 16px; /* Prevents iOS zoom on focus */
+}
+
+/* --- Smooth scrolling --- */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* --- Focus visible for accessibility --- */
+:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
 }

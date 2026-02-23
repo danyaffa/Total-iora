@@ -101,7 +101,7 @@ export default function DeleteAccountPage() {
           <div className="shadowBox">
             <p className="shadowTitle">Payment Information</p>
             <p className="shadowText">
-              If you wish to remove saved payment details (Stripe / Link), use the
+              If you wish to remove saved payment details (PayPal), use the
               provider’s self-service page below. No contact is required.
             </p>
 

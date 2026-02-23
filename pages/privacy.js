@@ -39,7 +39,7 @@ export default function PrivacyPage() {
           </p>
           <ul>
             <li><strong>Account Data:</strong> When you register, we collect your username, email address, and phone number to create your unique access key.</li>
-            <li><strong>Payment Data:</strong> Payments are processed securely by <strong>Stripe</strong>. We do not store your credit card numbers on our servers; we only retain a record that your subscription is active.</li>
+            <li><strong>Payment Data:</strong> Payments are processed securely by <strong>PayPal</strong>. We do not store your credit card numbers on our servers; we only retain a record that your subscription is active.</li>
           </ul>
 
           <h2>2. Sacred Notes & Ephemeral Data</h2>
