@@ -30,11 +30,12 @@ export default function Login() {
     setMsg("");
     setBusy(true);
 
-    // Check promo code first — grants full access without credentials
+    // Check promo code first — grants timed free access
     if (promoCode.trim() && PROMO_CODE && promoCode.trim() === PROMO_CODE) {
       setCookie("ac_session", "1", 365);
       setCookie("ac_registered", "1", 365);
-      setCookie("ac_family", "1", 365);
+      setCookie("ac_promo", "1", 365);
+      localStorage.setItem("ac_promo_start", String(Date.now()));
       window.location.replace("/homepage");
       return;
     }

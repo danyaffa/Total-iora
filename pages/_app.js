@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import "../styles/globals.css";
 import ReviewWidget from "../components/ReviewWidget";
+import PromoSessionBanner from "../components/PromoSessionBanner";
 
 export default function App({ Component, pageProps }) {
   // Register Service Worker for PWA
@@ -22,7 +23,7 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Component {...pageProps} />
-      {/* Floating review pill, bottom-right on every page */}
+      <PromoSessionBanner />
       <ReviewWidget />
     </>
   );

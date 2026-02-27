@@ -1,141 +1,283 @@
 // FILE: /pages/unlock.js
-// PayPal-powered upgrade page (replaces Stripe)
+// Upgrade page — $5/month via PayPal
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
+import Link from "next/link";
 import Script from "next/script";
-import { PAYPAL_CLIENT_ID, PAYPAL_AMOUNT, PAYPAL_CURRENCY } from "../lib/paypal";
+import {
+  PAYPAL_CLIENT_ID,
+  PAYPAL_MONTHLY_PLAN_ID,
+  PAYPAL_CURRENCY,
+} from "../lib/paypal";
 
-const FREE_MODE = true;
-const PLANS = [];
-const isFree = () => FREE_MODE || PLANS.length === 0;
+function setCookie(name, value, maxAgeDays = 30) {
+  if (typeof document === "undefined") return;
+  const maxAge = maxAgeDays * 24 * 3600;
+  const secure =
+    typeof window !== "undefined" && window.location.protocol === "https:";
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
+}
+
+function clearCookie(name) {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Max-Age=0; Path=/`;
+}
+
+const MONTHLY_PRICE = "5.00";
 
 export default function Unlock() {
   const router = useRouter();
   const [paid, setPaid] = useState(false);
   const [error, setError] = useState("");
+  const [sdkReady, setSdkReady] = useState(false);
 
   useEffect(() => {
-    if (isFree()) router.replace("/register");
-  }, [router]);
+    // Clear promo session state so the banner won't reappear after upgrade
+    if (paid) {
+      clearCookie("ac_promo");
+      localStorage.removeItem("ac_promo_start");
+    }
+  }, [paid]);
 
-  if (isFree()) return null;
+  const handlePaymentSuccess = () => {
+    setPaid(true);
+    setCookie("ac_session", "1", 30);
+    setCookie("ac_registered", "1", 365);
+    clearCookie("ac_promo");
+    localStorage.removeItem("ac_promo_start");
+    setTimeout(() => router.push("/homepage"), 2000);
+  };
 
   return (
     <div className="wrap">
       <Head>
         <title>Upgrade — Total-iora</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta
+          name="description"
+          content="Upgrade to Total-iora Premium for unlimited spiritual guidance, Sacred Notes, and voice oracle access."
+        />
       </Head>
 
+      <nav className="topnav">
+        <Link href="/homepage" className="back-link">
+          &larr; Back
+        </Link>
+      </nav>
+
       <header className="hero">
-        <h1>Choose a Plan</h1>
-        <p>Secure payment via PayPal. Cancel anytime.</p>
+        <img
+          src="/TotalIora_Logo.png"
+          alt="Total-iora"
+          className="logo"
+        />
+        <h1>Unlock Total-iora</h1>
+        <p className="subtitle">
+          Unlimited access to your personal spiritual sanctuary
+        </p>
       </header>
 
       {paid ? (
-        <div className="success">
+        <div className="success-card">
+          <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
           <h2>Payment Successful!</h2>
-          <p>Your access has been unlocked. Redirecting...</p>
+          <p>Welcome to Total-iora Premium. Redirecting to your dashboard...</p>
         </div>
       ) : (
-        <main className="paypal-container">
-          {PAYPAL_CLIENT_ID && (
-            <Script
-              src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=${PAYPAL_CURRENCY}`}
-              onLoad={() => {
-                if (window.paypal) {
-                  window.paypal
-                    .Buttons({
-                      style: {
-                        layout: "vertical",
-                        color: "blue",
-                        shape: "pill",
-                        label: "pay",
-                      },
-                      createOrder: (data, actions) => {
-                        return actions.order.create({
-                          purchase_units: [
-                            {
-                              amount: {
-                                value: PAYPAL_AMOUNT,
-                                currency_code: PAYPAL_CURRENCY,
-                              },
-                              description: "Total-iora Premium Access",
-                            },
-                          ],
-                        });
-                      },
-                      onApprove: async (data, actions) => {
-                        const order = await actions.order.capture();
-                        console.log("PayPal payment captured:", order);
-                        setPaid(true);
-                        // Set session cookies
-                        const secure =
-                          typeof window !== "undefined" &&
-                          window.location.protocol === "https:";
-                        document.cookie = `ac_session=1; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
-                        document.cookie = `ac_registered=1; Max-Age=${365 * 24 * 3600}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
-                        setTimeout(() => router.push("/homepage"), 2000);
-                      },
-                      onError: (err) => {
-                        console.error("PayPal error:", err);
-                        setError(
-                          "Payment failed. Please try again or contact support."
-                        );
-                      },
-                    })
-                    .render("#paypal-button-container");
-                }
-              }}
-            />
-          )}
-
-          <div id="paypal-button-container" />
-          {error && <p className="err">{error}</p>}
-
-          {!PAYPAL_CLIENT_ID && (
-            <p className="muted">
-              Payment is not configured yet. Please contact support.
+        <>
+          <div className="plan-card">
+            <div className="plan-badge">Most Popular</div>
+            <div className="plan-header">
+              <span className="plan-price">${MONTHLY_PRICE}</span>
+              <span className="plan-period">/month</span>
+            </div>
+            <p className="plan-desc">
+              Full access to everything Total-iora offers
             </p>
-          )}
-        </main>
+
+            <ul className="features">
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Unlimited voice guidance sessions
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Sacred Notes &amp; virtual candles
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Oracle Universe DNA reports
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                All atmospheres &amp; faith traditions
+              </li>
+              <li>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Cancel anytime — no commitments
+              </li>
+            </ul>
+
+            {PAYPAL_CLIENT_ID ? (
+              <>
+                <Script
+                  src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&vault=true&intent=subscription&currency=${PAYPAL_CURRENCY}`}
+                  onLoad={() => setSdkReady(true)}
+                />
+                {sdkReady && PAYPAL_MONTHLY_PLAN_ID ? (
+                  <PayPalSubscription
+                    planId={PAYPAL_MONTHLY_PLAN_ID}
+                    onSuccess={handlePaymentSuccess}
+                    onError={(err) => {
+                      console.error("PayPal error:", err);
+                      setError("Payment failed. Please try again.");
+                    }}
+                  />
+                ) : sdkReady ? (
+                  <PayPalOneTime
+                    amount={MONTHLY_PRICE}
+                    currency={PAYPAL_CURRENCY}
+                    onSuccess={handlePaymentSuccess}
+                    onError={(err) => {
+                      console.error("PayPal error:", err);
+                      setError("Payment failed. Please try again.");
+                    }}
+                  />
+                ) : (
+                  <div className="loading">Loading payment...</div>
+                )}
+              </>
+            ) : (
+              <p className="muted">
+                Payment is being set up. Please check back soon or contact support.
+              </p>
+            )}
+
+            {error && <p className="err">{error}</p>}
+          </div>
+
+          <p className="secure-note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0110 0v4"/>
+            </svg>
+            Secure payment via PayPal. Cancel anytime.
+          </p>
+        </>
       )}
 
       <style jsx>{`
         .wrap {
           min-height: 100vh;
           background: linear-gradient(#fff, #f8fafc);
-          padding: 28px 16px 40px;
+          padding: 0 16px 40px;
+        }
+        .topnav {
+          padding: 16px 0;
+        }
+        .back-link {
+          color: #7c3aed;
+          font-weight: 700;
+          font-size: 0.95rem;
+          text-decoration: none;
+        }
+        .back-link:hover {
+          text-decoration: underline;
         }
         .hero {
           text-align: center;
+          padding-top: 8px;
+        }
+        .logo {
+          width: 72px;
+          height: 72px;
+          border-radius: 14px;
+          box-shadow: 0 6px 18px rgba(2, 6, 23, 0.12);
         }
         h1 {
+          margin: 12px 0 4px;
           font-size: 1.8rem;
           font-weight: 800;
           color: #0f172a;
         }
-        .hero p {
+        .subtitle {
           color: #475569;
-          margin-top: 4px;
+          font-size: 0.95rem;
+          margin: 0 0 20px;
         }
-        .paypal-container {
-          max-width: 440px;
-          margin: 24px auto 0;
-          padding: 20px;
+        .plan-card {
+          position: relative;
+          max-width: 420px;
+          margin: 0 auto;
           background: #fff;
-          border: 1px solid rgba(15, 23, 42, 0.08);
-          border-radius: 20px;
-          box-shadow: 0 10px 30px rgba(2, 6, 23, 0.08);
+          border: 2px solid #7c3aed;
+          border-radius: 24px;
+          padding: 32px 24px 24px;
+          box-shadow: 0 10px 40px rgba(124, 58, 237, 0.12);
         }
-        .success {
+        .plan-badge {
+          position: absolute;
+          top: -12px;
+          left: 50%;
+          transform: translateX(-50%);
+          padding: 4px 16px;
+          background: linear-gradient(135deg, #7c3aed, #14b8a6);
+          color: #fff;
+          font-weight: 700;
+          font-size: 0.8rem;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .plan-header {
           text-align: center;
-          padding: 40px 16px;
+          margin-bottom: 4px;
         }
-        .success h2 {
-          color: #16a34a;
+        .plan-price {
+          font-size: 3rem;
           font-weight: 800;
+          color: #0f172a;
+        }
+        .plan-period {
+          font-size: 1.1rem;
+          font-weight: 600;
+          color: #64748b;
+        }
+        .plan-desc {
+          text-align: center;
+          color: #475569;
+          margin: 0 0 16px;
+        }
+        .features {
+          list-style: none;
+          padding: 0;
+          margin: 0 0 20px;
+          display: grid;
+          gap: 10px;
+        }
+        .features li {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 0.95rem;
+          color: #334155;
+          font-weight: 600;
+        }
+        .loading {
+          text-align: center;
+          color: #64748b;
+          padding: 16px;
+        }
+        .muted {
+          text-align: center;
+          color: #94a3b8;
+          font-size: 0.9rem;
         }
         .err {
           color: #b91c1c;
@@ -143,11 +285,96 @@ export default function Unlock() {
           text-align: center;
           margin-top: 12px;
         }
-        .muted {
-          color: #94a3b8;
+        .success-card {
+          max-width: 420px;
+          margin: 40px auto;
+          background: #fff;
+          border-radius: 24px;
+          padding: 40px 24px;
+          box-shadow: 0 10px 40px rgba(2, 6, 23, 0.1);
           text-align: center;
+        }
+        .success-card h2 {
+          color: #16a34a;
+          font-weight: 800;
+          margin: 12px 0 8px;
+        }
+        .success-card p {
+          color: #475569;
+        }
+        .secure-note {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          color: #94a3b8;
+          font-size: 0.85rem;
+          margin-top: 16px;
+          text-align: center;
+        }
+        @media (max-width: 480px) {
+          .wrap {
+            padding: 0 12px 32px;
+          }
+          h1 {
+            font-size: 1.5rem;
+          }
+          .plan-card {
+            padding: 28px 18px 20px;
+          }
+          .plan-price {
+            font-size: 2.4rem;
+          }
         }
       `}</style>
     </div>
   );
+}
+
+/* PayPal subscription button (when plan ID is configured) */
+function PayPalSubscription({ planId, onSuccess, onError }) {
+  useEffect(() => {
+    if (!window.paypal) return;
+    window.paypal
+      .Buttons({
+        style: { layout: "vertical", color: "gold", shape: "pill", label: "subscribe" },
+        createSubscription: (data, actions) => {
+          return actions.subscription.create({ plan_id: planId });
+        },
+        onApprove: () => onSuccess(),
+        onError,
+      })
+      .render("#paypal-btn");
+  }, [planId, onSuccess, onError]);
+
+  return <div id="paypal-btn" />;
+}
+
+/* PayPal one-time payment fallback (when no subscription plan is configured) */
+function PayPalOneTime({ amount, currency, onSuccess, onError }) {
+  useEffect(() => {
+    if (!window.paypal) return;
+    window.paypal
+      .Buttons({
+        style: { layout: "vertical", color: "gold", shape: "pill", label: "pay" },
+        createOrder: (data, actions) => {
+          return actions.order.create({
+            purchase_units: [
+              {
+                amount: { value: amount, currency_code: currency },
+                description: "Total-iora Premium Access",
+              },
+            ],
+          });
+        },
+        onApprove: async (data, actions) => {
+          await actions.order.capture();
+          onSuccess();
+        },
+        onError,
+      })
+      .render("#paypal-btn");
+  }, [amount, currency, onSuccess, onError]);
+
+  return <div id="paypal-btn" />;
 }
