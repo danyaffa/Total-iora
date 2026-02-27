@@ -1,6 +1,6 @@
 // FILE: /pages/login.js
-// Login page with promo code for family access
-// On success: set cookies and go to /homepage (full access dashboard)
+// Login page — email/password OR promo code
+// On success: set cookies and go to /homepage
 
 import { useState } from "react";
 import Head from "next/head";
@@ -13,7 +13,6 @@ function setCookie(name, value, maxAgeDays = 7) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
-// Promo code from Vercel env vars
 const PROMO_CODE = process.env.NEXT_PUBLIC_PROMO_CODE || "";
 
 export default function Login() {
@@ -21,33 +20,16 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [promoCode, setPromoCode] = useState("");
-  const [showPromo, setShowPromo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [promoMsg, setPromoMsg] = useState("");
 
+  /* ---- email / password login ---- */
   async function onSubmit(e) {
     e.preventDefault();
     setMsg("");
+    setPromoMsg("");
     setBusy(true);
-
-    // Check promo code first — grants timed free access
-    if (promoCode.trim() && PROMO_CODE && promoCode.trim() === PROMO_CODE) {
-      setCookie("ac_session", "1", 365);
-      setCookie("ac_registered", "1", 365);
-      setCookie("ac_promo", "1", 365);
-      localStorage.setItem("ac_promo_start", String(Date.now()));
-      window.location.replace("/homepage");
-      return;
-    }
-
-    // If promo code was entered but doesn't match, and no email/password
-    if (promoCode.trim() && promoCode.trim() !== PROMO_CODE) {
-      if (!email.trim()) {
-        setMsg("Invalid promo code. Please enter your email and password to log in.");
-        setBusy(false);
-        return;
-      }
-    }
 
     try {
       const r = await fetch("/api/login", {
@@ -71,6 +53,28 @@ export default function Login() {
     }
   }
 
+  /* ---- promo code apply ---- */
+  function applyPromo(e) {
+    e.preventDefault();
+    setMsg("");
+    setPromoMsg("");
+
+    if (!promoCode.trim()) {
+      setPromoMsg("Please enter a promo code.");
+      return;
+    }
+    if (!PROMO_CODE || promoCode.trim() !== PROMO_CODE) {
+      setPromoMsg("Invalid promo code.");
+      return;
+    }
+
+    setCookie("ac_session", "1", 365);
+    setCookie("ac_registered", "1", 365);
+    setCookie("ac_promo", "1", 365);
+    localStorage.setItem("ac_promo_start", String(Date.now()));
+    window.location.replace("/homepage");
+  }
+
   return (
     <div className="wrap">
       <Head>
@@ -85,6 +89,7 @@ export default function Login() {
           Enter your private space. We keep your notes and questions private.
         </p>
 
+        {/* Email / password form */}
         <form onSubmit={onSubmit} className="form">
           <label>
             Email
@@ -94,6 +99,7 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               autoComplete="email"
+              required
             />
           </label>
 
@@ -105,8 +111,8 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Your password"
-                minLength={8}
                 autoComplete="current-password"
+                required
               />
               <button
                 type="button"
@@ -133,45 +139,38 @@ export default function Login() {
             {busy ? "Signing in..." : "Log in"}
           </button>
 
-          {/* Promo code section */}
-          <div className="promo-section">
-            <button
-              type="button"
-              className="promo-toggle"
-              onClick={() => setShowPromo((v) => !v)}
-            >
-              {showPromo ? "Hide promo code" : "Have a promo code?"}
-            </button>
-
-            {showPromo && (
-              <div className="promo-field">
-                <input
-                  type="text"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value)}
-                  placeholder="Enter promo code"
-                  className="promo-input"
-                  autoComplete="off"
-                />
-                {promoCode.trim() && (
-                  <button
-                    type="submit"
-                    className="promo-apply"
-                    disabled={busy}
-                  >
-                    {busy ? "..." : "Apply"}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
           {msg && <p className="err">{msg}</p>}
-          <p className="note">
-            No account?{" "}
-            <Link href="/register">Register free</Link>.
-          </p>
         </form>
+
+        {/* Divider */}
+        <div className="divider">
+          <span>or use a promo code</span>
+        </div>
+
+        {/* Promo code — separate form so it never conflicts with login */}
+        <form onSubmit={applyPromo} className="promo-form">
+          <label>
+            Promo Code
+            <div className="promo-field">
+              <input
+                type="text"
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value)}
+                placeholder="Enter promo code"
+                autoComplete="off"
+              />
+              <button type="submit" className="promo-apply">
+                Apply
+              </button>
+            </div>
+          </label>
+          {promoMsg && <p className="promo-err">{promoMsg}</p>}
+        </form>
+
+        <p className="note">
+          No account?{" "}
+          <Link href="/register">Register free</Link>.
+        </p>
       </main>
 
       <style jsx>{`
@@ -236,7 +235,6 @@ export default function Login() {
           box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
         }
 
-        /* Password field with eye toggle */
         .pw-wrap {
           position: relative;
           display: flex;
@@ -283,33 +281,48 @@ export default function Login() {
           cursor: not-allowed;
         }
 
-        /* Promo code */
-        .promo-section {
+        .err {
+          color: #b91c1c;
+          font-weight: 700;
           text-align: center;
+          margin: 0;
         }
-        .promo-toggle {
-          background: none;
-          border: none;
-          color: #7c3aed;
+
+        /* Divider */
+        .divider {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin: 18px 0;
+        }
+        .divider::before,
+        .divider::after {
+          content: "";
+          flex: 1;
+          height: 1px;
+          background: #e2e8f0;
+        }
+        .divider span {
+          color: #94a3b8;
+          font-size: 0.85rem;
           font-weight: 600;
-          font-size: 0.9rem;
-          cursor: pointer;
-          text-decoration: underline;
-          padding: 4px;
+          white-space: nowrap;
         }
-        .promo-toggle:hover {
-          color: #5b21b6;
+
+        /* Promo form */
+        .promo-form {
+          text-align: left;
+          margin-bottom: 14px;
         }
         .promo-field {
           display: flex;
           gap: 8px;
-          margin-top: 8px;
         }
-        .promo-input {
+        .promo-field input {
           flex: 1;
         }
         .promo-apply {
-          padding: 10px 18px;
+          padding: 12px 20px;
           border-radius: 12px;
           border: none;
           font-weight: 700;
@@ -318,20 +331,25 @@ export default function Login() {
           cursor: pointer;
           white-space: nowrap;
           font-size: 0.95rem;
+          transition: transform 0.2s, box-shadow 0.2s;
         }
-        .promo-apply:disabled {
-          opacity: 0.7;
+        .promo-apply:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(14, 165, 233, 0.3);
         }
-
-        .err {
+        .promo-err {
           color: #b91c1c;
           font-weight: 700;
           text-align: center;
+          font-size: 0.9rem;
+          margin: 6px 0 0;
         }
+
         .note {
           color: #64748b;
           text-align: center;
           font-size: 0.9rem;
+          margin: 0;
         }
 
         @media (max-width: 480px) {
