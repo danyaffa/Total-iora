@@ -13,8 +13,8 @@ function setCookie(name, value, maxAgeDays = 7) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
-// Family promo code from Vercel env vars
-const FAMILY_PROMO = process.env.NEXT_PUBLIC_FAMILY_PROMO || "";
+// Promo code from Vercel env vars
+const PROMO_CODE = process.env.NEXT_PUBLIC_PROMO_CODE || "";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -31,7 +31,7 @@ export default function Login() {
     setBusy(true);
 
     // Check promo code first — grants full access without credentials
-    if (promoCode.trim() && FAMILY_PROMO && promoCode.trim() === FAMILY_PROMO) {
+    if (promoCode.trim() && PROMO_CODE && promoCode.trim() === PROMO_CODE) {
       setCookie("ac_session", "1", 365);
       setCookie("ac_registered", "1", 365);
       setCookie("ac_family", "1", 365);
@@ -40,7 +40,7 @@ export default function Login() {
     }
 
     // If promo code was entered but doesn't match, and no email/password
-    if (promoCode.trim() && promoCode.trim() !== FAMILY_PROMO) {
+    if (promoCode.trim() && promoCode.trim() !== PROMO_CODE) {
       if (!email.trim()) {
         setMsg("Invalid promo code. Please enter your email and password to log in.");
         setBusy(false);
