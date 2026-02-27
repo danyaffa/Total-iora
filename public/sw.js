@@ -1,5 +1,5 @@
 // Service Worker for Total-iora PWA
-const CACHE_NAME = "totaliora-v1";
+const CACHE_NAME = "totaliora-v2";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_URLS = [
@@ -7,6 +7,7 @@ const PRECACHE_URLS = [
   "/homepage",
   "/login",
   "/register",
+  "/unlock",
   "/TotalIora_Logo.png",
   "/manifest.json",
   "/offline.html",
