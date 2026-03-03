@@ -78,7 +78,7 @@ The app never promises outcomes. Reflections are symbolic and private.
 * **Styling:** Scoped JSX CSS + small global overrides
 * **Audio:** Web Speech API (recognition), Speech Synthesis (voice)
 * **Auth / Data (optional):** Firebase (Firestore) for Aura Wall notes
-* **Payments (optional):** Stripe Checkout Links
+* **Payments (optional):** PayPal (orders + subscriptions)
 * **Hosting:** Vercel (recommended)
 
 ---
@@ -140,9 +140,18 @@ FAITH_OVERRIDE=                      # optional: force "Muslim"|"Christian"|"Jew
 NEXT_PUBLIC_FIREBASE_API_KEY=
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-# Stripe (optional)
-NEXT_PUBLIC_STRIPE_MONTHLY_LINK=
-NEXT_PUBLIC_STRIPE_LIFETIME_LINK=
+# PayPal (client + server)
+NEXT_PUBLIC_PAYPAL_CLIENT_ID=
+NEXT_PUBLIC_PAYPAL_MONTHLY_PLAN_ID=
+NEXT_PUBLIC_PAYPAL_YEARLY_PLAN_ID=
+NEXT_PUBLIC_PAYPAL_AMOUNT=5.00
+NEXT_PUBLIC_PAYPAL_CURRENCY=USD
+NEXT_PUBLIC_PAYPAL_MODE=sandbox
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=
+PAYPAL_MODE=sandbox
+PAYPAL_WEBHOOK_ID=
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
 ---
