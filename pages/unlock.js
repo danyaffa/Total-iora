@@ -128,7 +128,7 @@ export default function Unlock() {
             {PAYPAL_CLIENT_ID ? (
               <>
                 <Script
-                  src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&vault=true&intent=subscription&currency=${PAYPAL_CURRENCY}`}
+                  src={`https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=${PAYPAL_CURRENCY}${PAYPAL_MONTHLY_PLAN_ID ? "&vault=true&intent=subscription" : "&intent=capture"}`}
                   onLoad={() => setSdkReady(true)}
                 />
                 {sdkReady && PAYPAL_MONTHLY_PLAN_ID ? (
@@ -338,10 +338,32 @@ function PayPalSubscription({ planId, onSuccess, onError }) {
     window.paypal
       .Buttons({
         style: { layout: "vertical", color: "gold", shape: "pill", label: "subscribe" },
-        createSubscription: (data, actions) => {
-          return actions.subscription.create({ plan_id: planId });
+        createSubscription: async () => {
+          const response = await fetch("/api/paypal/create-subscription", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ planId }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Unable to create subscription");
+          }
+
+          const payload = await response.json();
+          return payload.id;
         },
-        onApprove: () => onSuccess(),
+        onApprove: async (data) => {
+          const response = await fetch(`/api/paypal/get-subscription?subscriptionId=${data.subscriptionID}`);
+          if (!response.ok) {
+            throw new Error("Unable to verify subscription");
+          }
+          const payload = await response.json();
+          if (payload.status === "ACTIVE" || payload.status === "APPROVAL_PENDING") {
+            onSuccess();
+            return;
+          }
+          throw new Error("Subscription was not activated");
+        },
         onError,
       })
       .render("#paypal-btn");
@@ -357,18 +379,27 @@ function PayPalOneTime({ amount, currency, onSuccess, onError }) {
     window.paypal
       .Buttons({
         style: { layout: "vertical", color: "gold", shape: "pill", label: "pay" },
-        createOrder: (data, actions) => {
-          return actions.order.create({
-            purchase_units: [
-              {
-                amount: { value: amount, currency_code: currency },
-                description: "Total-iora Premium Access",
-              },
-            ],
+        createOrder: async () => {
+          const response = await fetch("/api/paypal/create-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ amount, currency }),
           });
+          if (!response.ok) {
+            throw new Error("Unable to create order");
+          }
+          const payload = await response.json();
+          return payload.id;
         },
-        onApprove: async (data, actions) => {
-          await actions.order.capture();
+        onApprove: async (data) => {
+          const response = await fetch("/api/paypal/capture-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId: data.orderID }),
+          });
+          if (!response.ok) {
+            throw new Error("Unable to capture order");
+          }
           onSuccess();
         },
         onError,
