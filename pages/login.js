@@ -62,7 +62,18 @@ export default function Login() {
       } else {
         setCookie("ac_session", "1", 7);
         setCookie("ac_registered", "1", 365);
-        window.location.replace("/homepage");
+        // Store payment/trial info locally
+        if (data.email) localStorage.setItem("ac_email", data.email);
+        if (data.trialEnd) localStorage.setItem("ac_trial_end", data.trialEnd);
+        localStorage.setItem("ac_is_paid", data.isPaid ? "1" : "0");
+
+        // Route based on payment status
+        if (data.isPaid || data.trialActive) {
+          window.location.replace("/homepage");
+        } else {
+          // Trial expired and not paid — go to payment page
+          window.location.replace("/unlock");
+        }
       }
     } catch {
       setMsg("Network error. Please try again.");

@@ -40,12 +40,29 @@ export default function Unlock() {
     }
   }, [paid]);
 
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = async () => {
     setPaid(true);
     setCookie("ac_session", "1", 30);
     setCookie("ac_registered", "1", 365);
     clearCookie("ac_promo");
     localStorage.removeItem("ac_promo_start");
+    localStorage.setItem("ac_is_paid", "1");
+
+    // Persist payment status to Firestore
+    const email = localStorage.getItem("ac_email");
+    if (email) {
+      try {
+        await fetch("/api/mark-paid", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+          credentials: "include",
+        });
+      } catch (err) {
+        console.error("Failed to persist payment status:", err);
+      }
+    }
+
     setTimeout(() => router.push("/homepage"), 2000);
   };
 

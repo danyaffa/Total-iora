@@ -64,6 +64,12 @@ export default function Register() {
       } else {
         setCookie("ac_registered", "1", 365);
         setCookie("ac_session", "1", 7);
+        // Store trial info so the app knows when the trial ends
+        if (data.trialEnd) {
+          localStorage.setItem("ac_trial_end", data.trialEnd);
+          localStorage.setItem("ac_email", form.email.trim().toLowerCase());
+        }
+        localStorage.setItem("ac_is_paid", "0");
         window.location.replace("/homepage");
       }
     } catch {
