@@ -82,11 +82,15 @@ export default function LegalPage() {
 
           <h2>5. Indemnification</h2>
           <p>
-            You agree to defend, indemnify, and hold harmless <strong>Leffler International Investments</strong>, 
-            and its employees/contractors from and against any claims, liabilities, damages, judgments, 
-            awards, losses, costs, expenses, or fees (including reasonable attorneys' fees) arising out of 
+            You agree to defend, indemnify, and hold harmless <strong>Leffler International Investments</strong>,
+            and its employees/contractors from and against any claims, liabilities, damages, judgments,
+            awards, losses, costs, expenses, or fees (including reasonable attorneys' fees) arising out of
             or relating to your violation of these Terms or your use of the Service.
           </p>
+
+          <div className="copyrightBox">
+            <p>&copy; {new Date().getFullYear()} Leffler International Investments. All rights reserved.</p>
+          </div>
         </div>
       </main>
 
@@ -175,6 +179,18 @@ export default function LegalPage() {
         }
         .textLink:hover {
           color: #1d4ed8;
+        }
+
+        .copyrightBox {
+          margin-top: 32px;
+          padding-top: 16px;
+          border-top: 1px solid #e2e8f0;
+          text-align: center;
+        }
+        .copyrightBox p {
+          font-size: 0.85rem;
+          color: #64748b;
+          font-weight: 700;
         }
 
         @media (max-width: 600px) {

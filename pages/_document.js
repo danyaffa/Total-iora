@@ -5,6 +5,10 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
+        {/* SEO & Branding */}
+        <meta name="author" content="Leffler International Investments" />
+        <meta name="publisher" content="Leffler International Investments" />
+
         {/* PWA Meta Tags */}
         <meta name="application-name" content="Total-iora" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

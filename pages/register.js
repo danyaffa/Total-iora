@@ -82,9 +82,9 @@ export default function Register() {
 
       <header className="hero">
         <img src="/TotalIora_Logo.png" alt="Total-iora" className="logo" />
-        <div className="badge">Free Access</div>
+        <div className="badge">14-Day Free Trial</div>
         <h1>Create your private sanctuary</h1>
-        <p>Register to enter. Only you can access your notes and questions.</p>
+        <p>Register to start your 14-day free trial. Full access to all features. Then $5/month via PayPal.</p>
       </header>
 
       <main className="card">
@@ -156,7 +156,7 @@ export default function Register() {
           </label>
 
           <button className="btn accent" type="submit" disabled={busy}>
-            {busy ? "Creating..." : "Register — Free"}
+            {busy ? "Creating..." : "Start 14-Day Free Trial"}
           </button>
           {msg && <p className="err">{msg}</p>}
           <p className="small">

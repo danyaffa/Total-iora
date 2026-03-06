@@ -21,9 +21,9 @@ export async function getServerSideProps({ req, res }) {
     "/dashboard",
     "/login",
     "/register",
-    "/contact",
     "/privacy",
     "/terms",
+    "/legal",
     "/subjects",
     "/site-map",
   ];

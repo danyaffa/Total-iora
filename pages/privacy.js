@@ -81,6 +81,10 @@ export default function PrivacyPage() {
           <p>
             We employ industry-standard encryption (SSL/TLS) for all data in transit. Your account is protected by password hashing and secure session management.
           </p>
+
+          <div className="copyrightBox">
+            <p>&copy; {new Date().getFullYear()} Leffler International Investments. All rights reserved.</p>
+          </div>
         </div>
       </main>
 
@@ -169,6 +173,18 @@ export default function PrivacyPage() {
         }
         .textLink:hover {
           color: #1d4ed8;
+        }
+
+        .copyrightBox {
+          margin-top: 32px;
+          padding-top: 16px;
+          border-top: 1px solid #e2e8f0;
+          text-align: center;
+        }
+        .copyrightBox p {
+          font-size: 0.85rem;
+          color: #64748b;
+          font-weight: 700;
         }
 
         @media (max-width: 600px) {

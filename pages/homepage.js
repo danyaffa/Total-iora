@@ -159,8 +159,9 @@ export default function HomePage({ faith }) {
         />
         <meta
           name="keywords"
-          content="Total-iora, spiritual guidance, oracle, imam, priest, rabbi, mosque, church, synagogue, temple, sacred notes, meditation, faith AI"
+          content="Total-iora, spiritual guidance, oracle, imam, priest, rabbi, mosque, church, synagogue, temple, sacred notes, meditation, faith AI, Leffler International Investments"
         />
+        <meta name="author" content="Leffler International Investments" />
         <link rel="canonical" href={`${siteUrl}/homepage`} />
         <meta property="og:title" content="Total-iora Voice" />
         <meta

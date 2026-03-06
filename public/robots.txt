@@ -1,6 +1,21 @@
-# FILE: /public/robots.txt
+# Total-iora - Leffler International Investments
 
 User-agent: *
 Allow: /
+Disallow: /api/
+Disallow: /admin/
 
-Sitemap: https://total-iora.com/sitemap.xml
+# Allow AI assistants and search crawlers
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://totaliora.com/sitemap.xml

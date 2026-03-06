@@ -122,9 +122,13 @@ export default function TermsPage() {
 
           <h2>10. Changes to These Terms</h2>
           <p>
-            We may update these Terms at any time. Continued use of the Platform constitutes 
+            We may update these Terms at any time. Continued use of the Platform constitutes
             acceptance of the updated Terms.
           </p>
+
+          <div className="copyrightBox">
+            <p>&copy; {new Date().getFullYear()} Leffler International Investments. All rights reserved.</p>
+          </div>
         </div>
       </main>
 
@@ -221,6 +225,18 @@ export default function TermsPage() {
         }
         .textLink:hover {
           color: #1d4ed8;
+        }
+
+        .copyrightBox {
+          margin-top: 32px;
+          padding-top: 16px;
+          border-top: 1px solid #e2e8f0;
+          text-align: center;
+        }
+        .copyrightBox p {
+          font-size: 0.85rem;
+          color: #64748b;
+          font-weight: 700;
         }
 
         @media (max-width: 600px) {
