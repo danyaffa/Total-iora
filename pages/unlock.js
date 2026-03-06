@@ -156,7 +156,7 @@ export default function Unlock() {
               </>
             ) : (
               <p className="muted">
-                Payment is being set up. Please check back soon or contact support.
+                Payment is being set up. Please check back soon or visit our <a href="/#faq">FAQ</a> for help.
               </p>
             )}
 

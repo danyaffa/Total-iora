@@ -4,7 +4,7 @@ export default function Footer() {
     <footer role="contentinfo" className="footer">
       <div className="inner">
         <p className="copy">
-          &copy; {new Date().getFullYear()} Total-iora &middot; A sanctuary of
+          &copy; {new Date().getFullYear()} Leffler International Investments &middot; Total-iora &middot; A sanctuary of
           reflection. No promises. Only presence.
         </p>
         <nav className="links" aria-label="Footer links">
@@ -14,9 +14,9 @@ export default function Footer() {
           <span className="sep">&middot;</span>
           <a href="/legal">Legal</a>
           <span className="sep">&middot;</span>
-          <a href="/delete-account">Delete Account</a>
+          <a href="/delete-account">Manage Account</a>
           <span className="sep">&middot;</span>
-          <a href="/contact">Contact Us</a>
+          <a href="/#faq">FAQ</a>
         </nav>
       </div>
       <style jsx>{`
