@@ -70,7 +70,8 @@ export default function Register() {
           localStorage.setItem("ac_email", form.email.trim().toLowerCase());
         }
         localStorage.setItem("ac_is_paid", "0");
-        window.location.replace("/homepage");
+        // Send new users to the payment/trial page
+        window.location.replace("/unlock?from=register");
       }
     } catch {
       setMsg("Could not register. Please try again.");
