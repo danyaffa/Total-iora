@@ -2,12 +2,18 @@
 
 import * as admin from "firebase-admin";
 
-const projectId = process.env.FIREBASE_PROJECT_ID;
-const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const projectId = (process.env.FIREBASE_PROJECT_ID || "").trim();
+const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
 let privateKey = process.env.FIREBASE_PRIVATE_KEY || "";
+
+// Trim whitespace
+privateKey = privateKey.trim();
 
 // Remove accidental wrapping quotes (common in Vercel)
 if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+  privateKey = privateKey.slice(1, -1);
+}
+if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
   privateKey = privateKey.slice(1, -1);
 }
 
@@ -17,8 +23,10 @@ privateKey = privateKey.replace(/\\n/g, "\n");
 if (!admin.apps.length) {
   if (!projectId || !clientEmail || !privateKey) {
     console.warn(
-      "⚠ Firebase Admin missing credentials. " +
-        "Check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY."
+      "⚠ Firebase Admin missing credentials.",
+      "projectId:", projectId ? "SET" : "MISSING",
+      "clientEmail:", clientEmail ? "SET" : "MISSING",
+      "privateKey:", privateKey ? `SET (${privateKey.length} chars)` : "MISSING"
     );
   } else {
     try {
@@ -29,9 +37,8 @@ if (!admin.apps.length) {
           privateKey,
         }),
       });
-      console.log("✅ Firebase Admin initialised (Total-iora)");
     } catch (err) {
-      console.error("🔥 Firebase Admin initialization error:", err);
+      console.error("Firebase Admin initialization error:", err);
     }
   }
 }
