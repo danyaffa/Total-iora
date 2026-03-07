@@ -1,7 +1,7 @@
 // FILE: /pages/api/review-stats.ts
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 import { APP_NAME } from "../../lib/appConfig";
 
 type Data = {
@@ -15,6 +15,8 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<Data>
 ) {
+  const adminDb = getAdminDb();
+
   if (req.method !== "GET") {
     return res
       .status(405)

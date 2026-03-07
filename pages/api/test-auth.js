@@ -2,9 +2,10 @@
 // Diagnostic endpoint — visit /api/test-auth in the browser to see what's going on.
 // Also supports POST with { email } to check a specific user's Firestore document.
 
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 
 export default async function handler(req, res) {
+  const adminDb = getAdminDb();
   const results = {
     timestamp: new Date().toISOString(),
     env: {

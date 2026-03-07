@@ -1,7 +1,7 @@
 // FILE: /pages/admin/reviews.js
 
 import Head from "next/head";
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 import { APP_NAME } from "../../lib/appConfig";
 
 function ReviewsAdminPage({ reviews }) {
@@ -97,6 +97,7 @@ const tdStyle = {
 };
 
 export async function getServerSideProps() {
+  const adminDb = getAdminDb();
   if (!adminDb) {
     console.warn("adminDb not initialised – returning empty reviews list.");
     return { props: { reviews: [] } };
