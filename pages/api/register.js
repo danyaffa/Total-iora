@@ -93,6 +93,14 @@ export default async function handler(req, res) {
   } catch (e) {
     console.error("[register] error:", e.message || e);
     console.error("[register] stack:", e.stack);
-    return res.status(500).json({ error: "Registration failed. Please try again.", debug: e.message });
+    const isPermissionError = (e.message || "").toLowerCase().includes("permission");
+    const debug_hint = isPermissionError
+      ? "Firestore rules are blocking writes. Deploy firestore.rules: firebase deploy --only firestore:rules"
+      : undefined;
+    return res.status(500).json({
+      error: "Registration failed. Please try again.",
+      debug: e.message,
+      debug_hint,
+    });
   }
 }
