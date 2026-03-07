@@ -1,19 +1,6 @@
 // FILE: /pages/api/register.js
-import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { adminDb } from "../../utils/firebaseAdmin";
 import { randomBytes, scryptSync } from "crypto";
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-
-const db = getFirestore();
 
 function makeHash(password) {
   const salt = randomBytes(16).toString("hex");
@@ -24,6 +11,11 @@ function makeHash(password) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  if (!adminDb) {
+    console.error("register: Firebase Admin not initialised — check FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY env vars");
+    return res.status(500).json({ error: "Server configuration error. Please contact support." });
+  }
 
   const {
     name = "",
@@ -43,7 +35,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const ref = db.collection("users").doc(emailNorm);
+    const ref = adminDb.collection("users").doc(emailNorm);
 
     const snap = await ref.get();
     if (snap.exists) {
@@ -71,6 +63,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, trialEnd: trialEnd.toISOString() });
   } catch (e) {
     console.error("register error:", e);
-    return res.status(500).json({ error: "Registration failed" });
+    return res.status(500).json({ error: "Registration failed. Please try again." });
   }
 }

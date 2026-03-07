@@ -1,22 +1,14 @@
 // FILE: /pages/api/mark-paid.js
 // Marks a user as paid after successful PayPal payment
-import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-
-const db = getFirestore();
+import { adminDb } from "../../utils/firebaseAdmin";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  if (!adminDb) {
+    console.error("mark-paid: Firebase Admin not initialised — check env vars");
+    return res.status(500).json({ error: "Server configuration error" });
+  }
 
   const { email = "", subscriptionId = "", orderId = "" } = req.body || {};
   const emailNorm = String(email || "").trim().toLowerCase();
@@ -26,7 +18,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const ref = db.collection("users").doc(emailNorm);
+    const ref = adminDb.collection("users").doc(emailNorm);
     const snap = await ref.get();
 
     if (!snap.exists) {
