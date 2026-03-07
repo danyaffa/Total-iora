@@ -13,7 +13,6 @@ function setCookie(name, value, maxAgeDays = 7) {
   document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure ? "; Secure" : ""}`;
 }
 
-// Promo code from Vercel env vars
 const PROMO_CODE = process.env.NEXT_PUBLIC_PROMO_CODE || "";
 
 export default function Login() {
@@ -24,13 +23,15 @@ export default function Login() {
   const [showPromo, setShowPromo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [debugInfo, setDebugInfo] = useState("");
 
   async function onSubmit(e) {
     e.preventDefault();
     setMsg("");
+    setDebugInfo("");
     setBusy(true);
 
-    // Check promo code first — grants timed free access
+    // Check promo code first
     if (promoCode.trim() && PROMO_CODE && promoCode.trim() === PROMO_CODE) {
       setCookie("ac_session", "1", 365);
       setCookie("ac_registered", "1", 365);
@@ -40,7 +41,6 @@ export default function Login() {
       return;
     }
 
-    // If promo code was entered but doesn't match, and no email/password
     if (promoCode.trim() && promoCode.trim() !== PROMO_CODE) {
       if (!email.trim()) {
         setMsg("Invalid promo code. Please enter your email and password to log in.");
@@ -57,26 +57,32 @@ export default function Login() {
         credentials: "include",
       });
       const data = await r.json().catch(() => ({}));
+
       if (!r.ok || !data?.ok) {
         setMsg(data?.error || "Invalid email or password.");
+        // Show debug hint if available
+        if (data?.debug_hint) {
+          setDebugInfo(`Debug: ${data.debug_hint}`);
+        }
+        if (data?.debug) {
+          setDebugInfo((prev) => prev ? `${prev} | ${data.debug}` : `Debug: ${data.debug}`);
+        }
       } else {
         setCookie("ac_session", "1", 7);
         setCookie("ac_registered", "1", 365);
-        // Store payment/trial info locally
         if (data.email) localStorage.setItem("ac_email", data.email);
         if (data.trialEnd) localStorage.setItem("ac_trial_end", data.trialEnd);
         localStorage.setItem("ac_is_paid", data.isPaid ? "1" : "0");
 
-        // Route based on payment status
         if (data.isPaid || data.trialActive) {
           window.location.replace("/homepage");
         } else {
-          // Trial expired and not paid — go to payment page
           window.location.replace("/unlock");
         }
       }
-    } catch {
+    } catch (err) {
       setMsg("Network error. Please try again.");
+      setDebugInfo(`Debug: ${err.message}`);
     } finally {
       setBusy(false);
     }
@@ -178,6 +184,7 @@ export default function Login() {
           </div>
 
           {msg && <p className="err">{msg}</p>}
+          {debugInfo && <p className="debug">{debugInfo}</p>}
           <p className="note">
             No account?{" "}
             <Link href="/register">Register free</Link>.
@@ -246,8 +253,6 @@ export default function Login() {
           border-color: #7c3aed;
           box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
         }
-
-        /* Password field with eye toggle */
         .pw-wrap {
           position: relative;
           display: flex;
@@ -272,7 +277,6 @@ export default function Login() {
         .pw-toggle:hover {
           color: #334155;
         }
-
         .btn {
           margin-top: 4px;
           padding: 14px 18px;
@@ -293,8 +297,6 @@ export default function Login() {
           opacity: 0.7;
           cursor: not-allowed;
         }
-
-        /* Promo code */
         .promo-section {
           text-align: center;
         }
@@ -333,18 +335,26 @@ export default function Login() {
         .promo-apply:disabled {
           opacity: 0.7;
         }
-
         .err {
           color: #b91c1c;
           font-weight: 700;
           text-align: center;
+        }
+        .debug {
+          color: #9333ea;
+          font-size: 0.8rem;
+          text-align: center;
+          background: #faf5ff;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: 1px solid #e9d5ff;
+          word-break: break-all;
         }
         .note {
           color: #64748b;
           text-align: center;
           font-size: 0.9rem;
         }
-
         @media (max-width: 480px) {
           .card {
             padding: 20px 16px;
