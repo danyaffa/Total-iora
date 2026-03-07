@@ -2,7 +2,7 @@
 
 import * as admin from "firebase-admin";
 import { initializeApp as initClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection as fsCollection, query, where, getDocs } from "firebase/firestore";
 
 function getPrivateKey() {
   let pk = process.env.FIREBASE_PRIVATE_KEY || "";
@@ -94,35 +94,70 @@ function getClientFirestore() {
  *   db.collection("x").doc("y").set(data, opts)
  *   db.collection("x").doc("y").update(data)
  *   db.collection("x").doc("y").delete()
+ *   db.collection("x").where(...).where(...).get() → { size, forEach() }
  */
 function wrapClientDb(firestore) {
+  function buildCollectionRef(collName) {
+    const collRef = fsCollection(firestore, collName);
+    const constraints = [];
+
+    const chainable = {
+      doc(docId) {
+        const docRef = doc(firestore, collName, docId);
+        return {
+          async get() {
+            const snap = await getDoc(docRef);
+            return {
+              exists: snap.exists(),
+              data() { return snap.data(); },
+            };
+          },
+          async set(data, _options) {
+            await setDoc(docRef, data);
+          },
+          async update(data) {
+            await updateDoc(docRef, data);
+          },
+          async delete() {
+            await deleteDoc(docRef);
+          },
+        };
+      },
+      where(field, op, value) {
+        constraints.push(where(field, op, value));
+        return chainable;
+      },
+      async get() {
+        const q = constraints.length > 0
+          ? query(collRef, ...constraints)
+          : collRef;
+        const snap = await getDocs(q);
+        return {
+          size: snap.size,
+          empty: snap.empty,
+          docs: snap.docs.map((d) => ({
+            id: d.id,
+            exists: d.exists(),
+            data() { return d.data(); },
+          })),
+          forEach(cb) {
+            snap.docs.forEach((d) => {
+              cb({
+                id: d.id,
+                exists: d.exists(),
+                data() { return d.data(); },
+              });
+            });
+          },
+        };
+      },
+    };
+
+    return chainable;
+  }
+
   return {
-    collection(collName) {
-      return {
-        doc(docId) {
-          const docRef = doc(firestore, collName, docId);
-          return {
-            async get() {
-              const snap = await getDoc(docRef);
-              return {
-                exists: snap.exists(),
-                data() { return snap.data(); },
-              };
-            },
-            async set(data, _options) {
-              // Admin SDK set() with merge:false is the default for client setDoc
-              await setDoc(docRef, data);
-            },
-            async update(data) {
-              await updateDoc(docRef, data);
-            },
-            async delete() {
-              await deleteDoc(docRef);
-            },
-          };
-        },
-      };
-    },
+    collection: buildCollectionRef,
   };
 }
 
