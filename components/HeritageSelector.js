@@ -40,6 +40,7 @@ export default function HeritageSelector({ path, onChange }) {
         .pill:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(2,6,23,.08); }
         .pill.on { box-shadow: 0 0 0 4px rgba(15,23,42,.06) inset; }
         .t { font-weight:800; display:flex; align-items:center; gap:8px; }
+        .ico { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; background:rgba(0,0,0,0.45); flex-shrink:0; }
         .s { font-weight:500; color:rgba(255,255,255,0.85); margin-top:2px; font-size:.93rem; }
       `}</style>
     </section>
