@@ -47,7 +47,10 @@ export default async function handler(req, res) {
 
     if (!user.password_hash) {
       console.log("[login] FAIL — password_hash is missing from the document");
-      return res.status(401).json({ error: "Invalid credentials", debug_hint: "password_hash field is missing in Firestore document" });
+      return res.status(401).json({
+        error: "Your account needs to be updated. Please register again with the same email to set your password.",
+        debug_hint: "password_hash field is missing — user must re-register to set password",
+      });
     }
 
     const passwordMatch = verify(user.password_hash, pw);
@@ -62,13 +65,25 @@ export default async function handler(req, res) {
     const cookie = `ac_session=1; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax${SECURE ? "; Secure" : ""}`;
     res.setHeader("Set-Cookie", cookie);
 
-    const isPaid = Boolean(user.isPaid);
+    // Owner/admin emails always get full access
+    const ownerEmails = (process.env.OWNER_EMAILS || "leffleryd@gmail.com,jaffaleffler@gmail.com")
+      .split(",")
+      .map((e) => e.trim().toLowerCase());
+    const isOwner = ownerEmails.includes(emailNorm);
+
+    // If owner and not marked as paid, update Firestore to permanent paid
+    if (isOwner && !user.isPaid) {
+      await ref.update({ isPaid: true, isOwner: true });
+      console.log("[login] owner detected, granted permanent paid access:", emailNorm);
+    }
+
+    const isPaid = isOwner || Boolean(user.isPaid);
     const trialEnd = user.trialEnd?.toDate
       ? user.trialEnd.toDate().toISOString()
       : user.trialEnd || null;
-    const trialActive = trialEnd ? new Date(trialEnd) > new Date() : false;
+    const trialActive = isPaid || (trialEnd ? new Date(trialEnd) > new Date() : false);
 
-    console.log("[login] success for:", emailNorm, "isPaid:", isPaid, "trialActive:", trialActive);
+    console.log("[login] success for:", emailNorm, "isPaid:", isPaid, "isOwner:", isOwner, "trialActive:", trialActive);
 
     return res.status(200).json({
       ok: true,

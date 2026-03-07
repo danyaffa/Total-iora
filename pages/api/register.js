@@ -46,16 +46,29 @@ export default async function handler(req, res) {
     console.log("[register] doc exists?", snap.exists);
 
     if (snap.exists) {
-      // Show what's stored so we can debug
+      // Account exists — update password hash so user can login
+      // This handles cases where the old document had no hash or a broken hash
       const existing = snap.data() || {};
       console.log("[register] existing doc keys:", Object.keys(existing));
       console.log("[register] existing doc has password_hash?", Boolean(existing.password_hash));
-      console.log("[register] existing doc email:", existing.email);
-      console.log("[register] existing doc createdAt:", existing.createdAt);
+      console.log("[register] updating password for existing account:", emailNorm);
 
-      return res.status(409).json({
-        error: "Account already exists. Please log in.",
-        debug_hint: "Document found in Firestore for this email. If you cannot log in, the password may not match. Try the /api/test-auth endpoint to diagnose.",
+      await ref.update({
+        password_hash: makeHash(pw),
+        name: displayName,
+        username: String(username || displayName),
+        phone: phoneNorm,
+      });
+
+      const trialEnd = existing.trialEnd?.toDate
+        ? existing.trialEnd.toDate().toISOString()
+        : existing.trialEnd || null;
+
+      console.log("[register] password updated for existing user:", emailNorm);
+      return res.status(200).json({
+        ok: true,
+        trialEnd,
+        updated: true,
       });
     }
 
