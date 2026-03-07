@@ -47,7 +47,10 @@ export default async function handler(req, res) {
 
     if (!user.password_hash) {
       console.log("[login] FAIL — password_hash is missing from the document");
-      return res.status(401).json({ error: "Invalid credentials", debug_hint: "password_hash field is missing in Firestore document" });
+      return res.status(401).json({
+        error: "Your account needs to be updated. Please register again with the same email to set your password.",
+        debug_hint: "password_hash field is missing — user must re-register to set password",
+      });
     }
 
     const passwordMatch = verify(user.password_hash, pw);
