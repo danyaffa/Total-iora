@@ -2,8 +2,18 @@
 
 import * as admin from "firebase-admin";
 
-const projectId = (process.env.FIREBASE_PROJECT_ID || "").trim();
-const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+// Fall back to NEXT_PUBLIC_ variants if server-only vars are not set
+const projectId = (
+  process.env.FIREBASE_PROJECT_ID ||
+  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+  ""
+).trim();
+
+const clientEmail = (
+  process.env.FIREBASE_CLIENT_EMAIL ||
+  ""
+).trim();
+
 let privateKey = process.env.FIREBASE_PRIVATE_KEY || "";
 
 // Trim whitespace
@@ -23,7 +33,7 @@ privateKey = privateKey.replace(/\\n/g, "\n");
 if (!admin.apps.length) {
   if (!projectId || !clientEmail || !privateKey) {
     console.warn(
-      "⚠ Firebase Admin missing credentials.",
+      "Firebase Admin missing credentials:",
       "projectId:", projectId ? "SET" : "MISSING",
       "clientEmail:", clientEmail ? "SET" : "MISSING",
       "privateKey:", privateKey ? `SET (${privateKey.length} chars)` : "MISSING"
@@ -38,7 +48,7 @@ if (!admin.apps.length) {
         }),
       });
     } catch (err) {
-      console.error("Firebase Admin initialization error:", err);
+      console.error("Firebase Admin initialization error:", err.message || err);
     }
   }
 }
