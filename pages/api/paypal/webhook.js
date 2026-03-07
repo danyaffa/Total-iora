@@ -1,10 +1,76 @@
 import { verifyWebhookSignature } from "../../../lib/paypal-server";
+import { getApps, initializeApp, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
+
+if (!getApps().length) {
+  initializeApp({
+    credential: cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    }),
+  });
+}
+
+const db = getFirestore();
 
 export const config = {
   api: {
     bodyParser: true,
   },
 };
+
+// Events that indicate a successful payment or active subscription
+const PAID_EVENTS = [
+  "BILLING.SUBSCRIPTION.ACTIVATED",
+  "BILLING.SUBSCRIPTION.RENEWED",
+  "PAYMENT.SALE.COMPLETED",
+  "PAYMENT.CAPTURE.COMPLETED",
+];
+
+const CANCELLED_EVENTS = [
+  "BILLING.SUBSCRIPTION.CANCELLED",
+  "BILLING.SUBSCRIPTION.SUSPENDED",
+  "BILLING.SUBSCRIPTION.EXPIRED",
+];
+
+async function markUserPaid(email, eventData) {
+  if (!email) return;
+  const emailNorm = email.trim().toLowerCase();
+  const ref = db.collection("users").doc(emailNorm);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+
+  await ref.update({
+    isPaid: true,
+    paidAt: new Date(),
+    lastPaypalEvent: eventData.event_type,
+    paypalSubscriptionId: eventData.resource?.id || "",
+  });
+}
+
+async function markUserUnpaid(email, eventData) {
+  if (!email) return;
+  const emailNorm = email.trim().toLowerCase();
+  const ref = db.collection("users").doc(emailNorm);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+
+  await ref.update({
+    isPaid: false,
+    lastPaypalEvent: eventData.event_type,
+  });
+}
+
+function extractEmail(body) {
+  // Try various PayPal event structures to find the subscriber email
+  return (
+    body?.resource?.subscriber?.email_address ||
+    body?.resource?.payer?.email_address ||
+    body?.resource?.purchase_units?.[0]?.payee?.email_address ||
+    ""
+  );
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -32,9 +98,14 @@ export default async function handler(req, res) {
     }
 
     const eventType = req.body?.event_type;
+    const email = extractEmail(req.body);
 
-    if (eventType) {
-      console.log("PayPal webhook event:", eventType);
+    console.log("PayPal webhook event:", eventType, "email:", email);
+
+    if (PAID_EVENTS.includes(eventType) && email) {
+      await markUserPaid(email, req.body);
+    } else if (CANCELLED_EVENTS.includes(eventType) && email) {
+      await markUserUnpaid(email, req.body);
     }
 
     return res.status(200).json({ received: true });

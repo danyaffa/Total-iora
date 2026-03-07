@@ -111,6 +111,7 @@ function FaithIcon({ faith }) {
 export default function HomePage({ faith }) {
   const [path, setPath] = useState(faith);
   const [unlocked, setUnlocked] = useState(false);
+  const [trialDaysLeft, setTrialDaysLeft] = useState(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -130,6 +131,29 @@ export default function HomePage({ faith }) {
         has("ac_session") ||
         (typeof localStorage !== "undefined" &&
           localStorage.getItem("ac_registered") === "1");
+
+      // Check trial / payment status
+      const isPaid = localStorage.getItem("ac_is_paid") === "1";
+      const trialEnd = localStorage.getItem("ac_trial_end");
+      const trialActive = trialEnd ? new Date(trialEnd) > new Date() : false;
+
+      if (isRegistered && !isPaid && !trialActive && !isDevBypass && trialEnd) {
+        // Trial expired and not paid — redirect to payment
+        window.location.replace("/unlock");
+        return;
+      }
+
+      // Show trial countdown banner
+      if (trialEnd && !isPaid) {
+        const daysLeft = Math.max(
+          0,
+          Math.ceil((new Date(trialEnd) - new Date()) / (24 * 60 * 60 * 1000))
+        );
+        setTrialDaysLeft(daysLeft);
+      } else {
+        setTrialDaysLeft(null);
+      }
+
       setUnlocked(Boolean(isRegistered || isDevBypass));
     };
     update();
@@ -219,6 +243,22 @@ export default function HomePage({ faith }) {
         <div className="previewBanner" role="status">
           You’re viewing a read-only preview. <Link href="/login">Log in</Link>{" "}
           or <Link href="/register">Register</Link> to use the interactive features.
+        </div>
+      )}
+
+      {trialDaysLeft !== null && trialDaysLeft >= 0 && (
+        <div className="trialBanner" role="status">
+          {trialDaysLeft > 0 ? (
+            <>
+              {trialDaysLeft} day{trialDaysLeft !== 1 ? "s" : ""} left in your free trial.{" "}
+              <Link href="/unlock">Subscribe now — $5/month</Link>
+            </>
+          ) : (
+            <>
+              Your free trial has ended.{" "}
+              <Link href="/unlock">Subscribe to continue — $5/month</Link>
+            </>
+          )}
         </div>
       )}
 
@@ -331,6 +371,23 @@ export default function HomePage({ faith }) {
           color: #92400e;
           font-size: 0.9rem;
           font-weight: 600;
+        }
+        .trialBanner {
+          max-width: 800px;
+          margin: 8px auto;
+          padding: 10px 16px;
+          background: linear-gradient(135deg, #ede9fe, #e0f2fe);
+          border: 1px solid #a78bfa;
+          border-radius: 12px;
+          text-align: center;
+          color: #4c1d95;
+          font-size: 0.9rem;
+          font-weight: 600;
+        }
+        .trialBanner :global(a) {
+          color: #7c3aed;
+          text-decoration: underline;
+          font-weight: 800;
         }
         .nav-btn,
         .nav-btn:link,

@@ -47,7 +47,21 @@ export default async function handler(req, res) {
     const cookie = `ac_session=1; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax${SECURE ? "; Secure" : ""}`;
 
     res.setHeader("Set-Cookie", cookie);
-    return res.status(200).json({ ok: true });
+
+    // Return trial/payment status so client can route accordingly
+    const isPaid = Boolean(user.isPaid);
+    const trialEnd = user.trialEnd?.toDate
+      ? user.trialEnd.toDate().toISOString()
+      : user.trialEnd || null;
+    const trialActive = trialEnd ? new Date(trialEnd) > new Date() : false;
+
+    return res.status(200).json({
+      ok: true,
+      isPaid,
+      trialEnd,
+      trialActive,
+      email: emailNorm,
+    });
   } catch (e) {
     console.error("login error:", e);
     return res.status(500).json({ error: "Auth error" });

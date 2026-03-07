@@ -50,6 +50,9 @@ export default async function handler(req, res) {
       return res.status(409).json({ error: "Account already exists. Please log in." });
     }
 
+    const now = new Date();
+    const trialEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days
+
     await ref.set(
       {
         name: displayName,
@@ -58,12 +61,14 @@ export default async function handler(req, res) {
         phone: phoneNorm,
         password_hash: makeHash(pw),
         isPaid: false,
-        createdAt: new Date(),
+        trialStart: now,
+        trialEnd: trialEnd,
+        createdAt: now,
       },
       { merge: false }
     );
 
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, trialEnd: trialEnd.toISOString() });
   } catch (e) {
     console.error("register error:", e);
     return res.status(500).json({ error: "Registration failed" });
