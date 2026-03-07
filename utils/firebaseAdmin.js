@@ -2,35 +2,26 @@
 
 import * as admin from "firebase-admin";
 
-// Fall back to NEXT_PUBLIC_ variants if server-only vars are not set
-const projectId = (
-  process.env.FIREBASE_PROJECT_ID ||
-  process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-  ""
-).trim();
-
-const clientEmail = (
-  process.env.FIREBASE_CLIENT_EMAIL ||
-  ""
-).trim();
-
-let privateKey = process.env.FIREBASE_PRIVATE_KEY || "";
-
-// Trim whitespace
-privateKey = privateKey.trim();
-
-// Remove accidental wrapping quotes (common in Vercel)
-if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-  privateKey = privateKey.slice(1, -1);
-}
-if (privateKey.startsWith("'") && privateKey.endsWith("'")) {
-  privateKey = privateKey.slice(1, -1);
+function getPrivateKey() {
+  let pk = process.env.FIREBASE_PRIVATE_KEY || "";
+  pk = pk.trim();
+  if (pk.startsWith('"') && pk.endsWith('"')) pk = pk.slice(1, -1);
+  if (pk.startsWith("'") && pk.endsWith("'")) pk = pk.slice(1, -1);
+  pk = pk.replace(/\\n/g, "\n");
+  return pk;
 }
 
-// Convert escaped "\n" into real newlines
-privateKey = privateKey.replace(/\\n/g, "\n");
+function ensureInitialized() {
+  if (admin.apps.length) return true;
 
-if (!admin.apps.length) {
+  const projectId = (
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    ""
+  ).trim();
+  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+  const privateKey = getPrivateKey();
+
   if (!projectId || !clientEmail || !privateKey) {
     console.warn(
       "Firebase Admin missing credentials:",
@@ -38,21 +29,32 @@ if (!admin.apps.length) {
       "clientEmail:", clientEmail ? "SET" : "MISSING",
       "privateKey:", privateKey ? `SET (${privateKey.length} chars)` : "MISSING"
     );
-  } else {
-    try {
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId,
-          clientEmail,
-          privateKey,
-        }),
-      });
-    } catch (err) {
-      console.error("Firebase Admin initialization error:", err.message || err);
-    }
+    return false;
+  }
+
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
+    });
+    return true;
+  } catch (err) {
+    console.error("Firebase Admin initialization error:", err.message || err);
+    return false;
   }
 }
 
+/** @returns {admin.firestore.Firestore | null} */
+export function getAdminDb() {
+  return ensureInitialized() ? admin.firestore() : null;
+}
+
+/** @returns {admin.auth.Auth | null} */
+export function getAdminAuth() {
+  return ensureInitialized() ? admin.auth() : null;
+}
+
+// Legacy named exports — try init now, but callers should prefer getAdminDb()
+ensureInitialized();
 export const adminApp = admin.apps.length ? admin.app() : null;
 export const adminDb = adminApp ? admin.firestore() : null;
 export const adminAuth = adminApp ? admin.auth() : null;

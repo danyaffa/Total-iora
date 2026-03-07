@@ -1,6 +1,6 @@
 // FILE: /pages/api/login.js
 import { scryptSync } from "crypto";
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 
 function verify(hashString, password) {
   const [scheme, salt, hash] = String(hashString || "").split("$");
@@ -12,7 +12,8 @@ function verify(hashString, password) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // --- Debug: check Firebase Admin init ---
+  // Lazy init — retries Firebase Admin on every request
+  const adminDb = getAdminDb();
   if (!adminDb) {
     console.error("[login] adminDb is null — Firebase Admin not initialised");
     console.error("[login] FIREBASE_PROJECT_ID:", process.env.FIREBASE_PROJECT_ID ? "SET" : "MISSING");

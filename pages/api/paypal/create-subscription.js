@@ -17,8 +17,9 @@ export default async function handler(req, res) {
       method: "POST",
       body: JSON.stringify({
         plan_id: String(planId),
+        custom_id: "total-iora-spirit",
         application_context: {
-          brand_name: "Total-iora",
+          brand_name: "Total-iora Spirit",
           user_action: "SUBSCRIBE_NOW",
           shipping_preference: "NO_SHIPPING",
           return_url: `${process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"}/unlock?status=success`,

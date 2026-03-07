@@ -1,5 +1,5 @@
 import { verifyWebhookSignature } from "../../../lib/paypal-server";
-import { adminDb } from "../../../utils/firebaseAdmin";
+import { getAdminDb } from "../../../utils/firebaseAdmin";
 
 export const config = {
   api: {
@@ -24,6 +24,7 @@ const CANCELLED_EVENTS = [
 async function markUserPaid(email, eventData) {
   if (!email) return;
   const emailNorm = email.trim().toLowerCase();
+  const adminDb = getAdminDb();
   if (!adminDb) return;
   const ref = adminDb.collection("users").doc(emailNorm);
   const snap = await ref.get();
@@ -40,6 +41,7 @@ async function markUserPaid(email, eventData) {
 async function markUserUnpaid(email, eventData) {
   if (!email) return;
   const emailNorm = email.trim().toLowerCase();
+  const adminDb = getAdminDb();
   if (!adminDb) return;
   const ref = adminDb.collection("users").doc(emailNorm);
   const snap = await ref.get();

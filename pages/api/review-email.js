@@ -3,12 +3,13 @@
 // Only called by the ReviewWidget component.
 
 import { Resend } from "resend";
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 import { APP_NAME } from "../../lib/appConfig";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 export default async function handler(req, res) {
+  const adminDb = getAdminDb();
   console.log("🔔 /api/review-email called");
   console.log("🔑 RESEND_API_KEY set?", !!process.env.RESEND_API_KEY);
   console.log("📧 REVIEW_RECEIVER_EMAIL:", process.env.REVIEW_RECEIVER_EMAIL);

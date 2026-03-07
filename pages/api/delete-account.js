@@ -1,7 +1,9 @@
 // FILE: /pages/api/delete-account.js
-import { adminAuth, adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb, getAdminAuth } from "../../utils/firebaseAdmin";
 
 export default async function handler(req, res) {
+  const adminDb = getAdminDb();
+  const adminAuth = getAdminAuth();
   try {
     if (req.method !== "POST") {
       return res.status(405).json({ error: "Method not allowed" });

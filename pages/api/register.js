@@ -1,5 +1,5 @@
 // FILE: /pages/api/register.js
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 import { randomBytes, scryptSync } from "crypto";
 
 function makeHash(password) {
@@ -11,7 +11,8 @@ function makeHash(password) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // --- Debug: check Firebase Admin init ---
+  // Lazy init — retries Firebase Admin on every request
+  const adminDb = getAdminDb();
   if (!adminDb) {
     console.error("[register] adminDb is null — Firebase Admin not initialised");
     console.error("[register] FIREBASE_PROJECT_ID:", process.env.FIREBASE_PROJECT_ID ? "SET" : "MISSING");

@@ -1,8 +1,10 @@
 // FILE: /pages/api/mark-paid.js
 // Marks a user as paid after successful PayPal payment
-import { adminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb } from "../../utils/firebaseAdmin";
 
 export default async function handler(req, res) {
+  const adminDb = getAdminDb();
+
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   if (!adminDb) {
