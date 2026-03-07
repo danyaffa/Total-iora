@@ -1,5 +1,5 @@
 // FILE: /pages/register.js
-// On success: set cookies and go to /homepage
+// On success: set cookies and go to /unlock?from=register
 
 import { useState } from "react";
 import Head from "next/head";
@@ -22,6 +22,7 @@ export default function Register() {
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [debugInfo, setDebugInfo] = useState("");
 
   const upd = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const validEmail = (s) =>
@@ -30,6 +31,7 @@ export default function Register() {
   async function onSubmit(e) {
     e.preventDefault();
     setMsg("");
+    setDebugInfo("");
 
     const { username, email, phone, password } = form;
     if (
@@ -59,22 +61,28 @@ export default function Register() {
         credentials: "include",
       });
       const data = await r.json().catch(() => ({}));
+
       if (!r.ok || !data?.ok) {
         setMsg(data?.error || "Registration failed.");
+        if (data?.debug_hint) {
+          setDebugInfo(`Debug: ${data.debug_hint}`);
+        }
+        if (data?.debug) {
+          setDebugInfo((prev) => prev ? `${prev} | ${data.debug}` : `Debug: ${data.debug}`);
+        }
       } else {
         setCookie("ac_registered", "1", 365);
         setCookie("ac_session", "1", 7);
-        // Store trial info so the app knows when the trial ends
         if (data.trialEnd) {
           localStorage.setItem("ac_trial_end", data.trialEnd);
           localStorage.setItem("ac_email", form.email.trim().toLowerCase());
         }
         localStorage.setItem("ac_is_paid", "0");
-        // Send new users to the payment/trial page
         window.location.replace("/unlock?from=register");
       }
-    } catch {
+    } catch (err) {
       setMsg("Could not register. Please try again.");
+      setDebugInfo(`Debug: ${err.message}`);
     } finally {
       setBusy(false);
     }
@@ -166,6 +174,7 @@ export default function Register() {
             {busy ? "Creating..." : "Start 14-Day Free Trial"}
           </button>
           {msg && <p className="err">{msg}</p>}
+          {debugInfo && <p className="debug">{debugInfo}</p>}
           <p className="small">
             Already registered? <Link href="/login">Log in</Link>.
           </p>
@@ -241,7 +250,6 @@ export default function Register() {
           border-color: #7c3aed;
           box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
         }
-
         .pw-wrap {
           position: relative;
           display: flex;
@@ -266,7 +274,6 @@ export default function Register() {
         .pw-toggle:hover {
           color: #334155;
         }
-
         .btn {
           margin-top: 8px;
           padding: 14px 18px;
@@ -297,12 +304,21 @@ export default function Register() {
           margin-top: 4px;
           text-align: center;
         }
+        .debug {
+          color: #9333ea;
+          font-size: 0.8rem;
+          text-align: center;
+          background: #faf5ff;
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: 1px solid #e9d5ff;
+          word-break: break-all;
+        }
         .small {
           color: #94a3b8;
           margin-top: 4px;
           text-align: center;
         }
-
         @media (max-width: 480px) {
           h1 {
             font-size: 1.4rem;
