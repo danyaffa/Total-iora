@@ -11,14 +11,11 @@ function makeHash(password) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  // Lazy init — retries Firebase Admin on every request
+  // Lazy init — retries Firebase Admin (or client SDK fallback) on every request
   const adminDb = getAdminDb();
   if (!adminDb) {
-    console.error("[register] adminDb is null — Firebase Admin not initialised");
-    console.error("[register] FIREBASE_PROJECT_ID:", process.env.FIREBASE_PROJECT_ID ? "SET" : "MISSING");
-    console.error("[register] FIREBASE_CLIENT_EMAIL:", process.env.FIREBASE_CLIENT_EMAIL ? "SET" : "MISSING");
-    console.error("[register] FIREBASE_PRIVATE_KEY:", process.env.FIREBASE_PRIVATE_KEY ? `SET (${process.env.FIREBASE_PRIVATE_KEY.length} chars)` : "MISSING");
-    return res.status(500).json({ error: "Server configuration error. Please contact support.", debug: "adminDb is null" });
+    console.error("[register] adminDb is null — neither Admin SDK nor Client SDK could initialise");
+    return res.status(500).json({ error: "Server configuration error. Please contact support." });
   }
 
   const {
