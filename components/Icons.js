@@ -1,7 +1,8 @@
 // Simple inline icons for faith/sacred context
 export function StarOfDavid(props){ return (
   <svg viewBox="0 0 24 24" width="24" height="24" {...props}>
-    <path fill="currentColor" d="M12 2l3.5 6h7L16 20l-4-6-4 6L1.5 8h7L12 2z"/>
+    <polygon fill="currentColor" points="12,2 22,19 2,19" opacity="0.85"/>
+    <polygon fill="currentColor" points="12,22 2,5 22,5" opacity="0.85"/>
   </svg>
 );}
 export function Cross(props){ return (

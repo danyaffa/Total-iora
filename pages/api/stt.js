@@ -2,6 +2,9 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
+// Allow larger body for cumulative audio chunks (default 1MB is too small)
+export const config = { api: { bodyParser: { sizeLimit: "10mb" } } };
+
 import OpenAI from "openai";
 
 // quick language guess from result text (used for TTS routing)

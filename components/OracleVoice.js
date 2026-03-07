@@ -94,15 +94,17 @@ function pickVoice(lang) {
   } catch { return null; }
 }
 
-async function sttUpload(blob, mime, signal) {
-  if (!blob || blob.size < 200) return { text: "", lang: "en-US" };
+async function sttUpload(blob, mime, signal, lang) {
+  if (!blob || blob.size < 200) return { text: "", lang: lang || "en-US" };
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+  const payload = { b64: btoa(b64), mime };
+  if (lang && lang !== "auto") payload.lang = lang;
   const r = await fetch("/api/stt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ b64: btoa(b64), mime }),
+    body: JSON.stringify(payload),
     signal,
   });
   const js = await r.json().catch(()=>({}));
@@ -204,23 +206,33 @@ export default function OracleVoice({ path = "Universal" }) {
       const CHUNK_MS = 600;
       const SLICE_MS = 500;
 
+      let liveInFlight = false;
       rec.ondataavailable = async (e) => {
         if (e.data?.size) {
           chunks.push(e.data);
           const now = Date.now();
-          if (now - lastChunkSent >= CHUNK_MS && listeningRef.current) {
+          // Throttle live STT: skip if previous request still in flight
+          if (now - lastChunkSent >= CHUNK_MS && listeningRef.current && !liveInFlight) {
             lastChunkSent = now;
+            liveInFlight = true;
             try {
-              const cumulativeBlob = new Blob(chunks, { type: mime });
-              const preview = await sttUpload(cumulativeBlob, mime);
+              // Send only last ~6 seconds of audio for live preview (keeps it fast)
+              const LIVE_CHUNKS = 12; // 12 × 500ms = 6s
+              const recentChunks = chunks.length > LIVE_CHUNKS
+                ? chunks.slice(-LIVE_CHUNKS)
+                : chunks;
+              const previewBlob = new Blob(recentChunks, { type: mime });
+              const langHint = lastDetectedLangRef.current || undefined;
+              const preview = await sttUpload(previewBlob, mime, undefined, langHint);
               if (preview?.text) {
-                // To prevent jarring updates, we only replace the text, not append.
                 setLiveText(preview.text);
               }
-              if (preview?.lang) {
+              if (preview?.lang && preview.lang !== "en-US") {
                 lastDetectedLangRef.current = preview.lang;
               }
-            } catch {}
+            } catch {} finally {
+              liveInFlight = false;
+            }
           }
         }
       };
@@ -276,7 +288,8 @@ export default function OracleVoice({ path = "Universal" }) {
     setStatus("Transcribing…");
     try {
       const blob = new Blob(chunks, { type: mime || "audio/webm" });
-      const { text, lang } = await sttUpload(blob, mime);
+      const langHint = lastDetectedLangRef.current || undefined;
+      const { text, lang } = await sttUpload(blob, mime, undefined, langHint);
       
       if (text) {
         finalTransRef.current = text;
