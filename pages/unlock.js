@@ -1,6 +1,7 @@
 // FILE: /pages/unlock.js
-// Upgrade page — $5/month via PayPal
-import { useEffect, useState } from "react";
+// Payment & trial page — $5/month via PayPal
+// Handles: post-registration trial start, expired-trial upgrade, direct subscribe
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
@@ -31,14 +32,35 @@ export default function Unlock() {
   const [paid, setPaid] = useState(false);
   const [error, setError] = useState("");
   const [sdkReady, setSdkReady] = useState(false);
+  const [fromRegister, setFromRegister] = useState(false);
+  const [trialActive, setTrialActive] = useState(false);
 
   useEffect(() => {
-    // Clear promo session state so the banner won't reappear after upgrade
+    // Check if user just came from registration
+    const isFromRegister = router.query.from === "register";
+    setFromRegister(isFromRegister);
+
+    // Check if trial is still active
+    const trialEnd = localStorage.getItem("ac_trial_end");
+    const isPaid = localStorage.getItem("ac_is_paid") === "1";
+    if (trialEnd && new Date(trialEnd) > new Date() && !isPaid) {
+      setTrialActive(true);
+    }
+  }, [router.query]);
+
+  useEffect(() => {
     if (paid) {
       clearCookie("ac_promo");
       localStorage.removeItem("ac_promo_start");
     }
   }, [paid]);
+
+  const handleStartTrial = () => {
+    // User chooses to start their 14-day free trial
+    setCookie("ac_session", "1", 14);
+    setCookie("ac_registered", "1", 365);
+    window.location.replace("/homepage");
+  };
 
   const handlePaymentSuccess = async () => {
     setPaid(true);
@@ -69,7 +91,7 @@ export default function Unlock() {
   return (
     <div className="wrap">
       <Head>
-        <title>Upgrade — Total-iora</title>
+        <title>{fromRegister ? "Welcome — Choose Your Plan" : "Upgrade"} — Total-iora</title>
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1, viewport-fit=cover"
@@ -81,7 +103,7 @@ export default function Unlock() {
       </Head>
 
       <nav className="topnav">
-        <Link href="/homepage" className="back-link">
+        <Link href={fromRegister ? "/login" : "/homepage"} className="back-link">
           &larr; Back
         </Link>
       </nav>
@@ -92,10 +114,21 @@ export default function Unlock() {
           alt="Total-iora"
           className="logo"
         />
-        <h1>Unlock Total-iora</h1>
-        <p className="subtitle">
-          Unlimited access to your personal spiritual sanctuary
-        </p>
+        {fromRegister ? (
+          <>
+            <h1>Welcome to Total-iora!</h1>
+            <p className="subtitle">
+              Your account is ready. Choose how to get started:
+            </p>
+          </>
+        ) : (
+          <>
+            <h1>Unlock Total-iora</h1>
+            <p className="subtitle">
+              Unlimited access to your personal spiritual sanctuary
+            </p>
+          </>
+        )}
       </header>
 
       {paid ? (
@@ -109,8 +142,45 @@ export default function Unlock() {
         </div>
       ) : (
         <>
+          {/* Free Trial Option — shown for new registrants or users with active trial */}
+          {(fromRegister || trialActive) && (
+            <div className="trial-card">
+              <div className="trial-badge">Free</div>
+              <h2>14-Day Free Trial</h2>
+              <p className="trial-desc">
+                Full access to all features. No payment required now.
+              </p>
+              <ul className="features">
+                <li>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  All features unlocked for 14 days
+                </li>
+                <li>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  No credit card required
+                </li>
+                <li>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Subscribe anytime via PayPal
+                </li>
+              </ul>
+              <button className="btn-trial" onClick={handleStartTrial}>
+                Start Free Trial
+              </button>
+            </div>
+          )}
+
+          {(fromRegister || trialActive) && (
+            <div className="divider">
+              <span>or subscribe now</span>
+            </div>
+          )}
+
+          {/* PayPal Subscription Option */}
           <div className="plan-card">
-            <div className="plan-badge">Most Popular</div>
+            <div className="plan-badge">
+              {fromRegister ? "Best Value" : "Most Popular"}
+            </div>
             <div className="plan-header">
               <span className="plan-price">${MONTHLY_PRICE}</span>
               <span className="plan-period">/month</span>
@@ -168,12 +238,12 @@ export default function Unlock() {
                     }}
                   />
                 ) : (
-                  <div className="loading">Loading payment...</div>
+                  <div className="loading">Loading PayPal...</div>
                 )}
               </>
             ) : (
               <p className="muted">
-                Payment is being set up. Please check back soon or visit our <a href="/#faq">FAQ</a> for help.
+                PayPal payment is being configured. Please check back soon.
               </p>
             )}
 
@@ -229,6 +299,89 @@ export default function Unlock() {
           font-size: 0.95rem;
           margin: 0 0 20px;
         }
+
+        /* Trial card */
+        .trial-card {
+          position: relative;
+          max-width: 420px;
+          margin: 0 auto;
+          background: #fff;
+          border: 2px solid #22c55e;
+          border-radius: 24px;
+          padding: 32px 24px 24px;
+          box-shadow: 0 10px 40px rgba(34, 197, 94, 0.12);
+          text-align: center;
+        }
+        .trial-badge {
+          position: absolute;
+          top: -12px;
+          left: 50%;
+          transform: translateX(-50%);
+          padding: 4px 16px;
+          background: linear-gradient(135deg, #22c55e, #16a34a);
+          color: #fff;
+          font-weight: 700;
+          font-size: 0.8rem;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        .trial-card h2 {
+          margin: 0 0 4px;
+          font-size: 1.5rem;
+          font-weight: 800;
+          color: #0f172a;
+        }
+        .trial-desc {
+          text-align: center;
+          color: #475569;
+          margin: 0 0 16px;
+        }
+        .btn-trial {
+          width: 100%;
+          padding: 14px 18px;
+          border-radius: 14px;
+          font-weight: 800;
+          font-size: 1rem;
+          color: #fff;
+          background: linear-gradient(135deg, #22c55e, #16a34a);
+          border: none;
+          cursor: pointer;
+          transition: transform 0.2s, box-shadow 0.2s;
+          margin-top: 4px;
+        }
+        .btn-trial:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 8px 20px rgba(34, 197, 94, 0.3);
+        }
+
+        /* Divider */
+        .divider {
+          max-width: 420px;
+          margin: 20px auto;
+          text-align: center;
+          position: relative;
+        }
+        .divider::before {
+          content: "";
+          position: absolute;
+          top: 50%;
+          left: 0;
+          right: 0;
+          height: 1px;
+          background: #e2e8f0;
+        }
+        .divider span {
+          position: relative;
+          background: #f8fafc;
+          padding: 0 16px;
+          color: #94a3b8;
+          font-weight: 600;
+          font-size: 0.9rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        /* Plan card */
         .plan-card {
           position: relative;
           max-width: 420px;
@@ -336,7 +489,8 @@ export default function Unlock() {
           h1 {
             font-size: 1.5rem;
           }
-          .plan-card {
+          .plan-card,
+          .trial-card {
             padding: 28px 18px 20px;
           }
           .plan-price {
@@ -350,8 +504,10 @@ export default function Unlock() {
 
 /* PayPal subscription button (when plan ID is configured) */
 function PayPalSubscription({ planId, onSuccess, onError }) {
+  const rendered = useRef(false);
   useEffect(() => {
-    if (!window.paypal) return;
+    if (!window.paypal || rendered.current) return;
+    rendered.current = true;
     window.paypal
       .Buttons({
         style: { layout: "vertical", color: "gold", shape: "pill", label: "subscribe" },
@@ -391,8 +547,10 @@ function PayPalSubscription({ planId, onSuccess, onError }) {
 
 /* PayPal one-time payment fallback (when no subscription plan is configured) */
 function PayPalOneTime({ amount, currency, onSuccess, onError }) {
+  const rendered = useRef(false);
   useEffect(() => {
-    if (!window.paypal) return;
+    if (!window.paypal || rendered.current) return;
+    rendered.current = true;
     window.paypal
       .Buttons({
         style: { layout: "vertical", color: "gold", shape: "pill", label: "pay" },
