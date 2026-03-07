@@ -1,19 +1,6 @@
 // FILE: /pages/api/login.js
 import { scryptSync } from "crypto";
-import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-
-const db = getFirestore();
+import { adminDb } from "../../utils/firebaseAdmin";
 
 function verify(hashString, password) {
   // format: s1$<salt>$<hash>
@@ -26,6 +13,11 @@ function verify(hashString, password) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  if (!adminDb) {
+    console.error("login: Firebase Admin not initialised — check env vars");
+    return res.status(500).json({ error: "Server configuration error. Please contact support." });
+  }
+
   const { email = "", password = "" } = req.body || {};
   const emailNorm = String(email || "").trim().toLowerCase();
   const pw = String(password || "");
@@ -33,7 +25,7 @@ export default async function handler(req, res) {
   if (!emailNorm || !pw) return res.status(400).json({ error: "Missing email or password" });
 
   try {
-    const ref = db.collection("users").doc(emailNorm);
+    const ref = adminDb.collection("users").doc(emailNorm);
     const snap = await ref.get();
 
     if (!snap.exists) return res.status(401).json({ error: "Invalid credentials" });
@@ -64,6 +56,6 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error("login error:", e);
-    return res.status(500).json({ error: "Auth error" });
+    return res.status(500).json({ error: "Auth error. Please try again." });
   }
 }

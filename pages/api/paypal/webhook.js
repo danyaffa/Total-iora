@@ -1,18 +1,5 @@
 import { verifyWebhookSignature } from "../../../lib/paypal-server";
-import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
-
-if (!getApps().length) {
-  initializeApp({
-    credential: cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
-    }),
-  });
-}
-
-const db = getFirestore();
+import { adminDb } from "../../../utils/firebaseAdmin";
 
 export const config = {
   api: {
@@ -37,7 +24,8 @@ const CANCELLED_EVENTS = [
 async function markUserPaid(email, eventData) {
   if (!email) return;
   const emailNorm = email.trim().toLowerCase();
-  const ref = db.collection("users").doc(emailNorm);
+  if (!adminDb) return;
+  const ref = adminDb.collection("users").doc(emailNorm);
   const snap = await ref.get();
   if (!snap.exists) return;
 
@@ -52,7 +40,8 @@ async function markUserPaid(email, eventData) {
 async function markUserUnpaid(email, eventData) {
   if (!email) return;
   const emailNorm = email.trim().toLowerCase();
-  const ref = db.collection("users").doc(emailNorm);
+  if (!adminDb) return;
+  const ref = adminDb.collection("users").doc(emailNorm);
   const snap = await ref.get();
   if (!snap.exists) return;
 
