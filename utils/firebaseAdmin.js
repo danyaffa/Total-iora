@@ -3,71 +3,18 @@
 import * as admin from "firebase-admin";
 import { initializeApp as initClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection as fsCollection, query, where, getDocs } from "firebase/firestore";
-
-function getPrivateKey() {
-  let pk = process.env.FIREBASE_PRIVATE_KEY || "";
-
-  // Log raw key diagnostics (no secrets — just structure info)
-  const rawLen = pk.length;
-  const rawStart = pk.substring(0, 40);
-  const rawEnd = pk.substring(pk.length - 40);
-
-  pk = pk.trim();
-
-  // Strip surrounding quotes (Vercel sometimes wraps values)
-  if (pk.startsWith('"') && pk.endsWith('"')) pk = pk.slice(1, -1);
-  if (pk.startsWith("'") && pk.endsWith("'")) pk = pk.slice(1, -1);
-
-  // Handle double-escaped newlines (\\\\n → \\n → \n)
-  pk = pk.replace(/\\\\n/g, "\\n");
-  pk = pk.replace(/\\n/g, "\n");
-
-  // Handle URL-safe base64 private keys (some providers encode this way)
-  if (!pk.includes("-----BEGIN") && pk.length > 100) {
-    try {
-      const decoded = Buffer.from(pk, "base64").toString("utf8");
-      if (decoded.includes("-----BEGIN")) {
-        pk = decoded;
-      }
-    } catch (_) {}
-  }
-
-  const valid = pk.includes("-----BEGIN") && pk.includes("-----END");
-
-  console.log("[firebaseAdmin] Private key diagnostics:", {
-    rawLength: rawLen,
-    rawStartsWith: rawStart,
-    rawEndsWith: rawEnd,
-    processedLength: pk.length,
-    containsBeginMarker: pk.includes("-----BEGIN"),
-    containsEndMarker: pk.includes("-----END"),
-    containsRealNewlines: pk.includes("\n"),
-    containsEscapedNewlines: pk.includes("\\n"),
-    lineCount: pk.split("\n").length,
-    looksValid: valid,
-  });
-
-  return pk;
-}
+import serviceAccount from "./serviceAccountKey.json";
 
 function ensureInitialized() {
   if (admin.apps.length) return true;
 
-  const projectId = (
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-    ""
-  ).trim();
-  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-  const privateKey = getPrivateKey();
+  // Use bundled service account directly — env vars are unreliable on Vercel
+  const projectId = serviceAccount.project_id;
+  const clientEmail = serviceAccount.client_email;
+  const privateKey = serviceAccount.private_key;
 
   if (!projectId || !clientEmail || !privateKey) {
-    console.warn(
-      "Firebase Admin missing credentials:",
-      "projectId:", projectId ? "SET" : "MISSING",
-      "clientEmail:", clientEmail ? "SET" : "MISSING",
-      "privateKey:", privateKey ? `SET (${privateKey.length} chars)` : "MISSING"
-    );
+    console.warn("[firebaseAdmin] Service account key missing fields");
     return false;
   }
 
@@ -75,13 +22,10 @@ function ensureInitialized() {
     admin.initializeApp({
       credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
     });
-    console.log("[firebaseAdmin] Admin SDK initialized successfully, apps:", admin.apps.length);
+    console.log("[firebaseAdmin] Admin SDK initialized successfully with bundled service account");
     return true;
   } catch (err) {
     console.error("[firebaseAdmin] Admin SDK initialization FAILED:", err.message || err);
-    console.error("[firebaseAdmin] Error code:", err.code);
-    console.error("[firebaseAdmin] Credential details — projectId:", projectId, "clientEmail:", clientEmail);
-    console.error("[firebaseAdmin] Private key length:", privateKey.length, "starts with BEGIN:", privateKey.startsWith("-----BEGIN"));
     return false;
   }
 }
@@ -215,8 +159,8 @@ async function getRestAccessToken() {
   const now = Math.floor(Date.now() / 1000);
   if (_restAccessToken && now < _restTokenExpiry - 60) return _restAccessToken;
 
-  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-  const privateKey = getPrivateKey();
+  const clientEmail = serviceAccount.client_email;
+  const privateKey = serviceAccount.private_key;
 
   if (!clientEmail || !privateKey || !privateKey.includes("-----BEGIN")) {
     return null;
@@ -471,21 +415,17 @@ let _restDb = undefined;
 function getRestFirestore() {
   if (_restDb !== undefined) return _restDb;
 
-  const projectId = (
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-    ""
-  ).trim();
-  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-  const privateKey = getPrivateKey();
+  const projectId = serviceAccount.project_id;
+  const clientEmail = serviceAccount.client_email;
+  const privateKey = serviceAccount.private_key;
 
   if (!projectId || !clientEmail || !privateKey || !privateKey.includes("-----BEGIN")) {
-    console.warn("[firebaseAdmin] REST fallback: missing credentials (projectId:", !!projectId, "clientEmail:", !!clientEmail, "privateKey valid:", privateKey?.includes("-----BEGIN"), ")");
+    console.warn("[firebaseAdmin] REST fallback: bundled service account missing fields");
     _restDb = null;
     return null;
   }
 
-  console.log("[firebaseAdmin] REST fallback: credentials available, building REST client");
+  console.log("[firebaseAdmin] REST fallback: using bundled service account");
   _restDb = buildRestDb(projectId, getRestAccessToken);
   return _restDb;
 }
