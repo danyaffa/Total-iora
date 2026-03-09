@@ -6,10 +6,47 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection as 
 
 function getPrivateKey() {
   let pk = process.env.FIREBASE_PRIVATE_KEY || "";
+
+  // Log raw key diagnostics (no secrets — just structure info)
+  const rawLen = pk.length;
+  const rawStart = pk.substring(0, 40);
+  const rawEnd = pk.substring(pk.length - 40);
+
   pk = pk.trim();
+
+  // Strip surrounding quotes (Vercel sometimes wraps values)
   if (pk.startsWith('"') && pk.endsWith('"')) pk = pk.slice(1, -1);
   if (pk.startsWith("'") && pk.endsWith("'")) pk = pk.slice(1, -1);
+
+  // Handle double-escaped newlines (\\\\n → \\n → \n)
+  pk = pk.replace(/\\\\n/g, "\\n");
   pk = pk.replace(/\\n/g, "\n");
+
+  // Handle URL-safe base64 private keys (some providers encode this way)
+  if (!pk.includes("-----BEGIN") && pk.length > 100) {
+    try {
+      const decoded = Buffer.from(pk, "base64").toString("utf8");
+      if (decoded.includes("-----BEGIN")) {
+        pk = decoded;
+      }
+    } catch (_) {}
+  }
+
+  const valid = pk.includes("-----BEGIN") && pk.includes("-----END");
+
+  console.log("[firebaseAdmin] Private key diagnostics:", {
+    rawLength: rawLen,
+    rawStartsWith: rawStart,
+    rawEndsWith: rawEnd,
+    processedLength: pk.length,
+    containsBeginMarker: pk.includes("-----BEGIN"),
+    containsEndMarker: pk.includes("-----END"),
+    containsRealNewlines: pk.includes("\n"),
+    containsEscapedNewlines: pk.includes("\\n"),
+    lineCount: pk.split("\n").length,
+    looksValid: valid,
+  });
+
   return pk;
 }
 
@@ -38,9 +75,13 @@ function ensureInitialized() {
     admin.initializeApp({
       credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
     });
+    console.log("[firebaseAdmin] Admin SDK initialized successfully, apps:", admin.apps.length);
     return true;
   } catch (err) {
-    console.error("Firebase Admin initialization error:", err.message || err);
+    console.error("[firebaseAdmin] Admin SDK initialization FAILED:", err.message || err);
+    console.error("[firebaseAdmin] Error code:", err.code);
+    console.error("[firebaseAdmin] Credential details — projectId:", projectId, "clientEmail:", clientEmail);
+    console.error("[firebaseAdmin] Private key length:", privateKey.length, "starts with BEGIN:", privateKey.startsWith("-----BEGIN"));
     return false;
   }
 }
