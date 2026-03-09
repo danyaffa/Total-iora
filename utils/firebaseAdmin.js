@@ -203,6 +203,294 @@ function wrapClientDb(firestore) {
 }
 
 // ---------------------------------------------------------------------------
+// REST API fallback — uses service account credentials to call Firestore
+// REST API directly, bypassing both Admin SDK init and Firestore rules.
+// ---------------------------------------------------------------------------
+import { createSign } from "crypto";
+
+let _restAccessToken = null;
+let _restTokenExpiry = 0;
+
+async function getRestAccessToken() {
+  const now = Math.floor(Date.now() / 1000);
+  if (_restAccessToken && now < _restTokenExpiry - 60) return _restAccessToken;
+
+  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+  const privateKey = getPrivateKey();
+
+  if (!clientEmail || !privateKey || !privateKey.includes("-----BEGIN")) {
+    return null;
+  }
+
+  // Create JWT manually using Node.js crypto
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const iat = now;
+  const exp = now + 3600;
+  const payload = Buffer.from(JSON.stringify({
+    iss: clientEmail,
+    sub: clientEmail,
+    aud: "https://oauth2.googleapis.com/token",
+    iat,
+    exp,
+    scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform",
+  })).toString("base64url");
+
+  const signInput = `${header}.${payload}`;
+
+  let signature;
+  try {
+    const sign = createSign("RSA-SHA256");
+    sign.update(signInput);
+    signature = sign.sign(privateKey, "base64url");
+  } catch (err) {
+    console.error("[firebaseAdmin] REST fallback: JWT signing failed:", err.message);
+    return null;
+  }
+
+  const jwt = `${signInput}.${signature}`;
+
+  // Exchange JWT for access token
+  try {
+    const resp = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+    });
+    const data = await resp.json();
+    if (data.access_token) {
+      _restAccessToken = data.access_token;
+      _restTokenExpiry = now + (data.expires_in || 3600);
+      console.log("[firebaseAdmin] REST fallback: got access token OK");
+      return _restAccessToken;
+    }
+    console.error("[firebaseAdmin] REST fallback: token exchange failed:", data.error, data.error_description);
+    return null;
+  } catch (err) {
+    console.error("[firebaseAdmin] REST fallback: token fetch error:", err.message);
+    return null;
+  }
+}
+
+function firestoreRestUrl(projectId, path) {
+  return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
+}
+
+/** Convert a JS value to Firestore REST API Value format */
+function toFirestoreValue(val) {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === "boolean") return { booleanValue: val };
+  if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  if (typeof val === "string") return { stringValue: val };
+  if (val instanceof Date) return { timestampValue: val.toISOString() };
+  if (Array.isArray(val)) return { arrayValue: { values: val.map(toFirestoreValue) } };
+  if (typeof val === "object") {
+    const fields = {};
+    for (const [k, v] of Object.entries(val)) fields[k] = toFirestoreValue(v);
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+/** Convert Firestore REST Value back to JS */
+function fromFirestoreValue(val) {
+  if ("nullValue" in val) return null;
+  if ("booleanValue" in val) return val.booleanValue;
+  if ("integerValue" in val) return parseInt(val.integerValue, 10);
+  if ("doubleValue" in val) return val.doubleValue;
+  if ("stringValue" in val) return val.stringValue;
+  if ("timestampValue" in val) return new Date(val.timestampValue);
+  if ("arrayValue" in val) return (val.arrayValue.values || []).map(fromFirestoreValue);
+  if ("mapValue" in val) {
+    const obj = {};
+    for (const [k, v] of Object.entries(val.mapValue.fields || {})) obj[k] = fromFirestoreValue(v);
+    return obj;
+  }
+  return null;
+}
+
+function fromFirestoreDoc(docData) {
+  if (!docData || !docData.fields) return {};
+  const obj = {};
+  for (const [k, v] of Object.entries(docData.fields)) obj[k] = fromFirestoreValue(v);
+  return obj;
+}
+
+/** Build Admin-SDK-compatible interface using Firestore REST API */
+function buildRestDb(projectId, getToken) {
+  function buildCollectionRef(collName) {
+    const constraints = [];
+
+    const chainable = {
+      doc(docId) {
+        const docPath = `${collName}/${docId}`;
+        return {
+          async get() {
+            const token = await getToken();
+            if (!token) throw new Error("REST fallback: could not get access token");
+            const resp = await fetch(firestoreRestUrl(projectId, docPath), {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (resp.status === 404) return { exists: false, data() { return undefined; } };
+            if (!resp.ok) {
+              const err = await resp.text();
+              throw new Error(`Firestore REST GET failed (${resp.status}): ${err}`);
+            }
+            const doc = await resp.json();
+            return { exists: true, data() { return fromFirestoreDoc(doc); } };
+          },
+          async set(data, _options) {
+            const token = await getToken();
+            if (!token) throw new Error("REST fallback: could not get access token");
+            const fields = {};
+            for (const [k, v] of Object.entries(data)) fields[k] = toFirestoreValue(v);
+            const resp = await fetch(firestoreRestUrl(projectId, docPath), {
+              method: "PATCH",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ fields }),
+            });
+            if (!resp.ok) {
+              const err = await resp.text();
+              throw new Error(`Firestore REST SET failed (${resp.status}): ${err}`);
+            }
+          },
+          async update(data) {
+            const token = await getToken();
+            if (!token) throw new Error("REST fallback: could not get access token");
+            const fields = {};
+            const fieldPaths = [];
+            for (const [k, v] of Object.entries(data)) {
+              fields[k] = toFirestoreValue(v);
+              fieldPaths.push(k);
+            }
+            const mask = fieldPaths.map((f) => `updateMask.fieldPaths=${encodeURIComponent(f)}`).join("&");
+            const resp = await fetch(`${firestoreRestUrl(projectId, docPath)}?${mask}`, {
+              method: "PATCH",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ fields }),
+            });
+            if (!resp.ok) {
+              const err = await resp.text();
+              throw new Error(`Firestore REST UPDATE failed (${resp.status}): ${err}`);
+            }
+          },
+          async delete() {
+            const token = await getToken();
+            if (!token) throw new Error("REST fallback: could not get access token");
+            const resp = await fetch(firestoreRestUrl(projectId, docPath), {
+              method: "DELETE",
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!resp.ok) {
+              const err = await resp.text();
+              throw new Error(`Firestore REST DELETE failed (${resp.status}): ${err}`);
+            }
+          },
+        };
+      },
+      where(_field, _op, _value) {
+        constraints.push({ field: _field, op: _op, value: _value });
+        return chainable;
+      },
+      async get() {
+        const token = await getToken();
+        if (!token) throw new Error("REST fallback: could not get access token");
+        if (constraints.length > 0) {
+          // Use runQuery for where() queries
+          const structuredQuery = {
+            from: [{ collectionId: collName }],
+            where: {
+              compositeFilter: {
+                op: "AND",
+                filters: constraints.map((c) => ({
+                  fieldFilter: {
+                    field: { fieldPath: c.field },
+                    op: c.op === "==" ? "EQUAL" : c.op === "!=" ? "NOT_EQUAL" : c.op === "<" ? "LESS_THAN" : c.op === "<=" ? "LESS_THAN_OR_EQUAL" : c.op === ">" ? "GREATER_THAN" : c.op === ">=" ? "GREATER_THAN_OR_EQUAL" : "EQUAL",
+                    value: toFirestoreValue(c.value),
+                  },
+                })),
+              },
+            },
+          };
+          const resp = await fetch(
+            `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ structuredQuery }),
+            }
+          );
+          if (!resp.ok) {
+            const err = await resp.text();
+            throw new Error(`Firestore REST QUERY failed (${resp.status}): ${err}`);
+          }
+          const results = await resp.json();
+          const docs = results
+            .filter((r) => r.document)
+            .map((r) => {
+              const name = r.document.name;
+              const id = name.split("/").pop();
+              return { id, exists: true, data() { return fromFirestoreDoc(r.document); } };
+            });
+          return {
+            size: docs.length,
+            empty: docs.length === 0,
+            docs,
+            forEach(cb) { docs.forEach(cb); },
+          };
+        }
+        // List all documents in collection
+        const resp = await fetch(firestoreRestUrl(projectId, collName), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!resp.ok) {
+          const err = await resp.text();
+          throw new Error(`Firestore REST LIST failed (${resp.status}): ${err}`);
+        }
+        const data = await resp.json();
+        const docs = (data.documents || []).map((d) => {
+          const id = d.name.split("/").pop();
+          return { id, exists: true, data() { return fromFirestoreDoc(d); } };
+        });
+        return {
+          size: docs.length,
+          empty: docs.length === 0,
+          docs,
+          forEach(cb) { docs.forEach(cb); },
+        };
+      },
+    };
+
+    return chainable;
+  }
+
+  return { collection: buildCollectionRef };
+}
+
+let _restDb = undefined;
+
+function getRestFirestore() {
+  if (_restDb !== undefined) return _restDb;
+
+  const projectId = (
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
+    ""
+  ).trim();
+  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
+  const privateKey = getPrivateKey();
+
+  if (!projectId || !clientEmail || !privateKey || !privateKey.includes("-----BEGIN")) {
+    console.warn("[firebaseAdmin] REST fallback: missing credentials (projectId:", !!projectId, "clientEmail:", !!clientEmail, "privateKey valid:", privateKey?.includes("-----BEGIN"), ")");
+    _restDb = null;
+    return null;
+  }
+
+  console.log("[firebaseAdmin] REST fallback: credentials available, building REST client");
+  _restDb = buildRestDb(projectId, getRestAccessToken);
+  return _restDb;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -211,7 +499,14 @@ export function getAdminDb() {
   // Prefer Admin SDK
   if (ensureInitialized()) return admin.firestore();
 
-  // Fallback to client SDK wrapper
+  // Fallback 1: REST API with service account (bypasses Firestore rules)
+  const restDb = getRestFirestore();
+  if (restDb) {
+    console.log("[firebaseAdmin] Using REST API fallback (bypasses Firestore rules)");
+    return restDb;
+  }
+
+  // Fallback 2: Client SDK wrapper (subject to Firestore rules)
   const clientFs = getClientFirestore();
   if (clientFs) return wrapClientDb(clientFs);
 
