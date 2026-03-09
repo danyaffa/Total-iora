@@ -19,13 +19,22 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   // Lazy init — retries Firebase Admin (or client SDK fallback) on every request
-  const sdkType = detectSdkType();
   const adminDb = getAdminDb();
+  const sdkType = detectSdkType(); // must be AFTER getAdminDb() which triggers ensureInitialized()
+
+  // Detailed env var presence check (values never exposed)
+  const envCheck = {
+    FIREBASE_PROJECT_ID: !!(process.env.FIREBASE_PROJECT_ID || "").trim(),
+    FIREBASE_CLIENT_EMAIL: !!(process.env.FIREBASE_CLIENT_EMAIL || "").trim(),
+    FIREBASE_PRIVATE_KEY: !!(process.env.FIREBASE_PRIVATE_KEY || "").trim(),
+    FIREBASE_PRIVATE_KEY_LENGTH: (process.env.FIREBASE_PRIVATE_KEY || "").length,
+    FIREBASE_PRIVATE_KEY_STARTS: (process.env.FIREBASE_PRIVATE_KEY || "").substring(0, 27),
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: !!(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "").trim(),
+    NEXT_PUBLIC_FIREBASE_API_KEY: !!(process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "").trim(),
+  };
 
   console.log("[register] SDK type:", sdkType, "| adminDb:", adminDb ? "OK" : "NULL");
-  console.log("[register] env check — FIREBASE_PROJECT_ID:", !!process.env.FIREBASE_PROJECT_ID,
-    "FIREBASE_CLIENT_EMAIL:", !!process.env.FIREBASE_CLIENT_EMAIL,
-    "FIREBASE_PRIVATE_KEY:", !!(process.env.FIREBASE_PRIVATE_KEY));
+  console.log("[register] env check:", JSON.stringify(envCheck));
 
   if (!adminDb) {
     console.error("[register] adminDb is null — neither Admin SDK nor Client SDK could initialise");
@@ -35,10 +44,7 @@ export default async function handler(req, res) {
       debug_hint: "Check environment variables: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY. Visit /api/diagnostic for full diagnostics.",
       diagnostics: {
         sdkType,
-        hasProjectId: !!(process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID),
-        hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
-        hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
-        hasApiKey: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+        envCheck,
       },
     });
   }
@@ -155,6 +161,7 @@ export default async function handler(req, res) {
         sdkType,
         errorCode: e.code || null,
         isPermissionError,
+        envCheck,
       },
     });
   }

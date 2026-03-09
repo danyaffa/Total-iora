@@ -13,21 +13,34 @@ export default async function handler(req, res) {
     firestoreRead: { status: "unknown" },
   };
 
-  // 1. Check environment variables (presence only, no values)
+  // 1. Check environment variables (presence + structure, no secret values)
+  const rawPk = process.env.FIREBASE_PRIVATE_KEY || "";
   checks.env = {
-    FIREBASE_PROJECT_ID: !!process.env.FIREBASE_PROJECT_ID || !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    FIREBASE_CLIENT_EMAIL: !!process.env.FIREBASE_CLIENT_EMAIL,
-    FIREBASE_PRIVATE_KEY: !!process.env.FIREBASE_PRIVATE_KEY,
-    FIREBASE_PRIVATE_KEY_LENGTH: (process.env.FIREBASE_PRIVATE_KEY || "").length,
-    NEXT_PUBLIC_FIREBASE_API_KEY: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    NEXT_PUBLIC_FIREBASE_PROJECT_ID: !!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: !!process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    NEXT_PUBLIC_FIREBASE_APP_ID: !!process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+    FIREBASE_PROJECT_ID: { set: !!(process.env.FIREBASE_PROJECT_ID || "").trim(), length: (process.env.FIREBASE_PROJECT_ID || "").length },
+    FIREBASE_CLIENT_EMAIL: { set: !!(process.env.FIREBASE_CLIENT_EMAIL || "").trim(), length: (process.env.FIREBASE_CLIENT_EMAIL || "").length },
+    FIREBASE_PRIVATE_KEY: {
+      set: !!rawPk.trim(),
+      length: rawPk.length,
+      trimmedLength: rawPk.trim().length,
+      startsWith: rawPk.substring(0, 30),
+      endsWith: rawPk.substring(rawPk.length - 30),
+      containsBeginMarker: rawPk.includes("-----BEGIN"),
+      containsLiteralBackslashN: rawPk.includes("\\n"),
+      containsNewline: rawPk.includes("\n"),
+      startsWithQuote: rawPk[0] === '"' || rawPk[0] === "'",
+      endsWithQuote: rawPk[rawPk.length - 1] === '"' || rawPk[rawPk.length - 1] === "'",
+    },
+    NEXT_PUBLIC_FIREBASE_API_KEY: { set: !!(process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "").trim() },
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID: { set: !!(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "").trim() },
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: { set: !!(process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "").trim() },
+    NEXT_PUBLIC_FIREBASE_APP_ID: { set: !!(process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "").trim() },
     resolvedProjectId: (
       process.env.FIREBASE_PROJECT_ID ||
       process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
       "(none)"
     ).trim(),
+    nodeEnv: process.env.NODE_ENV || "(not set)",
+    vercelEnv: process.env.VERCEL_ENV || "(not set)",
   };
 
   // 2. Check Admin SDK initialization
