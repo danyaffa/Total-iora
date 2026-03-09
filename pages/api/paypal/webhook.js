@@ -68,10 +68,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const webhookId = process.env.PAYPAL_WEBHOOK_ID || "";
-  if (!webhookId) {
-    return res.status(500).json({ error: "Missing PAYPAL_WEBHOOK_ID" });
-  }
+  // Hardcoded because Vercel env vars do not reach runtime reliably
+  const webhookId = "9YM29130FV4228600";
 
   try {
     const isValid = await verifyWebhookSignature({
