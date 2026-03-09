@@ -3,6 +3,7 @@
 // Call GET /api/deploy-rules to deploy the rules defined below.
 
 import { createSign } from "crypto";
+import serviceAccount from "../../utils/serviceAccountKey.json";
 
 const FIRESTORE_RULES = `
 rules_version = '2';
@@ -27,25 +28,9 @@ service cloud.firestore {
 }
 `.trim();
 
-function getPrivateKey() {
-  let pk = process.env.FIREBASE_PRIVATE_KEY || "";
-  pk = pk.trim();
-  if (pk.startsWith('"') && pk.endsWith('"')) pk = pk.slice(1, -1);
-  if (pk.startsWith("'") && pk.endsWith("'")) pk = pk.slice(1, -1);
-  pk = pk.replace(/\\\\n/g, "\\n");
-  pk = pk.replace(/\\n/g, "\n");
-  if (!pk.includes("-----BEGIN") && pk.length > 100) {
-    try {
-      const decoded = Buffer.from(pk, "base64").toString("utf8");
-      if (decoded.includes("-----BEGIN")) pk = decoded;
-    } catch (_) {}
-  }
-  return pk;
-}
-
 async function getAccessToken() {
-  const clientEmail = (process.env.FIREBASE_CLIENT_EMAIL || "").trim();
-  const privateKey = getPrivateKey();
+  const clientEmail = serviceAccount.client_email;
+  const privateKey = serviceAccount.private_key;
 
   if (!clientEmail || !privateKey || !privateKey.includes("-----BEGIN")) {
     return null;
@@ -79,11 +64,7 @@ async function getAccessToken() {
 }
 
 export default async function handler(req, res) {
-  const projectId = (
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ||
-    ""
-  ).trim();
+  const projectId = serviceAccount.project_id;
 
   if (!projectId) {
     return res.status(500).json({ error: "FIREBASE_PROJECT_ID not set" });
@@ -93,10 +74,9 @@ export default async function handler(req, res) {
     const token = await getAccessToken();
     if (!token) {
       return res.status(500).json({
-        error: "Could not get access token. FIREBASE_CLIENT_EMAIL or FIREBASE_PRIVATE_KEY missing/invalid.",
-        hasClientEmail: !!(process.env.FIREBASE_CLIENT_EMAIL || "").trim(),
-        hasPrivateKey: !!(process.env.FIREBASE_PRIVATE_KEY || "").trim(),
-        privateKeyLength: (process.env.FIREBASE_PRIVATE_KEY || "").length,
+        error: "Could not get access token from bundled service account.",
+        hasClientEmail: !!serviceAccount.client_email,
+        hasPrivateKey: !!serviceAccount.private_key,
       });
     }
 
