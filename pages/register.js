@@ -64,11 +64,21 @@ export default function Register() {
 
       if (!r.ok || !data?.ok) {
         setMsg(data?.error || "Registration failed.");
-        if (data?.debug_hint) {
-          setDebugInfo(`Debug: ${data.debug_hint}`);
+        const parts = [];
+        if (data?.diagnostics?.sdkType) {
+          parts.push(`SDK: ${data.diagnostics.sdkType}`);
         }
-        if (data?.debug) {
-          setDebugInfo((prev) => prev ? `${prev} | ${data.debug}` : `Debug: ${data.debug}`);
+        if (data?.debug_hint) {
+          parts.push(data.debug_hint);
+        }
+        if (data?.fix_steps?.length) {
+          parts.push("\nSteps to fix:\n" + data.fix_steps.join("\n"));
+        }
+        if (data?.debug && !parts.some((p) => p.includes(data.debug))) {
+          parts.push(`Error: ${data.debug}`);
+        }
+        if (parts.length > 0) {
+          setDebugInfo(parts.join("\n\n"));
         }
       } else {
         setCookie("ac_registered", "1", 365);
@@ -174,7 +184,7 @@ export default function Register() {
             {busy ? "Creating..." : "Start 14-Day Free Trial"}
           </button>
           {msg && <p className="err">{msg}</p>}
-          {debugInfo && <p className="debug">{debugInfo}</p>}
+          {debugInfo && <pre className="debug">{debugInfo}</pre>}
           <p className="small">
             Already registered? <Link href="/login">Log in</Link>.
           </p>
@@ -306,13 +316,17 @@ export default function Register() {
         }
         .debug {
           color: #9333ea;
-          font-size: 0.8rem;
-          text-align: center;
+          font-size: 0.78rem;
+          text-align: left;
           background: #faf5ff;
-          padding: 8px 12px;
+          padding: 10px 14px;
           border-radius: 8px;
           border: 1px solid #e9d5ff;
-          word-break: break-all;
+          word-break: break-word;
+          white-space: pre-wrap;
+          font-family: inherit;
+          line-height: 1.5;
+          margin: 4px 0 0;
         }
         .small {
           color: #94a3b8;

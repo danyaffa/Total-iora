@@ -1,6 +1,7 @@
 // FILE: /pages/api/register.js
 import { getAdminDb } from "../../utils/firebaseAdmin";
 import { randomBytes, scryptSync } from "crypto";
+import * as admin from "firebase-admin";
 
 function makeHash(password) {
   const salt = randomBytes(16).toString("hex");
@@ -8,14 +9,38 @@ function makeHash(password) {
   return `s1$${salt}$${hash}`;
 }
 
+/** Detect whether the db object is the real Admin SDK or the Client SDK wrapper */
+function detectSdkType() {
+  if (admin.apps.length > 0) return "admin";
+  return "client-fallback";
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   // Lazy init — retries Firebase Admin (or client SDK fallback) on every request
+  const sdkType = detectSdkType();
   const adminDb = getAdminDb();
+
+  console.log("[register] SDK type:", sdkType, "| adminDb:", adminDb ? "OK" : "NULL");
+  console.log("[register] env check — FIREBASE_PROJECT_ID:", !!process.env.FIREBASE_PROJECT_ID,
+    "FIREBASE_CLIENT_EMAIL:", !!process.env.FIREBASE_CLIENT_EMAIL,
+    "FIREBASE_PRIVATE_KEY:", !!(process.env.FIREBASE_PRIVATE_KEY));
+
   if (!adminDb) {
     console.error("[register] adminDb is null — neither Admin SDK nor Client SDK could initialise");
-    return res.status(500).json({ error: "Server configuration error. Please contact support." });
+    return res.status(500).json({
+      error: "Server configuration error. Please contact support.",
+      debug: "Firebase could not initialise. Neither Admin SDK nor Client SDK fallback worked.",
+      debug_hint: "Check environment variables: FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY. Visit /api/diagnostic for full diagnostics.",
+      diagnostics: {
+        sdkType,
+        hasProjectId: !!(process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID),
+        hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+        hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+        hasApiKey: !!process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+      },
+    });
   }
 
   const {
@@ -41,11 +66,10 @@ export default async function handler(req, res) {
     const ref = adminDb.collection("users").doc(emailNorm);
     const snap = await ref.get();
 
-    console.log("[register] doc exists?", snap.exists);
+    console.log("[register] doc exists?", snap.exists, "| using SDK:", sdkType);
 
     if (snap.exists) {
       // Account exists — update password hash so user can login
-      // This handles cases where the old document had no hash or a broken hash
       const existing = snap.data() || {};
       console.log("[register] existing doc keys:", Object.keys(existing));
       console.log("[register] existing doc has password_hash?", Boolean(existing.password_hash));
@@ -87,20 +111,51 @@ export default async function handler(req, res) {
 
     await ref.set(docData, { merge: false });
 
-    console.log("[register] success — user created:", emailNorm);
+    console.log("[register] success — user created:", emailNorm, "| SDK:", sdkType);
 
     return res.status(200).json({ ok: true, trialEnd: trialEnd.toISOString() });
   } catch (e) {
     console.error("[register] error:", e.message || e);
+    console.error("[register] error code:", e.code);
     console.error("[register] stack:", e.stack);
-    const isPermissionError = (e.message || "").toLowerCase().includes("permission");
-    const debug_hint = isPermissionError
-      ? "Firestore rules are blocking writes. Deploy firestore.rules: firebase deploy --only firestore:rules"
-      : undefined;
+
+    const errMsg = (e.message || "").toLowerCase();
+    const errCode = (e.code || "").toLowerCase();
+    const isPermissionError = errMsg.includes("permission") || errCode.includes("permission-denied");
+    const isUnauthenticated = errMsg.includes("unauthenticated") || errCode.includes("unauthenticated");
+    const isNotFound = errMsg.includes("not found") || errCode.includes("not-found");
+
+    let debug_hint;
+    let fixSteps = [];
+
+    if (isPermissionError) {
+      debug_hint = sdkType === "client-fallback"
+        ? "Using Client SDK fallback (Admin SDK credentials missing). Client SDK is subject to Firestore rules. Fix: set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY env vars, OR deploy permissive firestore.rules."
+        : "Firestore rules are blocking writes even with Admin SDK. This is unusual — check that the service account has the correct IAM roles.";
+      fixSteps = [
+        "1. Check if FIREBASE_PRIVATE_KEY, FIREBASE_CLIENT_EMAIL, FIREBASE_PROJECT_ID are set in your hosting environment",
+        "2. If using Client SDK fallback, deploy Firestore rules: firebase deploy --only firestore:rules",
+        "3. Visit /api/diagnostic to see full configuration status",
+      ];
+    } else if (isUnauthenticated) {
+      debug_hint = "Firebase credentials are invalid or expired. Regenerate the service account key.";
+      fixSteps = ["1. Go to Firebase Console > Project Settings > Service Accounts", "2. Generate a new private key", "3. Update FIREBASE_PRIVATE_KEY env var"];
+    } else if (isNotFound) {
+      debug_hint = "Firestore database may not be created yet. Go to Firebase Console > Firestore Database and create it.";
+    } else {
+      debug_hint = `Unexpected error during registration. SDK: ${sdkType}. Check server logs for details.`;
+    }
+
     return res.status(500).json({
       error: "Registration failed. Please try again.",
       debug: e.message,
       debug_hint,
+      fix_steps: fixSteps.length > 0 ? fixSteps : undefined,
+      diagnostics: {
+        sdkType,
+        errorCode: e.code || null,
+        isPermissionError,
+      },
     });
   }
 }
