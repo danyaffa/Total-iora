@@ -2,7 +2,7 @@
 
 import * as admin from "firebase-admin";
 import { initializeApp as initClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection as fsCollection, query, where, getDocs } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection as fsCollection, query, where, getDocs, limit as fsLimit } from "firebase/firestore";
 import serviceAccount from "./serviceAccountKey.json";
 
 function ensureInitialized() {
@@ -85,11 +85,16 @@ function wrapClientDb(firestore) {
   function buildCollectionRef(collName) {
     const collRef = fsCollection(firestore, collName);
     const constraints = [];
+    let _limit = null;
 
     const chainable = {
       async add(data) {
         const docRef = await addDoc(collRef, data);
         return { id: docRef.id };
+      },
+      limit(n) {
+        _limit = n;
+        return chainable;
       },
       doc(docId) {
         const docRef = doc(firestore, collName, docId);
@@ -117,8 +122,10 @@ function wrapClientDb(firestore) {
         return chainable;
       },
       async get() {
-        const q = constraints.length > 0
-          ? query(collRef, ...constraints)
+        const parts = [...constraints];
+        if (_limit != null) parts.push(fsLimit(_limit));
+        const q = parts.length > 0
+          ? query(collRef, ...parts)
           : collRef;
         const snap = await getDocs(q);
         return {
@@ -267,8 +274,13 @@ function fromFirestoreDoc(docData) {
 function buildRestDb(projectId, getToken) {
   function buildCollectionRef(collName) {
     const constraints = [];
+    let _limit = null;
 
     const chainable = {
+      limit(n) {
+        _limit = n;
+        return chainable;
+      },
       async add(data) {
         const token = await getToken();
         if (!token) throw new Error("REST fallback: could not get access token");
@@ -379,6 +391,7 @@ function buildRestDb(projectId, getToken) {
                 })),
               },
             },
+            ...(_limit != null ? { limit: _limit } : {}),
           };
           const resp = await fetch(
             `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`,
@@ -408,7 +421,10 @@ function buildRestDb(projectId, getToken) {
           };
         }
         // List all documents in collection
-        const resp = await fetch(firestoreRestUrl(projectId, collName), {
+        const listUrl = _limit != null
+          ? `${firestoreRestUrl(projectId, collName)}?pageSize=${_limit}`
+          : firestoreRestUrl(projectId, collName);
+        const resp = await fetch(listUrl, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!resp.ok) {
