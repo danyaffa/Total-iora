@@ -326,7 +326,7 @@ export default function IndexPreview() {
       <section className="benefits" id="benefits">
         <h2 className="sectionTitle">Why Choose Total-iora?</h2>
         <p className="sectionSub">
-          A sanctuary for reflection, guidance, and inner peace \u2014 personalized to your faith.
+          A sanctuary for reflection, guidance, and inner peace — personalized to your faith.
         </p>
         <div className="benefitsGrid">
           {CORE_FEATURES.map((f, i) => (
@@ -384,7 +384,7 @@ export default function IndexPreview() {
           </Link>
           <p className="pricingNote">
             No charge for 14 days. After trial, $5/month via PayPal.
-            No commitment \u2014 cancel anytime.
+            No commitment — cancel anytime.
           </p>
         </div>
       </section>

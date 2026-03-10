@@ -26,11 +26,11 @@ export default async function handler(req, res) {
     // Accept both "text" and "comment"
     const bodyText = (text ?? comment ?? "").toString();
 
-    if (!bodyText.trim()) {
-      console.log("⚠ Missing review text");
+    if (!rating && !bodyText.trim()) {
+      console.log("⚠ Missing rating and review text");
       return res
         .status(400)
-        .json({ success: false, error: "Missing review text" });
+        .json({ success: false, error: "Missing rating or review text" });
     }
 
     const appLabel = appName || APP_NAME;
