@@ -1029,7 +1029,7 @@ export default function IndexPreview() {
           font-weight: 600;
         }
         .pricingFeatures li::before {
-          content: "\u2713";
+          content: "\2713";
           display: inline-flex;
           align-items: center;
           justify-content: center;
