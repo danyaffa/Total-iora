@@ -235,7 +235,7 @@ export const ReviewWidget: React.FC<ReviewWidgetProps> = ({
     const label =
       widgetState === "open" || widgetState === "submitting"
         ? "Leave feedback"
-        : "How is SimpleAITrade working for you?";
+        : "Did you enjoy our app?";
     return (
       <button type="button" style={pillStyle} onClick={openWidget}>
         <span
@@ -339,7 +339,7 @@ export const ReviewWidget: React.FC<ReviewWidgetProps> = ({
           ) : (
             <>
               <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>
-                How is {effectiveAppName} working for you?
+                Did you enjoy our app?
               </div>
               <div style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 4 }}>
                 Choose a star rating, then optionally tell us what&apos;s working
