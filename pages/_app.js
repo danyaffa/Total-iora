@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import "../styles/globals.css";
-import ReviewWidget from "../components/ReviewWidget";
+import ReviewWidget from "../components/ReviewWidgets";
 import PromoSessionBanner from "../components/PromoSessionBanner";
 
 export default function App({ Component, pageProps }) {
