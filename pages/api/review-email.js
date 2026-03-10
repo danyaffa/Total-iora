@@ -6,10 +6,7 @@ import { Resend } from "resend";
 import { getAdminDb } from "../../utils/firebaseAdmin";
 import { APP_NAME } from "../../lib/appConfig";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export default async function handler(req, res) {
-  const adminDb = getAdminDb();
   console.log("🔔 /api/review-email called");
   console.log("🔑 RESEND_API_KEY set?", !!process.env.RESEND_API_KEY);
   console.log("📧 REVIEW_RECEIVER_EMAIL:", process.env.REVIEW_RECEIVER_EMAIL);
@@ -21,6 +18,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    const adminDb = getAdminDb();
+    const resend = process.env.RESEND_API_KEY
+      ? new Resend(process.env.RESEND_API_KEY)
+      : null;
     const { rating, text, comment, email, appName } = req.body || {};
 
     // Accept both "text" and "comment"
@@ -59,7 +60,7 @@ export default async function handler(req, res) {
     }
 
     // ---- Send email via Resend (optional) ---------------------------------
-    if (process.env.RESEND_API_KEY && process.env.REVIEW_RECEIVER_EMAIL) {
+    if (resend && process.env.REVIEW_RECEIVER_EMAIL) {
       try {
         console.log("🚀 Sending email via Resend…");
         const result = await resend.emails.send({

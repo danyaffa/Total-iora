@@ -223,11 +223,18 @@ export const ReviewWidget: React.FC<ReviewWidgetProps> = ({
           appName: effectiveAppName,
         }),
       });
-      if (!res.ok) throw new Error("Failed to submit feedback");
+      if (!res.ok) {
+        let details = "";
+        try { details = await res.text(); } catch {}
+        throw new Error(
+          `review-email failed: ${res.status} ${res.statusText} ${details}`
+        );
+      }
       setHasSubmitted(true);
       setWidgetState("thankyou");
       if (rating >= 4) setTimeout(() => openStoreReviewPage(), 4000);
-    } catch {
+    } catch (err) {
+      console.error("Review submit failed:", err);
       alert("Sorry, something went wrong. Please try again later.");
       setWidgetState("open");
     }
