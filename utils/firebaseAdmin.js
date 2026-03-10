@@ -2,7 +2,7 @@
 
 import * as admin from "firebase-admin";
 import { initializeApp as initClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection as fsCollection, query, where, getDocs } from "firebase/firestore";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection as fsCollection, query, where, getDocs } from "firebase/firestore";
 import serviceAccount from "./serviceAccountKey.json";
 
 function ensureInitialized() {
@@ -87,6 +87,10 @@ function wrapClientDb(firestore) {
     const constraints = [];
 
     const chainable = {
+      async add(data) {
+        const docRef = await addDoc(collRef, data);
+        return { id: docRef.id };
+      },
       doc(docId) {
         const docRef = doc(firestore, collName, docId);
         return {
@@ -265,6 +269,27 @@ function buildRestDb(projectId, getToken) {
     const constraints = [];
 
     const chainable = {
+      async add(data) {
+        const token = await getToken();
+        if (!token) throw new Error("REST fallback: could not get access token");
+        const fields = {};
+        for (const [k, v] of Object.entries(data)) fields[k] = toFirestoreValue(v);
+        const resp = await fetch(
+          `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collName}`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ fields }),
+          }
+        );
+        if (!resp.ok) {
+          const err = await resp.text();
+          throw new Error(`Firestore REST ADD failed (${resp.status}): ${err}`);
+        }
+        const created = await resp.json();
+        const id = created.name ? created.name.split("/").pop() : null;
+        return { id };
+      },
       doc(docId) {
         const docPath = `${collName}/${docId}`;
         return {

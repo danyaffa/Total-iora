@@ -202,6 +202,8 @@ export const ReviewWidget: React.FC<ReviewWidgetProps> = ({
     let targetUrl = iosReviewUrl;
     if (/Android/i.test(ua)) targetUrl = androidReviewUrl;
     else if (/iPhone|iPad|iPod/i.test(ua)) targetUrl = iosReviewUrl;
+    // Skip opening store page if URL still contains placeholder values
+    if (!targetUrl || targetUrl.includes("YOUR_APP_ID") || targetUrl.includes("your.package.name")) return;
     window.open(targetUrl, "_blank");
   };
   const handleSubmit = async () => {
