@@ -3,7 +3,13 @@
 // Call GET /api/deploy-rules to deploy the rules defined below.
 
 import { createSign } from "crypto";
-import serviceAccount from "../../utils/serviceAccountKey.json";
+
+// Service account credentials from environment variables (set in Vercel dashboard)
+const serviceAccount = {
+  project_id: process.env.FIREBASE_PROJECT_ID || "",
+  client_email: process.env.FIREBASE_CLIENT_EMAIL || "",
+  private_key: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+};
 
 const FIRESTORE_RULES = `
 rules_version = '2';

@@ -19,3 +19,6 @@ npm-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+# Firebase service account key
+serviceAccountKey.json
