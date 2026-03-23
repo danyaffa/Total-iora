@@ -3,12 +3,16 @@
 import * as admin from "firebase-admin";
 import { initializeApp as initClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection as fsCollection, query, where, getDocs, limit as fsLimit } from "firebase/firestore";
-import serviceAccount from "./serviceAccountKey.json";
+// Service account credentials from environment variables (set in Vercel dashboard)
+const serviceAccount = {
+  project_id: process.env.FIREBASE_PROJECT_ID || "",
+  client_email: process.env.FIREBASE_CLIENT_EMAIL || "",
+  private_key: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+};
 
 function ensureInitialized() {
   if (admin.apps.length) return true;
 
-  // Use bundled service account directly — env vars are unreliable on Vercel
   const projectId = serviceAccount.project_id;
   const clientEmail = serviceAccount.client_email;
   const privateKey = serviceAccount.private_key;
