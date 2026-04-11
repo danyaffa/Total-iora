@@ -1,13 +1,16 @@
+// FILE: /pages/api/paypal/webhook.js
 import { verifyWebhookSignature } from "../../../lib/paypal-server";
 import { getAdminDb } from "../../../utils/firebaseAdmin";
+import { withApi } from "../../../lib/apiSecurity";
+import { writeAudit } from "../../../lib/audit";
+import { logger } from "../../../lib/logger";
+
+const log = logger.child({ fn: "api.paypal.webhook" });
 
 export const config = {
-  api: {
-    bodyParser: true,
-  },
+  api: { bodyParser: true },
 };
 
-// Events that indicate a successful payment or active subscription
 const PAID_EVENTS = [
   "BILLING.SUBSCRIPTION.ACTIVATED",
   "BILLING.SUBSCRIPTION.RENEWED",
@@ -29,7 +32,6 @@ async function markUserPaid(email, eventData) {
   const ref = adminDb.collection("users").doc(emailNorm);
   const snap = await ref.get();
   if (!snap.exists) return;
-
   await ref.update({
     isPaid: true,
     paidAt: new Date(),
@@ -46,7 +48,6 @@ async function markUserUnpaid(email, eventData) {
   const ref = adminDb.collection("users").doc(emailNorm);
   const snap = await ref.get();
   if (!snap.exists) return;
-
   await ref.update({
     isPaid: false,
     lastPaypalEvent: eventData.event_type,
@@ -54,7 +55,6 @@ async function markUserUnpaid(email, eventData) {
 }
 
 function extractEmail(body) {
-  // Try various PayPal event structures to find the subscriber email
   return (
     body?.resource?.subscriber?.email_address ||
     body?.resource?.payer?.email_address ||
@@ -63,16 +63,16 @@ function extractEmail(body) {
   );
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+async function handler(req, res) {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID || "";
+  if (!webhookId) {
+    log.error("missing_webhook_id");
+    return res.status(503).json({ error: "service_unavailable" });
   }
 
-  // Hardcoded because Vercel env vars do not reach runtime reliably
-  const webhookId = "9YM29130FV4228600";
-
+  let isValid = false;
   try {
-    const isValid = await verifyWebhookSignature({
+    isValid = await verifyWebhookSignature({
       transmissionId: req.headers["paypal-transmission-id"],
       transmissionTime: req.headers["paypal-transmission-time"],
       certUrl: req.headers["paypal-cert-url"],
@@ -81,25 +81,43 @@ export default async function handler(req, res) {
       webhookId,
       eventBody: req.body,
     });
-
-    if (!isValid) {
-      return res.status(400).json({ error: "Invalid webhook signature" });
-    }
-
-    const eventType = req.body?.event_type;
-    const email = extractEmail(req.body);
-
-    console.log("PayPal webhook event:", eventType, "email:", email);
-
-    if (PAID_EVENTS.includes(eventType) && email) {
-      await markUserPaid(email, req.body);
-    } else if (CANCELLED_EVENTS.includes(eventType) && email) {
-      await markUserUnpaid(email, req.body);
-    }
-
-    return res.status(200).json({ received: true });
-  } catch (error) {
-    console.error("paypal webhook error:", error);
-    return res.status(500).json({ error: "Webhook processing failed" });
+  } catch (err) {
+    log.error("verify_failed", { error: String(err?.message || err) });
   }
+
+  if (!isValid) {
+    writeAudit({
+      action: "paypal.webhook_invalid",
+      actor: "paypal",
+      route: "api.paypal.webhook",
+      result: "failure",
+    }).catch(() => {});
+    return res.status(400).json({ error: "invalid_signature" });
+  }
+
+  const eventType = req.body?.event_type;
+  const email = extractEmail(req.body);
+
+  if (PAID_EVENTS.includes(eventType) && email) {
+    await markUserPaid(email, req.body);
+  } else if (CANCELLED_EVENTS.includes(eventType) && email) {
+    await markUserUnpaid(email, req.body);
+  }
+
+  writeAudit({
+    action: "paypal.webhook",
+    actor: "paypal",
+    target: email,
+    route: "api.paypal.webhook",
+    meta: { eventType },
+  }).catch(() => {});
+
+  log.info("webhook.ok", { eventType });
+  return res.status(200).json({ received: true });
 }
+
+export default withApi(handler, {
+  name: "api.paypal.webhook",
+  methods: ["POST"],
+  rate: { max: 120, windowMs: 60_000 },
+});

@@ -1,13 +1,14 @@
+// FILE: /pages/api/paypal/capture-order.js
 import { paypalRequest } from "../../../lib/paypal-server";
+import { withApi } from "../../../lib/apiSecurity";
+import { logger } from "../../../lib/logger";
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+const log = logger.child({ fn: "api.paypal.capture-order" });
 
+async function handler(req, res) {
   const { orderId } = req.body || {};
-  if (!orderId) {
-    return res.status(400).json({ error: "Missing orderId" });
+  if (!orderId || typeof orderId !== "string" || orderId.length > 128) {
+    return res.status(400).json({ error: "invalid_order_id" });
   }
 
   try {
@@ -15,14 +16,21 @@ export default async function handler(req, res) {
       method: "POST",
       body: JSON.stringify({}),
     });
-
     return res.status(200).json({
       id: capture.id,
       status: capture.status,
       payer: capture.payer || null,
     });
-  } catch (error) {
-    console.error("capture-order error:", error);
-    return res.status(500).json({ error: "Unable to capture PayPal order" });
+  } catch (err) {
+    log.error("paypal_capture_failed", { error: String(err?.message || err) });
+    return res.status(502).json({ error: "unable_to_capture_order" });
   }
 }
+
+export default withApi(handler, {
+  name: "api.paypal.capture-order",
+  methods: ["POST"],
+  rate: { max: 20, windowMs: 60_000 },
+  audit: true,
+  auditAction: "paypal.capture_order",
+});

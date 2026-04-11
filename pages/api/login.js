@@ -1,98 +1,119 @@
 // FILE: /pages/api/login.js
-import { scryptSync } from "crypto";
+import { scryptSync, timingSafeEqual } from "crypto";
 import { getAdminDb } from "../../utils/firebaseAdmin";
+import { withApi } from "../../lib/apiSecurity";
+import { logger } from "../../lib/logger";
+import { writeAudit } from "../../lib/audit";
+
+const log = logger.child({ fn: "api.login" });
 
 function verify(hashString, password) {
   const [scheme, salt, hash] = String(hashString || "").split("$");
   if (scheme !== "s1" || !salt || !hash) return false;
-  const calc = scryptSync(password, salt, 64).toString("hex");
-  return calc === hash;
+  try {
+    const calc = scryptSync(password, salt, 64);
+    const stored = Buffer.from(hash, "hex");
+    if (stored.length !== calc.length) return false;
+    return timingSafeEqual(calc, stored);
+  } catch (err) {
+    log.error("verify_error", { error: String(err?.message || err) });
+    return false;
+  }
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  // Lazy init — retries Firebase Admin (or client SDK fallback) on every request
+async function handler(req, res) {
   const adminDb = getAdminDb();
   if (!adminDb) {
-    console.error("[login] adminDb is null — neither Admin SDK nor Client SDK could initialise");
-    return res.status(500).json({ error: "Server configuration error. Please contact support." });
+    log.error("db_unavailable", { fn: "handler" });
+    return res.status(503).json({ error: "service_unavailable" });
   }
 
   const { email = "", password = "" } = req.body || {};
-  const emailNorm = String(email || "").trim().toLowerCase();
-  const pw = String(password || "");
+  const emailNorm = String(email).trim().toLowerCase();
+  const pw = String(password);
 
-  console.log("[login] attempt for:", emailNorm);
-
-  if (!emailNorm || !pw) return res.status(400).json({ error: "Missing email or password" });
-
-  try {
-    const ref = adminDb.collection("users").doc(emailNorm);
-    const snap = await ref.get();
-
-    console.log("[login] doc exists?", snap.exists);
-
-    if (!snap.exists) {
-      console.log("[login] no document found for:", emailNorm);
-      return res.status(401).json({ error: "Invalid credentials", debug_hint: "No user document in Firestore for this email" });
-    }
-
-    const user = snap.data() || {};
-    console.log("[login] doc keys:", Object.keys(user));
-    console.log("[login] has password_hash?", Boolean(user.password_hash));
-    console.log("[login] password_hash starts with:", user.password_hash ? user.password_hash.substring(0, 10) + "..." : "N/A");
-
-    if (!user.password_hash) {
-      console.log("[login] FAIL — password_hash is missing from the document");
-      return res.status(401).json({
-        error: "Your account needs to be updated. Please register again with the same email to set your password.",
-        debug_hint: "password_hash field is missing — user must re-register to set password",
-      });
-    }
-
-    const passwordMatch = verify(user.password_hash, pw);
-    console.log("[login] password match?", passwordMatch);
-
-    if (!passwordMatch) {
-      return res.status(401).json({ error: "Invalid credentials", debug_hint: "Password does not match stored hash" });
-    }
-
-    // Success — set session cookie
-    const SECURE = req.headers["x-forwarded-proto"] === "https";
-    const cookie = `ac_session=1; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax${SECURE ? "; Secure" : ""}`;
-    res.setHeader("Set-Cookie", cookie);
-
-    // Owner/admin emails always get full access
-    const ownerEmails = (process.env.OWNER_EMAILS || "leffleryd@gmail.com,jaffaleffler@gmail.com")
-      .split(",")
-      .map((e) => e.trim().toLowerCase());
-    const isOwner = ownerEmails.includes(emailNorm);
-
-    // If owner and not marked as paid, update Firestore to permanent paid
-    if (isOwner && !user.isPaid) {
-      await ref.update({ isPaid: true, isOwner: true });
-      console.log("[login] owner detected, granted permanent paid access:", emailNorm);
-    }
-
-    const isPaid = isOwner || Boolean(user.isPaid);
-    const trialEnd = user.trialEnd?.toDate
-      ? user.trialEnd.toDate().toISOString()
-      : user.trialEnd || null;
-    const trialActive = isPaid || (trialEnd ? new Date(trialEnd) > new Date() : false);
-
-    console.log("[login] success for:", emailNorm, "isPaid:", isPaid, "isOwner:", isOwner, "trialActive:", trialActive);
-
-    return res.status(200).json({
-      ok: true,
-      isPaid,
-      trialEnd,
-      trialActive,
-      email: emailNorm,
-    });
-  } catch (e) {
-    console.error("[login] error:", e.message || e);
-    console.error("[login] stack:", e.stack);
-    return res.status(500).json({ error: "Auth error. Please try again.", debug: e.message });
+  if (!emailNorm || !pw) {
+    return res.status(400).json({ error: "missing_credentials" });
   }
+  // Basic email sanity
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm) || emailNorm.length > 254) {
+    return res.status(400).json({ error: "invalid_email" });
+  }
+  if (pw.length > 1024) {
+    return res.status(400).json({ error: "invalid_password" });
+  }
+
+  const ref = adminDb.collection("users").doc(emailNorm);
+  const snap = await ref.get();
+
+  if (!snap.exists) {
+    log.warn("login.no_user", { email: emailNorm });
+    return res.status(401).json({ error: "invalid_credentials" });
+  }
+
+  const user = snap.data() || {};
+  if (!user.password_hash) {
+    log.warn("login.missing_hash", { email: emailNorm });
+    return res.status(401).json({ error: "invalid_credentials" });
+  }
+
+  if (!verify(user.password_hash, pw)) {
+    log.warn("login.bad_password", { email: emailNorm });
+    return res.status(401).json({ error: "invalid_credentials" });
+  }
+
+  const isProd =
+    process.env.VERCEL_ENV === "production" ||
+    process.env.NODE_ENV === "production" ||
+    req.headers["x-forwarded-proto"] === "https";
+  const secureFlag = isProd ? "; Secure" : "";
+
+  const sessionCookie =
+    `ac_session=1; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax; HttpOnly${secureFlag}`;
+  const emailCookie =
+    `ac_email=${encodeURIComponent(emailNorm)}; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax${secureFlag}`;
+
+  res.setHeader("Set-Cookie", [sessionCookie, emailCookie]);
+
+  // Owner promotion — only if OWNER_EMAILS configured
+  const ownerEmails = (process.env.OWNER_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  const isOwner = ownerEmails.includes(emailNorm);
+  if (isOwner && !user.isPaid) {
+    try {
+      await ref.update({ isPaid: true, isOwner: true });
+      writeAudit({
+        action: "user.owner_promoted",
+        actor: emailNorm,
+        target: emailNorm,
+        route: "api.login",
+      }).catch(() => {});
+    } catch (err) {
+      log.warn("owner_update_failed", { error: String(err?.message || err) });
+    }
+  }
+
+  const isPaid = isOwner || Boolean(user.isPaid);
+  const trialEnd = user.trialEnd?.toDate
+    ? user.trialEnd.toDate().toISOString()
+    : user.trialEnd || null;
+  const trialActive = isPaid || (trialEnd ? new Date(trialEnd) > new Date() : false);
+
+  log.info("login.success", { email: emailNorm, isPaid, trialActive });
+
+  return res.status(200).json({
+    ok: true,
+    isPaid,
+    trialEnd,
+    trialActive,
+    email: emailNorm,
+  });
 }
+
+export default withApi(handler, {
+  name: "api.login",
+  methods: ["POST"],
+  rate: { max: 10, windowMs: 60_000 },
+});
