@@ -304,18 +304,36 @@ async function handler(req, res) {
       ? "Sources list:\n" + sources.map((s,i)=>`[${i+1}] ${s.work}${s.author?` — ${s.author}`:""}${s.url?` <${s.url}>`:""}`).join("\n")
       : "No sources matched.";
 
-    const chat = await openai.chat.completions.create({
-      model,
-      temperature: 0.6,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-        { role: "system", content: toolNote }
-      ],
-    });
+    // Wrap the OpenAI call so any failure (invalid key, quota exceeded,
+    // model-not-allowed, network error) becomes a self-diagnosing 503
+    // with a real error message, instead of bubbling up to withApi as a
+    // generic server_error that the client renders as literally the
+    // string "server_error".
+    let chat;
+    try {
+      chat = await openai.chat.completions.create({
+        model,
+        temperature: 0.6,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+          { role: "system", content: toolNote }
+        ],
+      });
+    } catch (err) {
+      const status = err?.status || err?.response?.status || null;
+      const errMsg = String(err?.message || err);
+      // OpenAI SDK errors have .code for quota/auth/etc; fall back to status.
+      const errCode = err?.code || err?.error?.code || (status ? `http_${status}` : null);
+      log.error("openai_chat_failed", { model, error: errMsg, code: errCode, status });
+      return res.status(503).json({
+        error: "service_unavailable",
+        debug_hint: `OpenAI chat call failed (${errCode || "unknown"}): ${errMsg}`,
+      });
+    }
 
     const reply = chat?.choices?.[0]?.message?.content || "";
-    
+
     const payload = { reply, sources };
     payload.citations = payload.sources;  // alias for UIs that expect `citations`
     return res.status(200).json(payload);

@@ -66,13 +66,26 @@ async function handler(req, res) {
   const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
   const file = new File([buf], `recording.${ext}`, { type: mime });
 
-  const params = {
-    file,
-    model: process.env.STT_MODEL || "whisper-1",
-  };
+  const modelName = process.env.STT_MODEL || "whisper-1";
+  const params = { file, model: modelName };
   if (lang && lang !== "auto") params.language = lang;
 
-  const out = await openai.audio.transcriptions.create(params);
+  // Wrap the Whisper call so auth/quota/model errors become a
+  // self-diagnosing 503 instead of a generic server_error.
+  let out;
+  try {
+    out = await openai.audio.transcriptions.create(params);
+  } catch (err) {
+    const status = err?.status || err?.response?.status || null;
+    const errMsg = String(err?.message || err);
+    const errCode = err?.code || err?.error?.code || (status ? `http_${status}` : null);
+    log.error("openai_stt_failed", { model: modelName, error: errMsg, code: errCode, status });
+    return res.status(503).json({
+      error: "service_unavailable",
+      debug_hint: `OpenAI STT call failed (${errCode || "unknown"}): ${errMsg}`,
+    });
+  }
+
   const text = (out?.text || "").trim();
   const detected = lang === "auto" ? detectLangFromText(text, "en-US") : lang;
   return res.status(200).json({ text, lang: detected });
