@@ -107,8 +107,15 @@ async function sttUpload(blob, mime, signal, lang) {
     body: JSON.stringify(payload),
     signal,
   });
-  const js = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(js?.error || js?.detail || "STT failed");
+  const js = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    // Prefer the server's debug_hint (the actual OpenAI / Firestore
+    // error message) over the machine error code. The server now sends
+    // a real, human-readable hint in the 503 response body — throwing
+    // the raw `error` code like "service_unavailable" hides the reason
+    // from the user.
+    throw new Error(js?.debug_hint || js?.error || js?.detail || "STT failed");
+  }
   return js;
 }
 
@@ -207,6 +214,7 @@ export default function OracleVoice({ path = "Universal" }) {
       const SLICE_MS = 500;
 
       let liveInFlight = false;
+      let livePreviewErrorShown = false;
       rec.ondataavailable = async (e) => {
         if (e.data?.size) {
           chunks.push(e.data);
@@ -230,7 +238,17 @@ export default function OracleVoice({ path = "Universal" }) {
               if (preview?.lang && preview.lang !== "en-US") {
                 lastDetectedLangRef.current = preview.lang;
               }
-            } catch {} finally {
+            } catch (err) {
+              // Previously this was a silent `catch {}` — errors during
+              // live preview never reached the user. Now we surface the
+              // first error to the status bar so the user can see WHY
+              // live transcription isn't working. Only show it once per
+              // recording session to avoid flicker.
+              if (!livePreviewErrorShown) {
+                livePreviewErrorShown = true;
+                setStatus(`STT failed: ${String(err?.message || err)}`);
+              }
+            } finally {
               liveInFlight = false;
             }
           }
@@ -313,7 +331,14 @@ export default function OracleVoice({ path = "Universal" }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voice: "verse" }),
       });
-      if (!r.ok) throw new Error(`TTS ${r.status}`);
+      if (!r.ok) {
+        // The TTS response is either an mp3 (when ok) or JSON (when
+        // it's a 503 with debug_hint from the handler's try/catch).
+        // Parse the body as JSON so we can surface the real OpenAI
+        // error — "TTS 503" is useless on its own.
+        const js = await r.json().catch(() => ({}));
+        throw new Error(js?.debug_hint || js?.error || `TTS ${r.status}`);
+      }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = audioRef.current;
