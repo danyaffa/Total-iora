@@ -14,9 +14,10 @@
 import { envReport } from "../../lib/env";
 import { withApi } from "../../lib/apiSecurity";
 
-// Only report on the vars that matter for login. We intentionally do NOT
-// iterate over all env vars — this is a diagnostic for the auth path,
-// not a general env dump.
+// Only report on the vars that matter for the user-visible features.
+// Login needs Firebase admin + client. STT/TTS/chat/DNA all need OpenAI.
+// We intentionally do NOT iterate over all env vars — this is a focused
+// diagnostic, not a general env dump.
 const LOGIN_CRITICAL_VARS = [
   "FIREBASE_PROJECT_ID",
   "FIREBASE_CLIENT_EMAIL",
@@ -25,21 +26,37 @@ const LOGIN_CRITICAL_VARS = [
   "NEXT_PUBLIC_FIREBASE_PROJECT_ID",
 ];
 
+// Vars required for AI features (recording→text, oracle answers,
+// voice playback, DNA generation). If any of these are missing, the
+// corresponding feature silently fails with a 503 that the UI renders
+// as an empty result or a generic error.
+const AI_CRITICAL_VARS = [
+  "OPENAI_API_KEY",
+];
+
+function inspectVar(name, full) {
+  const entry = full[name] || { present: false, length: 0 };
+  const raw = process.env[name];
+  return {
+    present: entry.present,
+    length: entry.length,
+    typeofRaw: typeof raw,
+    rawIsEmpty: raw === "",
+  };
+}
+
 async function handler(req, res) {
   const full = envReport();
   const loginVars = {};
+  const aiVars = {};
   const missing = [];
   for (const name of LOGIN_CRITICAL_VARS) {
-    const entry = full[name] || { present: false, length: 0 };
-    // Also report typeof so we can distinguish undefined from empty string.
-    const raw = process.env[name];
-    loginVars[name] = {
-      present: entry.present,
-      length: entry.length,
-      typeofRaw: typeof raw,
-      rawIsEmpty: raw === "",
-    };
-    if (!entry.present) missing.push(name);
+    loginVars[name] = inspectVar(name, full);
+    if (!loginVars[name].present) missing.push(name);
+  }
+  for (const name of AI_CRITICAL_VARS) {
+    aiVars[name] = inspectVar(name, full);
+    if (!aiVars[name].present) missing.push(name);
   }
 
   // List EVERY env var name in process.env whose name matches /FIREBASE/i
@@ -76,14 +93,15 @@ async function handler(req, res) {
       processEnvKeyCount: Object.keys(process.env).length,
     },
     loginVars,
+    aiVars,
     missing,
     allFirebaseNamesInProcessEnv: allFirebaseNames,
     emptyValueNames,
     ok: missing.length === 0,
     hint:
       missing.length === 0
-        ? "All login env vars are present in this runtime."
-        : "Missing env vars at runtime. Check `allFirebaseNamesInProcessEnv` below — if the three server-side FIREBASE_* names appear there at all, they exist but their values are empty strings (see `emptyValueNames`). If they DON'T appear there, they're scoped to a different environment (Preview/Development instead of Production) or they were never saved. The Vercel 'Edit → Save without retyping the value' quirk can clear values without warning — delete each affected var and recreate it from scratch.",
+        ? "All critical env vars (login + AI features) are present in this runtime."
+        : "Missing env vars at runtime. If OPENAI_API_KEY is missing, STT (recording→text), TTS (voice answers), oracle chat, and DNA generation will all silently return 503. If Firebase server vars are missing, login breaks. Check `allFirebaseNamesInProcessEnv` and `emptyValueNames` to distinguish 'never set' from 'set but empty'. Add missing vars in the Vercel project that serves the domain, tick all three environments, then REDEPLOY — env var changes do not apply to existing deployments.",
   });
 }
 
