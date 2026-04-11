@@ -2,6 +2,11 @@
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
+import { withApi } from "../../lib/apiSecurity";
+import { logger } from "../../lib/logger";
+
+const log = logger.child({ fn: "api.dna" });
+
 /* small helpers */
 const clip = (s, n = 900) => String(s || "").trim().slice(0, n);
 const ok = (s) => !!(s && String(s).trim());
@@ -106,13 +111,11 @@ async function fetchGutenbergTitle(title, k = 4){
 }
 
 /* main */
-export default async function handler(req, res){
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
-  try {
+async function handler(req, res){
     const { name="", birth="", place="", path="Universal", question="", locale="en" } =
       typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    if (!ok(question)) return res.status(400).json({ error: "Missing question" });
+    if (!ok(question)) return res.status(400).json({ error: "missing_question" });
+    if (String(question).length > 2000) return res.status(413).json({ error: "question_too_long" });
 
     let pool = [];
     if (path === "Jewish") pool = await fetchSefaria(question, 12);
@@ -171,7 +174,10 @@ export default async function handler(req, res){
     ].join("\n");
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
+    if (!OPENAI_API_KEY) {
+      log.error("missing_openai_key");
+      return res.status(503).json({ error: "service_unavailable" });
+    }
 
     const ai = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -182,7 +188,10 @@ export default async function handler(req, res){
         messages: [{ role:"system", content: system }, { role:"user", content: frame }]
       })
     });
-    if (!ai.ok) { const t = await ai.text().catch(()=> ""); return res.status(502).json({ error:"Upstream error", detail:t }); }
+    if (!ai.ok) {
+      log.error("openai_upstream_error", { status: ai.status });
+      return res.status(502).json({ error: "upstream_error" });
+    }
 
     const data = await ai.json().catch(()=> ({}));
     const raw = data?.choices?.[0]?.message?.content || "{}";
@@ -197,7 +206,10 @@ export default async function handler(req, res){
     }).filter(Boolean);
 
     return res.status(200).json({ report: String(parsed?.report || "I’m here with you.").trim(), citations, offered: pool });
-  } catch (e) {
-    return res.status(500).json({ error: "DNA generation failed", detail: String(e?.message || e) });
-  }
 }
+
+export default withApi(handler, {
+  name: "api.dna",
+  methods: ["POST"],
+  rate: { max: 20, windowMs: 60_000 },
+});

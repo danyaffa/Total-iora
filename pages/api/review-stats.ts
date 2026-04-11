@@ -3,6 +3,10 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getAdminDb } from "../../utils/firebaseAdmin";
 import { APP_NAME } from "../../lib/appConfig";
+import { withApi } from "../../lib/apiSecurity";
+import { logger } from "../../lib/logger";
+
+const log = logger.child({ fn: "api.review-stats" });
 
 type Data = {
   success: boolean;
@@ -11,29 +15,15 @@ type Data = {
   error?: string;
 };
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse<Data>
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse<Data>) {
   const adminDb = getAdminDb();
 
-  if (req.method !== "GET") {
-    return res
-      .status(405)
-      .json({ success: false, error: "Method not allowed" });
-  }
-
   if (!adminDb) {
-    console.warn("adminDb not initialised – returning zero stats.");
-    return res.json({
-      success: true,
-      count: 0,
-      average: null,
-    });
+    log.warn("db_unavailable");
+    return res.status(200).json({ success: true, count: 0, average: null });
   }
 
   try {
-    // Only count good reviews (4★ and 5★)
     const snap = await adminDb
       .collection("reviews")
       .where("appName", "==", APP_NAME)
@@ -41,33 +31,27 @@ export default async function handler(
       .get();
 
     const count = snap.size;
-
     if (count === 0) {
-      return res.json({
-        success: true,
-        count: 0,
-        average: null,
-      });
+      return res.status(200).json({ success: true, count: 0, average: null });
     }
 
     let sum = 0;
-    snap.forEach((doc) => {
+    snap.forEach((doc: any) => {
       const data = doc.data() as any;
       const r = typeof data.rating === "number" ? data.rating : 0;
       sum += r;
     });
 
     const average = sum / count;
-
-    return res.json({
-      success: true,
-      count,
-      average,
-    });
-  } catch (err) {
-    console.error("review-stats error:", err);
-    return res
-      .status(500)
-      .json({ success: false, error: "Failed to load review stats" });
+    return res.status(200).json({ success: true, count, average });
+  } catch (err: any) {
+    log.error("stats_query_failed", { error: String(err?.message || err) });
+    return res.status(200).json({ success: true, count: 0, average: null });
   }
 }
+
+export default withApi(handler as any, {
+  name: "api.review-stats",
+  methods: ["GET"],
+  rate: { max: 120, windowMs: 60_000 },
+});

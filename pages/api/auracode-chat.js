@@ -3,6 +3,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 import OpenAI from "openai";
+import { withApi } from "../../lib/apiSecurity";
+import { logger } from "../../lib/logger";
+
+const log = logger.child({ fn: "api.auracode-chat" });
 
 /* ---------- utils ---------- */
 const clamp = (s, n = 900) => String(s || "").slice(0, n);
@@ -205,33 +209,36 @@ async function fetchGutenbergTitleSnippets(title, topK = 4){
 }
 
 /* ---------- main handler ---------- */
-export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+async function handler(req, res) {
+  // force path from header/cookie/env
+  const forcedPath =
+    (req.headers["x-faith"] && String(req.headers["x-faith"])) ||
+    (req.cookies?.faith) ||
+    process.env.FAITH_OVERRIDE ||
+    "Universal";
 
-  try {
-    // force path from header/cookie/env
-    const forcedPath =
-      (req.headers["x-faith"] && String(req.headers["x-faith"])) ||
-      (req.cookies?.faith) ||
-      process.env.FAITH_OVERRIDE ||
-      "Universal";
+  const {
+    message,
+    /* ignore incoming path */ mode = "gentle",
+    topic = "general",
+    lang = "en-US",
+    maxSources = 8,
+    polish = false,
+  } = req.body || {};
 
-    const {
-      message,
-      /* ignore incoming path */ mode = "gentle",
-      topic = "general",
-      lang = "en-US",
-      maxSources = 8,
-      polish = false
-    } = req.body || {};
+  const path = forcedPath;
 
-    const path = forcedPath; // use the enforced value
-    
-    if (!isOK(message)) return res.status(400).json({ error: "Missing message" });
+  if (!isOK(message)) return res.status(400).json({ error: "missing_message" });
+  if (String(message).length > 4000) {
+    return res.status(413).json({ error: "message_too_long" });
+  }
 
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "Missing OPENAI_API_KEY" });
-    const openai = new OpenAI({ apiKey });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    log.error("missing_openai_key");
+    return res.status(503).json({ error: "service_unavailable" });
+  }
+  const openai = new OpenAI({ apiKey });
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
     const targetLanguage = langNameBCP47(lang);
@@ -305,8 +312,10 @@ export default async function handler(req, res) {
     const payload = { reply, sources };
     payload.citations = payload.sources;  // alias for UIs that expect `citations`
     return res.status(200).json(payload);
-
-  } catch (e) {
-    return res.status(500).json({ error: "chat_failed", detail: String(e?.message || e) });
-  }
 }
+
+export default withApi(handler, {
+  name: "api.auracode-chat",
+  methods: ["POST"],
+  rate: { max: 30, windowMs: 60_000 },
+});

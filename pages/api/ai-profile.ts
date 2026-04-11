@@ -1,8 +1,9 @@
 // FILE: /pages/api/ai-profile.ts
 
 import type { NextApiRequest, NextApiResponse } from "next";
+import { withApi } from "../../lib/apiSecurity";
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(_req: NextApiRequest, res: NextApiResponse) {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": ["SoftwareApplication", "WebApplication"],
@@ -33,21 +34,18 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       ratingValue: "4.8",
       reviewCount: "21",
     },
-    creator: {
-      "@type": "Organization",
-      name: "Total-Iora",
-      url: "https://total-iora.com/",
-    },
-    brand: {
-      "@type": "Brand",
-      name: "Total-Iora",
-    },
-    sameAs: [
-      "https://total-iora.com/",
-    ],
+    creator: { "@type": "Organization", name: "Total-Iora", url: "https://total-iora.com/" },
+    brand: { "@type": "Brand", name: "Total-Iora" },
+    sameAs: ["https://total-iora.com/"],
   };
 
   res.setHeader("Content-Type", "application/ld+json; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=3600");
   res.status(200).json(jsonLd);
 }
+
+export default withApi(handler as any, {
+  name: "api.ai-profile",
+  methods: ["GET"],
+  rate: { max: 120, windowMs: 60_000 },
+});

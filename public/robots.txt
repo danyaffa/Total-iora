@@ -1,21 +1,49 @@
-# Total-iora - Leffler International Investments
+# Total-iora — robots.txt
+# SEO: allow all legitimate crawlers, deny API and admin.
 
 User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /admin/
+Disallow: /*?_rsc=
 
-# Allow AI assistants and search crawlers
+# Preferred crawl rate (some crawlers respect this)
+Crawl-delay: 1
+
+# Explicit allow for large AI + search crawlers
 User-agent: GPTBot
 Allow: /
+Disallow: /api/
+Disallow: /admin/
 
 User-agent: ChatGPT-User
 Allow: /
+Disallow: /api/
+Disallow: /admin/
 
 User-agent: Google-Extended
 Allow: /
+Disallow: /api/
+Disallow: /admin/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
 
 User-agent: Bingbot
 Allow: /
+Disallow: /api/
+Disallow: /admin/
+
+User-agent: DuckDuckBot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+
+User-agent: Applebot
+Allow: /
+Disallow: /api/
+Disallow: /admin/
 
 Sitemap: https://totaliora.com/sitemap.xml

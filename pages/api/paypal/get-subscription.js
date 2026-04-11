@@ -1,20 +1,28 @@
+// FILE: /pages/api/paypal/get-subscription.js
 import { paypalRequest } from "../../../lib/paypal-server";
+import { withApi } from "../../../lib/apiSecurity";
+import { logger } from "../../../lib/logger";
 
-export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+const log = logger.child({ fn: "api.paypal.get-subscription" });
 
+async function handler(req, res) {
   const { subscriptionId } = req.query;
-  if (!subscriptionId) {
-    return res.status(400).json({ error: "Missing subscriptionId" });
+  const safeId = String(subscriptionId || "").trim();
+  if (!safeId || safeId.length > 128) {
+    return res.status(400).json({ error: "missing_subscription_id" });
   }
 
   try {
-    const subscription = await paypalRequest(`/v1/billing/subscriptions/${subscriptionId}`);
+    const subscription = await paypalRequest(`/v1/billing/subscriptions/${safeId}`);
     return res.status(200).json(subscription);
-  } catch (error) {
-    console.error("get-subscription error:", error);
-    return res.status(500).json({ error: "Unable to fetch PayPal subscription" });
+  } catch (err) {
+    log.error("paypal_get_subscription_failed", { error: String(err?.message || err) });
+    return res.status(502).json({ error: "unable_to_fetch_subscription" });
   }
 }
+
+export default withApi(handler, {
+  name: "api.paypal.get-subscription",
+  methods: ["GET"],
+  rate: { max: 60, windowMs: 60_000 },
+});

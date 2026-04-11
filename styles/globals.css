@@ -138,3 +138,45 @@ select {
   outline: 2px solid #7c3aed;
   outline-offset: 2px;
 }
+
+/* --- Mobile-first baseline tested at 375px (iPhone SE) --- */
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+table {
+  max-width: 100%;
+}
+
+h1,
+h2,
+h3 {
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Ensure buttons have at least a 44x44 tap target on touch devices */
+@media (pointer: coarse) {
+  button,
+  a.btn,
+  [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Prevent horizontal overflow on narrow screens */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Respect user dark mode preference (baseline) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: light dark;
+  }
+}

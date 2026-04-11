@@ -1,77 +1,51 @@
 // FILE: /pages/admin/reviews.js
+// Admin-only list of recent reviews. Enforced at SSR using the same
+// owner-session / admin-token check the API wrapper uses.
 
 import Head from "next/head";
 import { getAdminDb } from "../../utils/firebaseAdmin";
 import { APP_NAME } from "../../lib/appConfig";
+import { isAdminRequest } from "../../lib/adminAuth";
+import { writeAudit } from "../../lib/audit";
+import { logger } from "../../lib/logger";
+
+const log = logger.child({ page: "admin/reviews" });
 
 function ReviewsAdminPage({ reviews }) {
   return (
     <>
       <Head>
         <title>{APP_NAME} – Reviews Admin</title>
+        <meta name="robots" content="noindex, nofollow" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
-      <div
-        style={{
-          minHeight: "100vh",
-          backgroundColor: "#020617",
-          color: "#e5e7eb",
-          padding: "24px",
-        }}
-      >
-        <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>
-          {APP_NAME} – Reviews
-        </h1>
-
-        <p style={{ marginBottom: 24, color: "#9ca3af" }}>
-          Showing the latest {reviews.length} reviews from Firestore.
-        </p>
+      <div className="wrap">
+        <h1>{APP_NAME} – Reviews</h1>
+        <p className="sub">Showing the latest {reviews.length} reviews from Firestore.</p>
 
         {reviews.length === 0 ? (
           <p>No reviews found.</p>
         ) : (
-          <div
-            style={{
-              overflowX: "auto",
-              borderRadius: 12,
-              border: "1px solid #1f2937",
-            }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 14,
-              }}
-            >
-              <thead style={{ backgroundColor: "#111827" }}>
+          <div className="tableWrap">
+            <table>
+              <thead>
                 <tr>
-                  <th style={thStyle}>Date</th>
-                  <th style={thStyle}>Rating</th>
-                  <th style={thStyle}>Email</th>
-                  <th style={thStyle}>App</th>
-                  <th style={thStyle}>Text</th>
-                  <th style={thStyle}>ID</th>
+                  <th>Date</th>
+                  <th>Rating</th>
+                  <th>Email</th>
+                  <th>App</th>
+                  <th>Text</th>
                 </tr>
               </thead>
               <tbody>
                 {reviews.map((r) => (
-                  <tr key={r.id} style={{ borderTop: "1px solid #1f2937" }}>
-                    <td style={tdStyle}>{r.createdAt || ""}</td>
-                    <td style={tdStyle}>{r.rating ?? ""}</td>
-                    <td style={tdStyle}>{r.email || ""}</td>
-                    <td style={tdStyle}>{r.appName || ""}</td>
-                    <td style={{ ...tdStyle, maxWidth: 400 }}>{r.text || ""}</td>
-                    <td
-                      style={{
-                        ...tdStyle,
-                        fontSize: 11,
-                        color: "#6b7280",
-                        wordBreak: "break-all",
-                      }}
-                    >
-                      {r.id}
-                    </td>
+                  <tr key={r.id}>
+                    <td>{r.createdAt || ""}</td>
+                    <td>{r.rating ?? ""}</td>
+                    <td className="email">{r.email || ""}</td>
+                    <td>{r.appName || ""}</td>
+                    <td className="text">{r.text || ""}</td>
                   </tr>
                 ))}
               </tbody>
@@ -79,49 +53,126 @@ function ReviewsAdminPage({ reviews }) {
           </div>
         )}
       </div>
+
+      <style jsx>{`
+        .wrap {
+          min-height: 100vh;
+          background: #020617;
+          color: #e5e7eb;
+          padding: 16px;
+        }
+        h1 {
+          font-size: 22px;
+          font-weight: 700;
+          margin: 0 0 8px;
+        }
+        .sub {
+          color: #9ca3af;
+          margin: 0 0 16px;
+          font-size: 14px;
+        }
+        .tableWrap {
+          overflow-x: auto;
+          border-radius: 12px;
+          border: 1px solid #1f2937;
+          -webkit-overflow-scrolling: touch;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 13px;
+          min-width: 640px;
+        }
+        thead {
+          background: #111827;
+        }
+        th {
+          text-align: left;
+          padding: 10px 12px;
+          font-weight: 600;
+          color: #9ca3af;
+        }
+        td {
+          padding: 8px 12px;
+          vertical-align: top;
+          border-top: 1px solid #1f2937;
+        }
+        .text {
+          max-width: 400px;
+        }
+        .email {
+          word-break: break-all;
+        }
+        @media (min-width: 720px) {
+          .wrap {
+            padding: 24px;
+          }
+          h1 {
+            font-size: 28px;
+          }
+        }
+      `}</style>
     </>
   );
 }
 
-const thStyle = {
-  textAlign: "left",
-  padding: "10px 12px",
-  fontWeight: 600,
-  fontSize: 13,
-  color: "#9ca3af",
-};
+export async function getServerSideProps(ctx) {
+  const adminCheck = isAdminRequest(ctx.req);
+  if (!adminCheck.ok) {
+    log.warn("admin_page_denied", {
+      ip: ctx.req?.headers?.["x-forwarded-for"] || "",
+    });
+    return { notFound: true };
+  }
 
-const tdStyle = {
-  padding: "8px 12px",
-  verticalAlign: "top",
-};
+  writeAudit({
+    action: "admin.view_reviews",
+    actor: adminCheck.actor,
+    route: "admin/reviews",
+  }).catch(() => {});
 
-export async function getServerSideProps() {
   const adminDb = getAdminDb();
   if (!adminDb) {
-    console.warn("adminDb not initialised – returning empty reviews list.");
+    log.warn("db_unavailable");
     return { props: { reviews: [] } };
   }
 
-  const snap = await adminDb
-    .collection("reviews")
-    .orderBy("createdAt", "desc")
-    .limit(200)
-    .get();
+  try {
+    // wrapClientDb / REST fallback don't implement orderBy; use a safe
+    // path that works with the Admin SDK and gracefully falls back.
+    let snap;
+    try {
+      snap = await adminDb
+        .collection("reviews")
+        .orderBy("createdAt", "desc")
+        .limit(200)
+        .get();
+    } catch {
+      snap = await adminDb.collection("reviews").limit(200).get();
+    }
 
-  const reviews = snap.docs.map((doc) => {
-    const data = doc.data() || {};
-    return {
-      id: doc.id,
-      rating: data.rating ?? null,
-      text: data.text || "",
-      email: data.email || "",
-      appName: data.appName || "",
-      createdAt: data.createdAt || null,
-    };
-  });
+    const reviews = snap.docs.map((doc) => {
+      const data = doc.data() || {};
+      const createdAt = data.createdAt;
+      return {
+        id: doc.id,
+        rating: data.rating ?? null,
+        text: data.text || "",
+        email: data.email || "",
+        appName: data.appName || "",
+        createdAt:
+          createdAt?.toDate?.()?.toISOString?.() ||
+          (typeof createdAt === "string" ? createdAt : null),
+      };
+    });
 
-  return { props: { reviews } };
+    // Sort fallback in memory (newest first)
+    reviews.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    return { props: { reviews } };
+  } catch (err) {
+    log.error("query_failed", { error: String(err?.message || err) });
+    return { props: { reviews: [] } };
+  }
 }
 
 export default ReviewsAdminPage;

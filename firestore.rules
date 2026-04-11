@@ -2,23 +2,30 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users collection – allow registration (create/update by document ID = email)
+    // Users: all writes and reads go through the backend Admin SDK.
+    // Client SDK access is denied completely.
     match /users/{userId} {
-      allow create: if true;
-      allow update: if true;
-      allow read:   if true;
-      allow delete: if false;
+      allow read, write: if false;
     }
 
-    // Reviews collection – allow anyone to read and create reviews
+    // Reviews: the public SDK may create a review with a 1–5 rating, but
+    // cannot list/update/delete them. The backend uses the Admin SDK for
+    // aggregation.
     match /reviews/{reviewId} {
-      allow read:   if true;
-      allow create: if true;
-      allow update: if false;
-      allow delete: if false;
+      allow read: if false;
+      allow create: if request.resource.data.rating is number
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5
+                    && request.resource.data.appName is string;
+      allow update, delete: if false;
     }
 
-    // Default deny for all other collections
+    // Audit logs: backend-only.
+    match /audit_logs/{logId} {
+      allow read, write: if false;
+    }
+
+    // Default deny.
     match /{document=**} {
       allow read, write: if false;
     }
