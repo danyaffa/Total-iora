@@ -3,11 +3,40 @@
 import * as admin from "firebase-admin";
 import { initializeApp as initClientApp, getApps as getClientApps, getApp as getClientApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection as fsCollection, query, where, getDocs, limit as fsLimit } from "firebase/firestore";
-// Service account credentials from environment variables (set in Vercel dashboard)
+
+/**
+ * Normalise FIREBASE_PRIVATE_KEY from an environment variable.
+ *
+ * Vercel, Netlify, Docker, and other hosts escape newlines differently.
+ * We've seen all of these in the wild:
+ *
+ *   1. Real newlines (multi-line env var)
+ *   2. Literal "\n" escape sequences
+ *   3. Wrapped in double quotes
+ *   4. Wrapped in single quotes
+ *   5. Trailing whitespace
+ *
+ * Without this normalisation the private key looks present but the
+ * Admin SDK silently fails to initialise, which is exactly the
+ * "Server error" login bug users have been hitting.
+ */
+function normalizePrivateKey(raw) {
+  let pk = String(raw || "").trim();
+  if (!pk) return "";
+  // strip surrounding quotes if present
+  if ((pk.startsWith('"') && pk.endsWith('"')) || (pk.startsWith("'") && pk.endsWith("'"))) {
+    pk = pk.slice(1, -1);
+  }
+  // convert literal backslash-n to real newlines
+  if (pk.includes("\\n")) pk = pk.replace(/\\n/g, "\n");
+  return pk;
+}
+
+// Service account credentials from environment variables (set in hosting dashboard)
 const serviceAccount = {
-  project_id: process.env.FIREBASE_PROJECT_ID || "",
-  client_email: process.env.FIREBASE_CLIENT_EMAIL || "",
-  private_key: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+  project_id: (process.env.FIREBASE_PROJECT_ID || "").trim(),
+  client_email: (process.env.FIREBASE_CLIENT_EMAIL || "").trim(),
+  private_key: normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
 };
 
 function ensureInitialized() {
@@ -18,7 +47,23 @@ function ensureInitialized() {
   const privateKey = serviceAccount.private_key;
 
   if (!projectId || !clientEmail || !privateKey) {
-    console.warn("[firebaseAdmin] Service account key missing fields");
+    console.warn(
+      "[firebaseAdmin] Service account key missing fields — " +
+        JSON.stringify({
+          hasProjectId: !!projectId,
+          hasClientEmail: !!clientEmail,
+          hasPrivateKey: !!privateKey,
+          pkLooksValid: privateKey.includes("-----BEGIN"),
+        })
+    );
+    return false;
+  }
+
+  if (!privateKey.includes("-----BEGIN")) {
+    console.error(
+      "[firebaseAdmin] FIREBASE_PRIVATE_KEY is set but does not look like a PEM key. " +
+        "Check for missing newlines or quote wrapping."
+    );
     return false;
   }
 
@@ -26,10 +71,10 @@ function ensureInitialized() {
     admin.initializeApp({
       credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
     });
-    console.log("[firebaseAdmin] Admin SDK initialized successfully with bundled service account");
+    console.log("[firebaseAdmin] Admin SDK initialized successfully");
     return true;
   } catch (err) {
-    console.error("[firebaseAdmin] Admin SDK initialization FAILED:", err.message || err);
+    console.error("[firebaseAdmin] Admin SDK initialization FAILED:", err?.message || err);
     return false;
   }
 }
