@@ -1,6 +1,6 @@
 // FILE: /pages/api/login.js
 import { scryptSync, timingSafeEqual } from "crypto";
-import { getAdminDb } from "../../utils/firebaseAdmin";
+import { getAdminDb, getAdminInitError } from "../../utils/firebaseAdmin";
 import { withApi } from "../../lib/apiSecurity";
 import { logger } from "../../lib/logger";
 import { writeAudit } from "../../lib/audit";
@@ -28,12 +28,20 @@ async function handler(req, res) {
   // clean null if neither the Admin SDK nor the REST fallback is working.
   const adminDb = getAdminDb({ privileged: true });
   if (!adminDb) {
-    log.error("db_unavailable", { fn: "handler" });
+    const initErr = getAdminInitError();
+    log.error("db_unavailable", { fn: "handler", initErr });
+    // Surface the actual Admin SDK error in the response so the operator
+    // can see it in the browser without needing to tail Vercel logs. The
+    // error is a parser/IO message (e.g. "init_error: error:0909006C:PEM
+    // routines:get_name:no start line") — no secrets, just implementation
+    // detail, which is acceptable to return because env-var misconfig is
+    // easier to fix when the real failure reason is visible.
     return res.status(503).json({
       error: "service_unavailable",
-      debug_hint:
-        "Auth backend unreachable. Check Firebase service-account env vars " +
-        "(FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY).",
+      debug_hint: initErr
+        ? `Admin SDK init failed: ${initErr}`
+        : "Auth backend unreachable. Check Firebase service-account env vars " +
+          "(FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY).",
     });
   }
 
@@ -72,13 +80,16 @@ async function handler(req, res) {
       error: errMsg,
       code: errCode,
     });
-    const isProd =
-      process.env.NODE_ENV === "production" ||
-      process.env.VERCEL_ENV === "production";
+    // If Admin SDK init also failed, that's the more actionable root
+    // cause — the REST fallback is just failing with the same bad
+    // credentials. Prefer the init error in the hint so the operator
+    // sees "Failed to parse private key" instead of the downstream
+    // "REST fallback: could not get access token" symptom.
+    const initErr = getAdminInitError();
     return res.status(503).json({
       error: "service_unavailable",
-      debug_hint: isProd
-        ? "Auth backend unreachable. Check Firebase service-account env vars."
+      debug_hint: initErr
+        ? `Admin SDK init failed: ${initErr}`
         : `Firestore read failed (${errCode || "unknown"}): ${errMsg}`,
     });
   }
