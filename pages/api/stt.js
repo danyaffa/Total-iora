@@ -94,5 +94,13 @@ async function handler(req, res) {
 export default withApi(handler, {
   name: "api.stt",
   methods: ["POST"],
-  rate: { max: 30, windowMs: 60_000 },
+  // Live transcription in OracleVoice.js sends a ~500ms chunk every
+  // 600ms, so a 60-second recording produces up to ~100 STT requests.
+  // The in-flight throttle brings this closer to 40–60/min in practice,
+  // but the old limit of 30/min was still too low — after ~30 seconds
+  // the live preview stopped updating because every subsequent chunk
+  // was getting 429'd (and the client was silently swallowing it).
+  // 180/min = 3/sec gives comfortable headroom for streaming STT while
+  // still catching abuse.
+  rate: { max: 180, windowMs: 60_000 },
 });
