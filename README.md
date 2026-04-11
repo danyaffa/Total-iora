@@ -319,3 +319,15 @@ Issues & feature requests: open a GitHub Issue in this repo.
 ---
 
 If you want this README to double as your **landing page copy**, we can reuse the SEO sections (title/description) directly in `<Head>` and extract feature bullets to your homepage hero.
+
+## Login Fix Checklist (No code changes)
+
+If login returns `service_unavailable`, the app is usually missing Firebase **server** env vars at runtime.
+
+1. Add the variables from `.env.example` (`FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`).
+2. In Vercel, set them for **Production / Preview / Development**.
+3. Redeploy after saving env vars (changes do not apply to old deployments).
+4. Open `/api/env-check` to confirm the runtime sees the values.
+
+This resolves the most common login outage without changing application code.
+
