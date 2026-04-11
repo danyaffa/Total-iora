@@ -15,20 +15,69 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collec
  *   3. Wrapped in double quotes
  *   4. Wrapped in single quotes
  *   5. Trailing whitespace
+ *   6. \r\n line endings (Windows clipboard)
+ *   7. A MIX of real newlines and literal \n escapes (user edited the
+ *      value in a text editor and accidentally introduced real newlines)
+ *   8. Outer quotes + leading/trailing whitespace inside the quotes
  *
  * Without this normalisation the private key looks present but the
  * Admin SDK silently fails to initialise, which is exactly the
- * "Server error" login bug users have been hitting.
+ * "Server error" / "Login is temporarily unavailable" bug users hit.
+ *
+ * Strategy: rather than heuristically replace characters, we rebuild the
+ * PEM from scratch. We extract the base64 body (everything between the
+ * BEGIN and END markers, after stripping ALL whitespace and escape
+ * sequences), re-wrap it at 64 characters, and re-emit a canonical PEM.
+ * This is robust to almost every mangling we've seen.
  */
 function normalizePrivateKey(raw) {
-  let pk = String(raw || "").trim();
+  let pk = String(raw || "");
   if (!pk) return "";
-  // strip surrounding quotes if present
-  if ((pk.startsWith('"') && pk.endsWith('"')) || (pk.startsWith("'") && pk.endsWith("'"))) {
-    pk = pk.slice(1, -1);
+
+  // Normalise line endings first so everything downstream deals with \n.
+  pk = pk.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+  // Outer trim (removes any whitespace introduced by the hosting UI).
+  pk = pk.trim();
+  if (!pk) return "";
+
+  // Strip surrounding quotes (single or double), then trim again in case
+  // there's whitespace or a newline immediately inside the quotes.
+  if (
+    (pk.startsWith('"') && pk.endsWith('"')) ||
+    (pk.startsWith("'") && pk.endsWith("'"))
+  ) {
+    pk = pk.slice(1, -1).trim();
   }
-  // convert literal backslash-n to real newlines
-  if (pk.includes("\\n")) pk = pk.replace(/\\n/g, "\n");
+
+  // Convert literal "\n" (backslash-n) escape sequences to real newlines.
+  // Do this AFTER stripping quotes so we don't touch anything inside
+  // a shell-escaped value that might legitimately contain "\n" text.
+  if (pk.includes("\\n")) {
+    pk = pk.replace(/\\n/g, "\n");
+  }
+
+  // If the value already looks like a clean PEM with a BEGIN/END marker,
+  // try to canonicalise it by extracting the base64 body and re-wrapping
+  // at 64 characters. This makes us robust to users who have a mix of
+  // real newlines AND leftover literal \n inside the body.
+  const beginMarker = "-----BEGIN PRIVATE KEY-----";
+  const endMarker = "-----END PRIVATE KEY-----";
+  const beginIdx = pk.indexOf(beginMarker);
+  const endIdx = pk.indexOf(endMarker);
+  if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
+    const rawBody = pk.slice(beginIdx + beginMarker.length, endIdx);
+    // Strip ALL whitespace (spaces, tabs, newlines) from the base64 body.
+    const body = rawBody.replace(/\s+/g, "");
+    // Only accept characters valid in base64; anything else means the
+    // input is too corrupted to salvage.
+    if (/^[A-Za-z0-9+/=]+$/.test(body) && body.length > 0) {
+      // Re-wrap at 64 chars per line, which is the canonical PEM format.
+      const wrapped = body.match(/.{1,64}/g).join("\n");
+      return `${beginMarker}\n${wrapped}\n${endMarker}\n`;
+    }
+  }
+
   return pk;
 }
 
@@ -39,6 +88,20 @@ const serviceAccount = {
   private_key: normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY),
 };
 
+// Holds the most recent Admin SDK initialisation failure reason so that
+// API handlers can surface it in their 503 response. This is safe to
+// expose — the error string is a parser message like "error:0909006C:PEM
+// routines:get_name:no start line", which reveals implementation detail
+// but no secrets, and is drastically more diagnosable than the existing
+// "Check Firebase service-account env vars" hint when the env vars are
+// present but malformed.
+let _adminInitError = null;
+
+/** Returns the last Admin SDK init error message (or null if we're fine). */
+export function getAdminInitError() {
+  return _adminInitError;
+}
+
 function ensureInitialized() {
   if (admin.apps.length) return true;
 
@@ -47,23 +110,26 @@ function ensureInitialized() {
   const privateKey = serviceAccount.private_key;
 
   if (!projectId || !clientEmail || !privateKey) {
+    const detail = {
+      hasProjectId: !!projectId,
+      hasClientEmail: !!clientEmail,
+      hasPrivateKey: !!privateKey,
+      pkLooksValid: privateKey.includes("-----BEGIN"),
+    };
     console.warn(
       "[firebaseAdmin] Service account key missing fields — " +
-        JSON.stringify({
-          hasProjectId: !!projectId,
-          hasClientEmail: !!clientEmail,
-          hasPrivateKey: !!privateKey,
-          pkLooksValid: privateKey.includes("-----BEGIN"),
-        })
+        JSON.stringify(detail)
     );
+    _adminInitError = `missing_fields: ${JSON.stringify(detail)}`;
     return false;
   }
 
   if (!privateKey.includes("-----BEGIN")) {
-    console.error(
-      "[firebaseAdmin] FIREBASE_PRIVATE_KEY is set but does not look like a PEM key. " +
-        "Check for missing newlines or quote wrapping."
-    );
+    const msg =
+      "FIREBASE_PRIVATE_KEY is set but does not look like a PEM key. " +
+      "Check for missing newlines or quote wrapping.";
+    console.error("[firebaseAdmin] " + msg);
+    _adminInitError = `bad_pem_shape: ${msg}`;
     return false;
   }
 
@@ -72,9 +138,12 @@ function ensureInitialized() {
       credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
     });
     console.log("[firebaseAdmin] Admin SDK initialized successfully");
+    _adminInitError = null;
     return true;
   } catch (err) {
-    console.error("[firebaseAdmin] Admin SDK initialization FAILED:", err?.message || err);
+    const msg = String(err?.message || err);
+    console.error("[firebaseAdmin] Admin SDK initialization FAILED:", msg);
+    _adminInitError = `init_error: ${msg}`;
     return false;
   }
 }
