@@ -524,8 +524,26 @@ function getRestFirestore() {
 // Public API
 // ---------------------------------------------------------------------------
 
-/** @returns {admin.firestore.Firestore | object | null} */
-export function getAdminDb() {
+/**
+ * Get a Firestore-like DB handle.
+ *
+ * Tries, in order:
+ *   1. Admin SDK (full privileges, bypasses Firestore rules)
+ *   2. REST API with service account (bypasses Firestore rules)
+ *   3. Client SDK wrapper (SUBJECT TO Firestore rules — only usable for
+ *      collections whose rules allow anonymous access, e.g. creating a
+ *      review. Privileged reads like /users/{id} will throw
+ *      permission-denied.)
+ *
+ * Pass `{ privileged: true }` to refuse the Client SDK fallback. Callers
+ * that need to read/write rule-gated collections (login, register, audit,
+ * owner promotion, etc.) should set this so they get a clean null → 503
+ * instead of a wrapper that silently throws permission-denied mid-call.
+ *
+ * @param {{ privileged?: boolean }} [opts]
+ * @returns {admin.firestore.Firestore | object | null}
+ */
+export function getAdminDb(opts = {}) {
   // Prefer Admin SDK
   if (ensureInitialized()) return admin.firestore();
 
@@ -536,9 +554,27 @@ export function getAdminDb() {
     return restDb;
   }
 
-  // Fallback 2: Client SDK wrapper (subject to Firestore rules)
+  // Fallback 2: Client SDK wrapper (subject to Firestore rules).
+  // Refuse this fallback for privileged callers — they will always fail
+  // on rule-gated collections, and a clean null is far easier to diagnose
+  // than a permission-denied throw deep inside a handler.
+  if (opts.privileged) {
+    console.error(
+      "[firebaseAdmin] Admin SDK + REST fallback both unavailable; " +
+        "refusing Client SDK fallback for privileged caller. " +
+        "Fix FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY env vars."
+    );
+    return null;
+  }
+
   const clientFs = getClientFirestore();
-  if (clientFs) return wrapClientDb(clientFs);
+  if (clientFs) {
+    console.warn(
+      "[firebaseAdmin] Using Client SDK fallback — SUBJECT to Firestore rules. " +
+        "Only use this for collections with permissive rules (e.g. /reviews)."
+    );
+    return wrapClientDb(clientFs);
+  }
 
   return null;
 }
