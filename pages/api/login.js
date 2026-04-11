@@ -22,10 +22,19 @@ function verify(hashString, password) {
 }
 
 async function handler(req, res) {
-  const adminDb = getAdminDb();
+  // Login reads from the rule-gated /users collection, so we must NOT
+  // fall back to the Client SDK (which is subject to Firestore rules and
+  // will throw permission-denied). Pass `privileged: true` to force a
+  // clean null if neither the Admin SDK nor the REST fallback is working.
+  const adminDb = getAdminDb({ privileged: true });
   if (!adminDb) {
     log.error("db_unavailable", { fn: "handler" });
-    return res.status(503).json({ error: "service_unavailable" });
+    return res.status(503).json({
+      error: "service_unavailable",
+      debug_hint:
+        "Auth backend unreachable. Check Firebase service-account env vars " +
+        "(FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY).",
+    });
   }
 
   const { email = "", password = "" } = req.body || {};
@@ -44,7 +53,35 @@ async function handler(req, res) {
   }
 
   const ref = adminDb.collection("users").doc(emailNorm);
-  const snap = await ref.get();
+  let snap;
+  try {
+    snap = await ref.get();
+  } catch (err) {
+    // Most common root cause: Admin SDK failed to initialise (bad
+    // FIREBASE_PRIVATE_KEY / FIREBASE_CLIENT_EMAIL / FIREBASE_PROJECT_ID env
+    // vars) AND the REST fallback also failed, so getAdminDb() returned the
+    // Client SDK wrapper. The Client SDK is subject to Firestore rules, and
+    // /users/{userId} is locked down (`allow read, write: if false`), so
+    // the read throws `permission-denied`. Without this catch, the error
+    // becomes an uncaught exception → 500 server_error, which users saw as
+    // "Something went wrong on our end."
+    const errMsg = String(err?.message || err);
+    const errCode = err?.code || null;
+    log.error("firestore_read_failed", {
+      email: emailNorm,
+      error: errMsg,
+      code: errCode,
+    });
+    const isProd =
+      process.env.NODE_ENV === "production" ||
+      process.env.VERCEL_ENV === "production";
+    return res.status(503).json({
+      error: "service_unavailable",
+      debug_hint: isProd
+        ? "Auth backend unreachable. Check Firebase service-account env vars."
+        : `Firestore read failed (${errCode || "unknown"}): ${errMsg}`,
+    });
+  }
 
   if (!snap.exists) {
     log.warn("login.no_user", { email: emailNorm });
