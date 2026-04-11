@@ -31,12 +31,34 @@ async function handler(req, res) {
   const missing = [];
   for (const name of LOGIN_CRITICAL_VARS) {
     const entry = full[name] || { present: false, length: 0 };
+    // Also report typeof so we can distinguish undefined from empty string.
+    const raw = process.env[name];
     loginVars[name] = {
       present: entry.present,
       length: entry.length,
+      typeofRaw: typeof raw,
+      rawIsEmpty: raw === "",
     };
     if (!entry.present) missing.push(name);
   }
+
+  // List EVERY env var name in process.env whose name matches /FIREBASE/i
+  // or starts with NEXT_PUBLIC_FIREBASE. Names only — never values. This
+  // catches:
+  //   - typos ("FIREBASE_PROJECTID" vs "FIREBASE_PROJECT_ID")
+  //   - duplicate entries with different casings
+  //   - vars that exist with empty values (they still show up in the list)
+  const allFirebaseNames = Object.keys(process.env)
+    .filter((k) => /firebase/i.test(k))
+    .sort();
+
+  // Also list all env vars whose VALUE is an empty string. This catches
+  // the "Edit-then-Save-without-retyping clears the value" Vercel quirk,
+  // which is the most likely cause when env-check reports present:false
+  // but the dashboard shows the variable exists.
+  const emptyValueNames = Object.keys(process.env)
+    .filter((k) => process.env[k] === "")
+    .sort();
 
   const isProd =
     process.env.NODE_ENV === "production" ||
@@ -51,14 +73,17 @@ async function handler(req, res) {
       VERCEL_GIT_COMMIT_SHA:
         (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || null,
       VERCEL_GIT_COMMIT_REF: process.env.VERCEL_GIT_COMMIT_REF || null,
+      processEnvKeyCount: Object.keys(process.env).length,
     },
     loginVars,
     missing,
+    allFirebaseNamesInProcessEnv: allFirebaseNames,
+    emptyValueNames,
     ok: missing.length === 0,
     hint:
       missing.length === 0
         ? "All login env vars are present in this runtime."
-        : "Missing env vars at runtime. In Vercel: Project Settings → Environment Variables → verify each missing var is set AND has the environment (Production/Preview/Development) that matches 'runtime.VERCEL_ENV' above ticked. Then REDEPLOY — Vercel does NOT push env var changes to existing deployments automatically.",
+        : "Missing env vars at runtime. Check `allFirebaseNamesInProcessEnv` below — if the three server-side FIREBASE_* names appear there at all, they exist but their values are empty strings (see `emptyValueNames`). If they DON'T appear there, they're scoped to a different environment (Preview/Development instead of Production) or they were never saved. The Vercel 'Edit → Save without retyping the value' quirk can clear values without warning — delete each affected var and recreate it from scratch.",
   });
 }
 
@@ -67,3 +92,4 @@ export default withApi(handler, {
   methods: ["GET"],
   rate: { max: 30, windowMs: 60_000 },
 });
+
