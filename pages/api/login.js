@@ -36,9 +36,16 @@ async function handler(req, res) {
     // routines:get_name:no start line") — no secrets, just implementation
     // detail, which is acceptable to return because env-var misconfig is
     // easier to fix when the real failure reason is visible.
+    //
+    // If the init error is "missing_fields", that's not a code bug — the
+    // env vars aren't reaching the runtime. Point the operator at the
+    // /api/env-check endpoint so they can verify in a browser.
+    const isMissing = initErr && initErr.startsWith("missing_fields");
     return res.status(503).json({
       error: "service_unavailable",
-      debug_hint: initErr
+      debug_hint: isMissing
+        ? "Firebase env vars are not reaching the runtime. Visit /api/env-check to confirm which are missing. In Vercel: Settings → Environment Variables → tick Production/Preview/Development, save, then REDEPLOY (env var changes don't apply to existing deployments)."
+        : initErr
         ? `Admin SDK init failed: ${initErr}`
         : "Auth backend unreachable. Check Firebase service-account env vars " +
           "(FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL / FIREBASE_PRIVATE_KEY).",
