@@ -320,9 +320,10 @@ export default function HomePage({ faith }) {
 
       {unlocked ? (
         <>
-          {faith === "Universal" ? (
-            <HeritageSelector path={path} onChange={setPath} />
-          ) : null}
+          {/* Always let the user pick / switch their spiritual heritage.
+              HeritageSelector persists the choice in a `faith` cookie,
+              which middleware reads on the next request. */}
+          <HeritageSelector path={path} onChange={setPath} />
           <OracleVoice path={path} />
         </>
       ) : (
@@ -579,36 +580,45 @@ export default function HomePage({ faith }) {
           display: block;
         }
 
-        /* Atmosphere trigger: big rounded button */
+        /* Atmosphere trigger: clean dark pill with subtle glass */
         .hero-atmo .atmo-btn,
         .hero-atmo button[aria-haspopup="listbox"] {
           -webkit-appearance: none;
           appearance: none;
-          padding: 14px 22px !important;
+          padding: 10px 18px !important;
           border-radius: 9999px !important;
-          border: 0 !important;
-          font-weight: 800;
-          font-size: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.28) !important;
+          font-weight: 700;
+          font-size: 14px;
           color: #fff !important;
-          background: linear-gradient(135deg, #7c3aed, #14b8a6) !important;
-          box-shadow: 0 8px 22px rgba(2, 6, 23, 0.22);
+          background: rgba(15, 23, 42, 0.6) !important;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          box-shadow: 0 6px 18px rgba(2, 6, 23, 0.18);
           cursor: pointer;
+          transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
         }
         .hero-atmo .atmo-btn:hover,
         .hero-atmo button[aria-haspopup="listbox"]:hover {
+          background: rgba(15, 23, 42, 0.75) !important;
           transform: translateY(-1px);
-          box-shadow: 0 12px 28px rgba(2, 6, 23, 0.26);
+          box-shadow: 0 10px 22px rgba(2, 6, 23, 0.26);
         }
 
-        /* Options row + colorful pills */
+        /* Options row: clean white pills on glass strip */
         .hero-atmo .atmo-menu {
           display: flex !important;
-          flex-wrap: nowrap !important;
-          gap: 14px !important;
+          flex-wrap: wrap !important;
+          gap: 8px !important;
           justify-content: center;
           max-width: 96vw;
-          padding: 8px 6px !important;
-          background: transparent !important;
+          padding: 8px 10px !important;
+          margin-top: 10px;
+          background: rgba(15, 23, 42, 0.35) !important;
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 16px;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
           overflow-x: auto;
           -webkit-overflow-scrolling: touch;
         }
@@ -619,42 +629,29 @@ export default function HomePage({ faith }) {
           appearance: none;
           display: inline-flex;
           align-items: center;
-          gap: 10px;
-          padding: 14px 18px !important;
+          gap: 8px;
+          padding: 8px 14px !important;
           border-radius: 9999px !important;
-          border: 0 !important;
-          font-weight: 800;
-          font-size: 16px;
-          color: #fff !important;
+          border: 1px solid rgba(15, 23, 42, 0.1) !important;
+          font-weight: 700;
+          font-size: 14px;
+          color: #0f172a !important;
+          background: rgba(255, 255, 255, 0.95) !important;
           white-space: nowrap;
           cursor: pointer;
-          box-shadow: 0 8px 20px rgba(2, 6, 23, 0.18);
+          box-shadow: 0 2px 6px rgba(2, 6, 23, 0.12);
+          transition: transform 0.12s, box-shadow 0.12s;
         }
-        /* precise colors (thanks to data-key from component) */
-        .hero-atmo .atmo-menu [data-key="beach"] {
-          background: linear-gradient(135deg, #4f46e5, #14b8a6) !important;
-        }
-        .hero-atmo .atmo-menu [data-key="nature"] {
-          background: linear-gradient(135deg, #22c55e, #a7f3d0) !important;
-          color: #0b2e18 !important;
-        }
-        .hero-atmo .atmo-menu [data-key="library"] {
-          background: linear-gradient(135deg, #3b82f6, #6366f1) !important;
-        }
-        .hero-atmo .atmo-menu [data-key="sunrays"] {
-          background: linear-gradient(135deg, #f59e0b, #fde047) !important;
-          color: #1f2937 !important;
-        }
-        .hero-atmo .atmo-menu [data-key="mosque"],
-        .hero-atmo .atmo-menu [data-key="church"],
-        .hero-atmo .atmo-menu [data-key="synagogue"],
-        .hero-atmo .atmo-menu [data-key="temple"] {
-          background: linear-gradient(135deg, #a855f7, #ec4899) !important;
+        .hero-atmo .atmo-menu button:hover,
+        .hero-atmo .atmo-menu .atmo-pill:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 14px rgba(2, 6, 23, 0.18);
         }
         .hero-atmo .atmo-menu .sel {
-          box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85),
-            0 12px 28px rgba(2, 6, 23, 0.28) !important;
-          transform: translateY(-1px);
+          background: linear-gradient(135deg, #7c3aed, #14b8a6) !important;
+          color: #fff !important;
+          border-color: transparent !important;
+          box-shadow: 0 6px 16px rgba(124, 58, 237, 0.35) !important;
         }
 
         /* Let the background photo show when Atmosphere is active */

@@ -209,24 +209,31 @@ async function fetchGutenbergTitleSnippets(title, topK = 4){
 }
 
 /* ---------- main handler ---------- */
-async function handler(req, res) {
-  // force path from header/cookie/env
-  const forcedPath =
-    (req.headers["x-faith"] && String(req.headers["x-faith"])) ||
-    (req.cookies?.faith) ||
-    process.env.FAITH_OVERRIDE ||
-    "Universal";
+const VALID_PATHS = new Set(["Muslim", "Christian", "Jewish", "Eastern", "Universal"]);
 
+async function handler(req, res) {
   const {
     message,
-    /* ignore incoming path */ mode = "gentle",
+    path: bodyPath,
+    mode = "gentle",
     topic = "general",
     lang = "en-US",
     maxSources = 8,
     polish = false,
   } = req.body || {};
 
-  const path = forcedPath;
+  // Resolve faith path — body wins (lets the user switch instantly),
+  // then header (set by middleware), cookie, env, default.
+  const candidates = [
+    bodyPath,
+    req.headers["x-faith"],
+    req.cookies?.faith,
+    process.env.FAITH_OVERRIDE,
+    "Universal",
+  ].map((v) => (v ? String(v).trim() : ""));
+
+  const path =
+    candidates.find((v) => VALID_PATHS.has(v)) || "Universal";
 
   if (!isOK(message)) return res.status(400).json({ error: "missing_message" });
   if (String(message).length > 4000) {

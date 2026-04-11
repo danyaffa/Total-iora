@@ -343,6 +343,7 @@ export default function OracleVoice({ path = "Universal" }) {
       const r = await fetch("/api/auracode-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
           message: clean,
           path, mode, topic,
@@ -350,7 +351,21 @@ export default function OracleVoice({ path = "Universal" }) {
           polish
         }),
       });
-      const data = await r.json().catch(()=> ({}));
+      const data = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        const errMsg =
+          r.status === 401
+            ? "Please log in to use the Oracle."
+            : r.status === 429
+            ? "Too many requests — please wait a moment."
+            : r.status === 503
+            ? "Oracle is temporarily unavailable. Please try again shortly."
+            : data?.error || "Could not reach the Oracle.";
+        setReply("");
+        setStatus(errMsg);
+        return;
+      }
 
       const msg = data?.reply || "";
       setReply(msg || "—");
@@ -380,6 +395,8 @@ export default function OracleVoice({ path = "Universal" }) {
       } else {
         await speakOutServer(msg);
       }
+    } catch (err) {
+      setStatus(`Oracle error: ${String(err?.message || err)}`);
     } finally {
       setReplying(false);
     }
