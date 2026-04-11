@@ -21,12 +21,29 @@ export default function OracleUniverseDNA() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      const data = await r.json();
-      setReport(data?.report || "I’m here with you.");
+      const data = await r.json().catch(() => ({}));
+
+      // If the server returned a non-ok status OR no report, surface
+      // the real error instead of silently masking it as the placeholder
+      // "I'm here with you." — the server now sends a `debug_hint` in
+      // its 503 responses that tells the operator exactly what failed
+      // (OpenAI auth, quota, model not allowed, etc.).
+      if (!r.ok || !data?.report) {
+        const friendly =
+          r.status === 401 ? "Please log in to generate your DNA."
+          : r.status === 429 ? "Too many requests — please wait a moment."
+          : r.status === 503 ? "DNA service temporarily unavailable."
+          : "Could not generate your DNA. Please try again.";
+        setReport(data?.debug_hint || data?.error || friendly);
+        setCitations([]);
+        return;
+      }
+
+      setReport(data.report);
       setCitations(Array.isArray(data?.citations) ? data.citations : []);
       setTimeout(() => { try { citeRef.current?.scrollIntoView({ behavior: "smooth" }); } catch {} }, 50);
-    } catch {
-      setReport("Network issue. Please try again.");
+    } catch (err) {
+      setReport(`Network issue: ${String(err?.message || err)}`);
     } finally {
       setLoading(false);
     }

@@ -28,12 +28,26 @@ async function handler(req, res) {
   const openai = new OpenAI({ apiKey });
   const model = process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
 
-  const out = await openai.audio.speech.create({
-    model,
-    voice,
-    input: text,
-    format: "mp3",
-  });
+  // Wrap the TTS call so auth/quota/model errors become a
+  // self-diagnosing 503 instead of a generic server_error.
+  let out;
+  try {
+    out = await openai.audio.speech.create({
+      model,
+      voice,
+      input: text,
+      format: "mp3",
+    });
+  } catch (err) {
+    const status = err?.status || err?.response?.status || null;
+    const errMsg = String(err?.message || err);
+    const errCode = err?.code || err?.error?.code || (status ? `http_${status}` : null);
+    log.error("openai_tts_failed", { model, error: errMsg, code: errCode, status });
+    return res.status(503).json({
+      error: "service_unavailable",
+      debug_hint: `OpenAI TTS call failed (${errCode || "unknown"}): ${errMsg}`,
+    });
+  }
 
   const buf = Buffer.from(await out.arrayBuffer());
   res.setHeader("Content-Type", "audio/mpeg");

@@ -354,14 +354,19 @@ export default function OracleVoice({ path = "Universal" }) {
       const data = await r.json().catch(() => ({}));
 
       if (!r.ok) {
-        const errMsg =
+        // Prefer the server's `debug_hint` (it's the real, actionable
+        // error string from OpenAI / Firestore / etc.) over a generic
+        // status-code fallback. Only fall back to a friendly string if
+        // the server didn't send a hint.
+        const friendly =
           r.status === 401
             ? "Please log in to use the Oracle."
             : r.status === 429
             ? "Too many requests — please wait a moment."
             : r.status === 503
             ? "Oracle is temporarily unavailable. Please try again shortly."
-            : data?.error || "Could not reach the Oracle.";
+            : "Could not reach the Oracle.";
+        const errMsg = data?.debug_hint || friendly;
         setReply("");
         setStatus(errMsg);
         return;

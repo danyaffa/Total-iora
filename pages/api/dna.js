@@ -179,24 +179,65 @@ async function handler(req, res){
       return res.status(503).json({ error: "service_unavailable" });
     }
 
-    const ai = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization:`Bearer ${OPENAI_API_KEY}`, "Content-Type":"application/json" },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-        temperature: 0.35,
-        messages: [{ role:"system", content: system }, { role:"user", content: frame }]
-      })
-    });
+    // Wrap the OpenAI call so any failure (network, auth, quota, model
+    // not allowed) becomes a self-diagnosing 503 with a real error
+    // message, instead of a silent fallback to "I'm here with you."
+    // (which is what the user was seeing when debugging).
+    const modelName = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    let ai;
+    try {
+      ai = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization:`Bearer ${OPENAI_API_KEY}`, "Content-Type":"application/json" },
+        body: JSON.stringify({
+          model: modelName,
+          temperature: 0.35,
+          messages: [{ role:"system", content: system }, { role:"user", content: frame }]
+        })
+      });
+    } catch (err) {
+      const errMsg = String(err?.message || err);
+      log.error("openai_fetch_failed", { model: modelName, error: errMsg });
+      return res.status(503).json({
+        error: "service_unavailable",
+        debug_hint: `OpenAI network call failed: ${errMsg}`,
+      });
+    }
+
     if (!ai.ok) {
-      log.error("openai_upstream_error", { status: ai.status });
-      return res.status(502).json({ error: "upstream_error" });
+      // Read the error body so we can surface WHY the call was rejected
+      // (401 invalid key, 404 model not found, 429 quota exceeded, etc).
+      const errBody = await ai.text().catch(() => "");
+      let errParsed = {};
+      try { errParsed = JSON.parse(errBody); } catch { /* not json */ }
+      const errMsg = errParsed?.error?.message || errBody || `HTTP ${ai.status}`;
+      const errCode = errParsed?.error?.code || errParsed?.error?.type || `http_${ai.status}`;
+      log.error("openai_upstream_error", {
+        status: ai.status,
+        code: errCode,
+        error: errMsg.slice(0, 300),
+      });
+      return res.status(503).json({
+        error: "service_unavailable",
+        debug_hint: `OpenAI API rejected request (${errCode}): ${errMsg}`,
+      });
     }
 
     const data = await ai.json().catch(()=> ({}));
     const raw = data?.choices?.[0]?.message?.content || "{}";
     let parsed = {};
     try { parsed = JSON.parse((String(raw).match(/\{[\s\S]*\}$/) || [raw])[0]); } catch { parsed = { report: raw, citations: [] }; }
+
+    // If the model returned nothing meaningful, don't silently fall back
+    // to the placeholder — log it, because that's a real upstream issue
+    // (usually a content filter, token limit, or model misconfiguration).
+    if (!parsed?.report || String(parsed.report).trim().length < 20) {
+      log.warn("openai_empty_report", {
+        model: modelName,
+        rawLength: String(raw).length,
+        rawSnippet: String(raw).slice(0, 200),
+      });
+    }
 
     const citations = (Array.isArray(parsed.citations) ? parsed.citations : []).map(c=>{
       const idx = Number(c?.index);
