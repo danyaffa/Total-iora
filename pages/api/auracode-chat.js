@@ -5,6 +5,7 @@ export const maxDuration = 30;
 import OpenAI from "openai";
 import { withApi } from "../../lib/apiSecurity";
 import { logger } from "../../lib/logger";
+import { geminiChat, geminiAvailable } from "../../lib/gemini";
 
 const log = logger.child({ fn: "api.auracode-chat" });
 
@@ -241,11 +242,17 @@ async function handler(req, res) {
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    log.error("missing_openai_key");
-    return res.status(503).json({ error: "service_unavailable" });
+  // Allow the handler to run even if OPENAI_API_KEY is missing, as long
+  // as a Gemini key is configured — the fallback chain below will pick
+  // it up. Only bail out if NEITHER provider is configured.
+  if (!apiKey && !geminiAvailable()) {
+    log.error("no_ai_provider_configured");
+    return res.status(503).json({
+      error: "service_unavailable",
+      debug_hint: "No AI provider configured. Set OPENAI_API_KEY and/or GEMINI_API_KEY in Vercel env vars.",
+    });
   }
-  const openai = new OpenAI({ apiKey });
+  const openai = apiKey ? new OpenAI({ apiKey }) : null;
     const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
     const targetLanguage = langNameBCP47(lang);
@@ -304,37 +311,60 @@ async function handler(req, res) {
       ? "Sources list:\n" + sources.map((s,i)=>`[${i+1}] ${s.work}${s.author?` — ${s.author}`:""}${s.url?` <${s.url}>`:""}`).join("\n")
       : "No sources matched.";
 
-    // Wrap the OpenAI call so any failure (invalid key, quota exceeded,
-    // model-not-allowed, network error) becomes a self-diagnosing 503
-    // with a real error message, instead of bubbling up to withApi as a
-    // generic server_error that the client renders as literally the
-    // string "server_error".
-    let chat;
-    try {
-      chat = await openai.chat.completions.create({
-        model,
-        temperature: 0.6,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-          { role: "system", content: toolNote }
-        ],
-      });
-    } catch (err) {
-      const status = err?.status || err?.response?.status || null;
-      const errMsg = String(err?.message || err);
-      // OpenAI SDK errors have .code for quota/auth/etc; fall back to status.
-      const errCode = err?.code || err?.error?.code || (status ? `http_${status}` : null);
-      log.error("openai_chat_failed", { model, error: errMsg, code: errCode, status });
+    // Provider fallback chain: try OpenAI first, fall back to Gemini
+    // on any failure. This keeps the user unblocked when one provider
+    // has model-permission, quota, or auth issues.
+    const chatMessages = [
+      { role: "system", content: system },
+      { role: "user", content: user },
+      { role: "system", content: toolNote },
+    ];
+    let reply = "";
+    let provider = null;
+    let openaiError = null;
+    let geminiError = null;
+
+    if (openai) {
+      try {
+        const chat = await openai.chat.completions.create({
+          model,
+          temperature: 0.6,
+          messages: chatMessages,
+        });
+        reply = chat?.choices?.[0]?.message?.content || "";
+        if (reply) provider = "openai";
+      } catch (err) {
+        const status = err?.status || err?.response?.status || null;
+        const errCode = err?.code || err?.error?.code || (status ? `http_${status}` : null);
+        openaiError = `OpenAI chat failed (${errCode || "unknown"}): ${String(err?.message || err)}`;
+        log.warn("openai_chat_failed_trying_gemini", { model, code: errCode, status });
+      }
+    } else {
+      openaiError = "OPENAI_API_KEY not set";
+    }
+
+    if (!reply && geminiAvailable()) {
+      try {
+        reply = await geminiChat(chatMessages, { temperature: 0.6 });
+        if (reply) provider = "gemini";
+      } catch (err) {
+        geminiError = String(err?.message || err);
+        log.error("gemini_chat_failed", { error: geminiError });
+      }
+    }
+
+    if (!provider) {
+      const parts = [];
+      if (openaiError) parts.push(openaiError);
+      if (geminiError) parts.push(`Gemini fallback also failed: ${geminiError}`);
+      if (!geminiAvailable() && openaiError) parts.push("No GEMINI_API_KEY set for fallback.");
       return res.status(503).json({
         error: "service_unavailable",
-        debug_hint: `OpenAI chat call failed (${errCode || "unknown"}): ${errMsg}`,
+        debug_hint: parts.join(" | ") || "Both AI providers failed.",
       });
     }
 
-    const reply = chat?.choices?.[0]?.message?.content || "";
-
-    const payload = { reply, sources };
+    const payload = { reply, sources, provider };
     payload.citations = payload.sources;  // alias for UIs that expect `citations`
     return res.status(200).json(payload);
 }

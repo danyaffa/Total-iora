@@ -4,6 +4,7 @@ export const maxDuration = 30;
 
 import { withApi } from "../../lib/apiSecurity";
 import { logger } from "../../lib/logger";
+import { geminiChat, geminiAvailable } from "../../lib/gemini";
 
 const log = logger.child({ fn: "api.dna" });
 
@@ -174,65 +175,97 @@ async function handler(req, res){
     ].join("\n");
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) {
-      log.error("missing_openai_key");
-      return res.status(503).json({ error: "service_unavailable" });
+    if (!OPENAI_API_KEY && !geminiAvailable()) {
+      log.error("no_ai_provider_configured");
+      return res.status(503).json({
+        error: "service_unavailable",
+        debug_hint: "No AI provider configured. Set OPENAI_API_KEY and/or GEMINI_API_KEY in Vercel env vars.",
+      });
     }
 
-    // Wrap the OpenAI call so any failure (network, auth, quota, model
-    // not allowed) becomes a self-diagnosing 503 with a real error
-    // message, instead of a silent fallback to "I'm here with you."
-    // (which is what the user was seeing when debugging).
+    // Provider fallback chain: try OpenAI first, fall back to Gemini
+    // on any failure (network, auth, quota, model not allowed, empty
+    // response). This keeps the DNA generation working when one
+    // provider has issues — the user never sees "I'm here with you."
+    // as a placeholder anymore.
     const modelName = process.env.OPENAI_MODEL || "gpt-4o-mini";
-    let ai;
-    try {
-      ai = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization:`Bearer ${OPENAI_API_KEY}`, "Content-Type":"application/json" },
-        body: JSON.stringify({
-          model: modelName,
-          temperature: 0.35,
-          messages: [{ role:"system", content: system }, { role:"user", content: frame }]
-        })
-      });
-    } catch (err) {
-      const errMsg = String(err?.message || err);
-      log.error("openai_fetch_failed", { model: modelName, error: errMsg });
+    const chatMessages = [
+      { role: "system", content: system },
+      { role: "user", content: frame },
+    ];
+    let raw = "";
+    let provider = null;
+    let openaiError = null;
+    let geminiError = null;
+
+    // --- OpenAI attempt -----------------------------------------------------
+    if (OPENAI_API_KEY) {
+      try {
+        const ai = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: modelName,
+            temperature: 0.35,
+            messages: chatMessages,
+          }),
+        });
+        if (ai.ok) {
+          const data = await ai.json().catch(() => ({}));
+          raw = data?.choices?.[0]?.message?.content || "";
+          if (raw) provider = "openai";
+        } else {
+          const errBody = await ai.text().catch(() => "");
+          let errParsed = {};
+          try { errParsed = JSON.parse(errBody); } catch { /* not json */ }
+          const errMsg = errParsed?.error?.message || errBody || `HTTP ${ai.status}`;
+          const errCode = errParsed?.error?.code || errParsed?.error?.type || `http_${ai.status}`;
+          openaiError = `OpenAI DNA failed (${errCode}): ${errMsg}`;
+          log.warn("openai_dna_failed_trying_gemini", { model: modelName, code: errCode, status: ai.status });
+        }
+      } catch (err) {
+        openaiError = `OpenAI network call failed: ${String(err?.message || err)}`;
+        log.warn("openai_dna_fetch_failed", { error: openaiError });
+      }
+    } else {
+      openaiError = "OPENAI_API_KEY not set";
+    }
+
+    // --- Gemini fallback ----------------------------------------------------
+    if (!raw && geminiAvailable()) {
+      try {
+        raw = await geminiChat(chatMessages, { temperature: 0.35 });
+        if (raw) provider = "gemini";
+      } catch (err) {
+        geminiError = String(err?.message || err);
+        log.error("gemini_dna_failed", { error: geminiError });
+      }
+    }
+
+    if (!provider) {
+      const parts = [];
+      if (openaiError) parts.push(openaiError);
+      if (geminiError) parts.push(`Gemini fallback also failed: ${geminiError}`);
+      if (!geminiAvailable() && openaiError) parts.push("No GEMINI_API_KEY set for fallback.");
       return res.status(503).json({
         error: "service_unavailable",
-        debug_hint: `OpenAI network call failed: ${errMsg}`,
+        debug_hint: parts.join(" | ") || "Both AI providers failed.",
       });
     }
 
-    if (!ai.ok) {
-      // Read the error body so we can surface WHY the call was rejected
-      // (401 invalid key, 404 model not found, 429 quota exceeded, etc).
-      const errBody = await ai.text().catch(() => "");
-      let errParsed = {};
-      try { errParsed = JSON.parse(errBody); } catch { /* not json */ }
-      const errMsg = errParsed?.error?.message || errBody || `HTTP ${ai.status}`;
-      const errCode = errParsed?.error?.code || errParsed?.error?.type || `http_${ai.status}`;
-      log.error("openai_upstream_error", {
-        status: ai.status,
-        code: errCode,
-        error: errMsg.slice(0, 300),
-      });
-      return res.status(503).json({
-        error: "service_unavailable",
-        debug_hint: `OpenAI API rejected request (${errCode}): ${errMsg}`,
-      });
-    }
-
-    const data = await ai.json().catch(()=> ({}));
-    const raw = data?.choices?.[0]?.message?.content || "{}";
     let parsed = {};
-    try { parsed = JSON.parse((String(raw).match(/\{[\s\S]*\}$/) || [raw])[0]); } catch { parsed = { report: raw, citations: [] }; }
+    try {
+      parsed = JSON.parse((String(raw).match(/\{[\s\S]*\}$/) || [raw])[0]);
+    } catch {
+      parsed = { report: raw, citations: [] };
+    }
 
-    // If the model returned nothing meaningful, don't silently fall back
-    // to the placeholder — log it, because that's a real upstream issue
-    // (usually a content filter, token limit, or model misconfiguration).
     if (!parsed?.report || String(parsed.report).trim().length < 20) {
-      log.warn("openai_empty_report", {
+      log.warn("ai_empty_report", {
+        provider,
         model: modelName,
         rawLength: String(raw).length,
         rawSnippet: String(raw).slice(0, 200),
@@ -246,7 +279,12 @@ async function handler(req, res){
       return { index: idx, work: it.work, author: it.author || null, url: it.url || "", quote: String(c?.quote || it.text || "").trim(), reason: String(c?.why || "").trim() };
     }).filter(Boolean);
 
-    return res.status(200).json({ report: String(parsed?.report || "I’m here with you.").trim(), citations, offered: pool });
+    return res.status(200).json({
+      report: String(parsed?.report || "").trim(),
+      citations,
+      offered: pool,
+      provider,
+    });
 }
 
 export default withApi(handler, {
