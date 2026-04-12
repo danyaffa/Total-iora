@@ -293,14 +293,14 @@ export default function OracleVoice({ path = "Universal" }) {
       rec.onstart = () => setStatus("Recording… speak now, click Stop when done.");
       rec.onerror = (e) => setStatus(`Recorder error: ${String(e?.error?.message || e?.error || e)}`);
 
-      // Timeslice mode: flush a chunk every 2.5 seconds. The live
-      // preview fires on each flushed chunk. 2.5s is slow enough to
-      // stay well under the STT rate limit (24 req/min vs 180 cap)
-      // and fast enough to feel responsive. On stop, the browser
-      // fires one final ondataavailable with any remaining audio
-      // before onstop, so the accumulated `chunks` array always
-      // contains the complete recording.
-      rec.start(2500);
+      // Timeslice mode: flush a chunk every 1 second. The live preview
+      // fires on each flushed chunk but is self-throttled by the
+      // livePreviewInFlight guard — if Whisper's roundtrip (~1-2s)
+      // exceeds the chunk interval, chunks are simply skipped and
+      // picked up on the next cycle. Effective rate: ~30-60 req/min,
+      // well under the 180/min cap. Total latency from speech to
+      // text: ~2-3 seconds (1s chunk + 1-2s Whisper roundtrip).
+      rec.start(1000);
 
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext("2d");
