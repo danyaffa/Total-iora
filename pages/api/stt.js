@@ -8,6 +8,7 @@ export const config = { api: { bodyParser: { sizeLimit: "10mb" } } };
 import OpenAI from "openai";
 import { withApi } from "../../lib/apiSecurity";
 import { logger } from "../../lib/logger";
+import { geminiTranscribe, geminiAvailable } from "../../lib/gemini";
 
 const log = logger.child({ fn: "api.stt" });
 
@@ -34,13 +35,20 @@ function looksLikeSilence(bytes) {
   return seen > 8 && low / seen > 0.85;
 }
 
-async function handler(req, res) {
+async function transcribeWithOpenAI(buf, mime, lang) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    log.error("missing_openai_key");
-    return res.status(503).json({ error: "service_unavailable" });
-  }
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+  const openai = new OpenAI({ apiKey });
+  const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
+  const file = new File([buf], `recording.${ext}`, { type: mime });
+  const modelName = process.env.STT_MODEL || "whisper-1";
+  const params = { file, model: modelName };
+  if (lang && lang !== "auto") params.language = lang;
+  const out = await openai.audio.transcriptions.create(params);
+  return (out?.text || "").trim();
+}
 
+async function handler(req, res) {
   const { b64, mime = "audio/webm", lang = "auto" } = req.body || {};
   if (!b64 || typeof b64 !== "string") {
     return res.status(400).json({ error: "missing_audio" });
@@ -62,33 +70,62 @@ async function handler(req, res) {
     return res.status(413).json({ error: "payload_too_large" });
   }
 
-  const openai = new OpenAI({ apiKey });
-  const ext = mime.includes("mp4") ? "mp4" : mime.includes("ogg") ? "ogg" : "webm";
-  const file = new File([buf], `recording.${ext}`, { type: mime });
+  // Provider fallback chain: try OpenAI Whisper first. On ANY failure
+  // (missing key, model not allowed, quota, network, malformed audio),
+  // fall back to Gemini if a GEMINI_API_KEY is configured. Only return
+  // a 503 if BOTH providers fail — in which case we include both error
+  // messages in debug_hint so the operator can see what broke.
+  let text = "";
+  let provider = null;
+  let openaiError = null;
+  let geminiError = null;
 
-  const modelName = process.env.STT_MODEL || "whisper-1";
-  const params = { file, model: modelName };
-  if (lang && lang !== "auto") params.language = lang;
+  // --- OpenAI attempt -----------------------------------------------------
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      text = await transcribeWithOpenAI(buf, mime, lang);
+      provider = "openai";
+    } catch (err) {
+      const status = err?.status || err?.response?.status || null;
+      const code = err?.code || err?.error?.code || (status ? `http_${status}` : null);
+      openaiError = `OpenAI STT failed (${code || "unknown"}): ${String(err?.message || err)}`;
+      log.warn("openai_stt_failed_trying_gemini", {
+        code,
+        status,
+        error: String(err?.message || err),
+      });
+    }
+  } else {
+    openaiError = "OPENAI_API_KEY not set";
+  }
 
-  // Wrap the Whisper call so auth/quota/model errors become a
-  // self-diagnosing 503 instead of a generic server_error.
-  let out;
-  try {
-    out = await openai.audio.transcriptions.create(params);
-  } catch (err) {
-    const status = err?.status || err?.response?.status || null;
-    const errMsg = String(err?.message || err);
-    const errCode = err?.code || err?.error?.code || (status ? `http_${status}` : null);
-    log.error("openai_stt_failed", { model: modelName, error: errMsg, code: errCode, status });
+  // --- Gemini fallback ----------------------------------------------------
+  if (!text && geminiAvailable()) {
+    try {
+      text = await geminiTranscribe(buf, mime);
+      provider = "gemini";
+      log.info("gemini_stt_success", { textLength: text.length });
+    } catch (err) {
+      geminiError = String(err?.message || err);
+      log.error("gemini_stt_failed", { error: geminiError });
+    }
+  }
+
+  // --- Both failed --------------------------------------------------------
+  if (!provider) {
+    const parts = [];
+    if (openaiError) parts.push(openaiError);
+    if (geminiError) parts.push(`Gemini fallback also failed: ${geminiError}`);
+    if (!geminiAvailable()) parts.push("No GEMINI_API_KEY set for fallback.");
     return res.status(503).json({
       error: "service_unavailable",
-      debug_hint: `OpenAI STT call failed (${errCode || "unknown"}): ${errMsg}`,
+      debug_hint: parts.join(" | "),
     });
   }
 
-  const text = (out?.text || "").trim();
+  // --- Success (either provider) -----------------------------------------
   const detected = lang === "auto" ? detectLangFromText(text, "en-US") : lang;
-  return res.status(200).json({ text, lang: detected });
+  return res.status(200).json({ text, lang: detected, provider });
 }
 
 export default withApi(handler, {
