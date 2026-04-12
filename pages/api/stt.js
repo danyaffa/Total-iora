@@ -24,16 +24,15 @@ function detectLangFromText(s, fallback = "en-US") {
   return fallback;
 }
 
-function looksLikeSilence(bytes) {
-  if (!bytes || !bytes.length) return true;
-  let low = 0,
-    seen = 0;
-  for (let i = 0; i < bytes.length; i += 16) {
-    if (bytes[i] < 6) low++;
-    seen++;
-  }
-  return seen > 8 && low / seen > 0.85;
-}
+// REMOVED: looksLikeSilence(). It sampled raw bytes and checked if
+// >85% were near-zero. That heuristic only works for uncompressed PCM
+// audio. Browsers send webm/opus, which is heavily compressed — the
+// byte distribution has zero correlation to audio silence. For any
+// real recording, this function was returning true and the handler
+// was returning an empty transcription without ever calling an AI
+// provider. That is almost certainly why recording never worked.
+// Whisper and Gemini both return empty text cleanly on silent input,
+// so we don't need a pre-filter.
 
 async function transcribeWithOpenAI(buf, mime, lang) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -49,7 +48,7 @@ async function transcribeWithOpenAI(buf, mime, lang) {
 }
 
 async function handler(req, res) {
-  const { b64, mime = "audio/webm", lang = "auto" } = req.body || {};
+  const { b64, mime = "audio/webm", lang = "auto", debug = false } = req.body || {};
   if (!b64 || typeof b64 !== "string") {
     return res.status(400).json({ error: "missing_audio" });
   }
@@ -61,30 +60,45 @@ async function handler(req, res) {
     return res.status(400).json({ error: "invalid_audio_encoding" });
   }
 
-  if (buf.byteLength < 1800 || looksLikeSilence(buf)) {
-    return res.status(200).json({ text: "", lang: lang === "auto" ? "en-US" : lang });
+  const audioBytes = buf.byteLength;
+
+  // Minimum-size floor is kept only to reject obviously empty buffers
+  // (< 256 bytes is not a real recording — it's usually MediaRecorder
+  // header fragments before any audio is captured). 1800 was too
+  // aggressive and was rejecting valid short chunks from the live
+  // preview loop.
+  if (audioBytes < 256) {
+    return res.status(200).json({
+      text: "",
+      lang: lang === "auto" ? "en-US" : lang,
+      provider: null,
+      reason: "audio_too_small",
+      audioBytes,
+    });
   }
 
   const MAX_BYTES = 8 * 1024 * 1024;
-  if (buf.byteLength > MAX_BYTES) {
-    return res.status(413).json({ error: "payload_too_large" });
+  if (audioBytes > MAX_BYTES) {
+    return res.status(413).json({ error: "payload_too_large", audioBytes });
   }
 
   // Provider fallback chain: try OpenAI Whisper first. On ANY failure
   // (missing key, model not allowed, quota, network, malformed audio),
-  // fall back to Gemini if a GEMINI_API_KEY is configured. Only return
-  // a 503 if BOTH providers fail — in which case we include both error
-  // messages in debug_hint so the operator can see what broke.
+  // fall back to Gemini if a GEMINI_API_KEY is configured.
   let text = "";
   let provider = null;
   let openaiError = null;
   let geminiError = null;
+  let openaiTried = false;
+  let geminiTried = false;
 
   // --- OpenAI attempt -----------------------------------------------------
   if (process.env.OPENAI_API_KEY) {
+    openaiTried = true;
     try {
       text = await transcribeWithOpenAI(buf, mime, lang);
-      provider = "openai";
+      if (text) provider = "openai";
+      else openaiError = "OpenAI returned empty transcription";
     } catch (err) {
       const status = err?.status || err?.response?.status || null;
       const code = err?.code || err?.error?.code || (status ? `http_${status}` : null);
@@ -101,31 +115,45 @@ async function handler(req, res) {
 
   // --- Gemini fallback ----------------------------------------------------
   if (!text && geminiAvailable()) {
+    geminiTried = true;
     try {
       text = await geminiTranscribe(buf, mime);
-      provider = "gemini";
-      log.info("gemini_stt_success", { textLength: text.length });
+      if (text) provider = "gemini";
+      else geminiError = "Gemini returned empty transcription";
     } catch (err) {
       geminiError = String(err?.message || err);
       log.error("gemini_stt_failed", { error: geminiError });
     }
   }
 
-  // --- Both failed --------------------------------------------------------
+  const diagnostics = {
+    audioBytes,
+    mime,
+    lang,
+    openaiTried,
+    geminiTried,
+    openaiError,
+    geminiError,
+  };
+
+  // --- Both failed / both empty -------------------------------------------
   if (!provider) {
     const parts = [];
     if (openaiError) parts.push(openaiError);
     if (geminiError) parts.push(`Gemini fallback also failed: ${geminiError}`);
-    if (!geminiAvailable()) parts.push("No GEMINI_API_KEY set for fallback.");
+    if (!geminiAvailable() && openaiTried) parts.push("No GEMINI_API_KEY set for fallback.");
     return res.status(503).json({
       error: "service_unavailable",
-      debug_hint: parts.join(" | "),
+      debug_hint: parts.join(" | ") || "Both STT providers returned empty.",
+      diagnostics,
     });
   }
 
   // --- Success (either provider) -----------------------------------------
   const detected = lang === "auto" ? detectLangFromText(text, "en-US") : lang;
-  return res.status(200).json({ text, lang: detected, provider });
+  const resp = { text, lang: detected, provider };
+  if (debug) resp.diagnostics = diagnostics;
+  return res.status(200).json(resp);
 }
 
 export default withApi(handler, {
@@ -133,11 +161,6 @@ export default withApi(handler, {
   methods: ["POST"],
   // Live transcription in OracleVoice.js sends a ~500ms chunk every
   // 600ms, so a 60-second recording produces up to ~100 STT requests.
-  // The in-flight throttle brings this closer to 40–60/min in practice,
-  // but the old limit of 30/min was still too low — after ~30 seconds
-  // the live preview stopped updating because every subsequent chunk
-  // was getting 429'd (and the client was silently swallowing it).
-  // 180/min = 3/sec gives comfortable headroom for streaming STT while
-  // still catching abuse.
+  // 180/min = 3/sec gives comfortable headroom while still catching abuse.
   rate: { max: 180, windowMs: 60_000 },
 });
