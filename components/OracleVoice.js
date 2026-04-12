@@ -238,21 +238,69 @@ export default function OracleVoice({ path = "Universal" }) {
       const mime = bestMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
+      let livePreviewInFlight = false;
+      let livePreviewErrorShown = false;
 
-      rec.ondataavailable = (e) => {
-        if (e.data?.size) chunks.push(e.data);
+      rec.ondataavailable = async (e) => {
+        if (!e.data?.size) return;
+        chunks.push(e.data);
+
+        // LIVE PREVIEW — transcribe the recording-so-far every time a
+        // chunk arrives. We send ALL chunks from chunk 0, not a slice
+        // from the tail (that was the bug in the previous version:
+        // it dropped the webm EBML header, producing invalid audio
+        // that Whisper silently rejected).
+        //
+        // Guards:
+        //   - Only one preview in flight at a time. If a preview is
+        //     running when the next 2.5s chunk arrives, skip that
+        //     chunk. The NEXT chunk will pick it up.
+        //   - Only fire while the user is actively recording. If they
+        //     clicked Stop and a late preview resolves, listeningRef
+        //     is false and we won't clobber the final transcription.
+        //   - Silently ignore rate-limit errors. Everything else
+        //     surfaces to the status bar once per recording session.
+        if (livePreviewInFlight || !listeningRef.current) return;
+        livePreviewInFlight = true;
+        const snapshot = chunks.slice(); // shallow copy for thread-safety
+        (async () => {
+          try {
+            const previewBlob = new Blob(snapshot, { type: mime || "audio/webm" });
+            if (previewBlob.size < 256) return;
+            const preview = await sttUpload(previewBlob, mime, undefined, "auto");
+            // Only update if still actively recording — don't clobber
+            // the final transcription if the preview resolved late.
+            if (preview?.text && listeningRef.current) {
+              setLiveText(preview.text);
+            }
+          } catch (err) {
+            const msg = String(err?.message || err);
+            const isRateLimit = /rate[_\s]?limit|429/i.test(msg);
+            if (!isRateLimit && !livePreviewErrorShown) {
+              livePreviewErrorShown = true;
+              // Don't set status during recording — the UI is already
+              // saying "Recording…". Just log to console so the user
+              // can see it in devtools if they're looking, without
+              // visually breaking the recording session.
+              // eslint-disable-next-line no-console
+              console.warn("[OracleVoice] live preview failed:", msg);
+            }
+          } finally {
+            livePreviewInFlight = false;
+          }
+        })();
       };
       rec.onstart = () => setStatus("Recording… speak now, click Stop when done.");
       rec.onerror = (e) => setStatus(`Recorder error: ${String(e?.error?.message || e?.error || e)}`);
 
-      // IMPORTANT: no timeslice. Call rec.start() without a parameter
-      // so the browser produces ONE chunk containing the entire
-      // recording on stop. This is exactly what /test-stt does, and
-      // /test-stt is proven to work. Previously we used rec.start(500)
-      // which made live preview possible but created chunks that
-      // weren't individually decodable by Whisper — and the stop
-      // sequence raced with the final ondataavailable event.
-      rec.start();
+      // Timeslice mode: flush a chunk every 2.5 seconds. The live
+      // preview fires on each flushed chunk. 2.5s is slow enough to
+      // stay well under the STT rate limit (24 req/min vs 180 cap)
+      // and fast enough to feel responsive. On stop, the browser
+      // fires one final ondataavailable with any remaining audio
+      // before onstop, so the accumulated `chunks` array always
+      // contains the complete recording.
+      rec.start(2500);
 
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext("2d");
