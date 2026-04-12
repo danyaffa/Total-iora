@@ -200,99 +200,79 @@ export default function OracleVoice({ path = "Universal" }) {
 
     try {
       setStatus("Opening microphone…");
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount:1, noiseSuppression:true, echoCancellation:true } });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, noiseSuppression: true, echoCancellation: true },
+      });
+
+      // Clone the stream for the visualizer. Running both the
+      // MediaRecorder and the AudioContext analyser on the SAME
+      // MediaStream can cause the recorder to receive silent audio
+      // in some browsers because the AudioContext source node taps
+      // the track exclusively. Cloning gives each consumer its own
+      // independent track reference. This is the same problem the
+      // test page (/test-stt) avoids by not having a visualizer at
+      // all — and proving that the rest of the pipeline works.
+      const vizStream = stream.clone();
       const AC = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AC(); try { await ctx.resume(); } catch {}
-      const analyser = ctx.createAnalyser(); analyser.fftSize = 512;
-      const src = ctx.createMediaStreamSource(stream); src.connect(analyser);
+      const ctx = new AC();
+      try { await ctx.resume(); } catch {}
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      const src = ctx.createMediaStreamSource(vizStream);
+      src.connect(analyser);
 
       const mime = bestMime();
       const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks = [];
-      let lastChunkSent = 0;
-      const CHUNK_MS = 600;
-      const SLICE_MS = 500;
 
-      let liveInFlight = false;
-      let livePreviewErrorShown = false;
-      rec.ondataavailable = async (e) => {
-        if (e.data?.size) {
-          chunks.push(e.data);
-          const now = Date.now();
-          // Throttle live STT: skip if previous request still in flight
-          if (now - lastChunkSent >= CHUNK_MS && listeningRef.current && !liveInFlight) {
-            lastChunkSent = now;
-            liveInFlight = true;
-            try {
-              // Send only last ~6 seconds of audio for live preview (keeps it fast)
-              const LIVE_CHUNKS = 12; // 12 × 500ms = 6s
-              const recentChunks = chunks.length > LIVE_CHUNKS
-                ? chunks.slice(-LIVE_CHUNKS)
-                : chunks;
-              const previewBlob = new Blob(recentChunks, { type: mime });
-              const langHint = lastDetectedLangRef.current || undefined;
-              const preview = await sttUpload(previewBlob, mime, undefined, langHint);
-              if (preview?.text) {
-                setLiveText(preview.text);
-              }
-              if (preview?.lang && preview.lang !== "en-US") {
-                lastDetectedLangRef.current = preview.lang;
-              }
-            } catch (err) {
-              // Previously this was a silent `catch {}` — errors during
-              // live preview never reached the user. Now we surface the
-              // first error to the status bar so the user can see WHY
-              // live transcription isn't working. Only show it once per
-              // recording session to avoid flicker.
-              //
-              // Exception: 429 rate-limit errors are transient — the
-              // next chunk will go through once the window resets. Don't
-              // alarm the user by writing "rate_limited" into the status
-              // bar while they're mid-sentence; just skip this chunk and
-              // keep going. Real errors (bad API key, network down,
-              // model not found) still surface once.
-              const msg = String(err?.message || err);
-              const isRateLimit =
-                /rate[_\s]?limit|429/i.test(msg);
-              if (!isRateLimit && !livePreviewErrorShown) {
-                livePreviewErrorShown = true;
-                setStatus(`STT failed: ${msg}`);
-              }
-            } finally {
-              liveInFlight = false;
-            }
-          }
-        }
+      rec.ondataavailable = (e) => {
+        if (e.data?.size) chunks.push(e.data);
       };
-      
-      rec.onstart = () => setStatus("Recording…");
-      rec.onerror = () => setStatus("Recorder error.");
-      rec.onstop = () => {
-        try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-        try { recRef.current.ctx?.close(); } catch {}
-        cancelAnimationFrame(recRef.current.anim || 0);
-      };
-      rec.start(SLICE_MS);
+      rec.onstart = () => setStatus("Recording… speak now, click Stop when done.");
+      rec.onerror = (e) => setStatus(`Recorder error: ${String(e?.error?.message || e?.error || e)}`);
+
+      // IMPORTANT: no timeslice. Call rec.start() without a parameter
+      // so the browser produces ONE chunk containing the entire
+      // recording on stop. This is exactly what /test-stt does, and
+      // /test-stt is proven to work. Previously we used rec.start(500)
+      // which made live preview possible but created chunks that
+      // weren't individually decodable by Whisper — and the stop
+      // sequence raced with the final ondataavailable event.
+      rec.start();
 
       const data = new Uint8Array(analyser.frequencyBinCount);
       const c = canvasRef.current?.getContext("2d");
       const draw = () => {
         if (!c) return;
         analyser.getByteFrequencyData(data);
-        const avg = data.reduce((a,b)=>a+b,0)/data.length;
-        const r = 32 + (avg/255)*40;
-        c.clearRect(0,0,220,220);
-        const g = c.createRadialGradient(110,110,r*0.25,110,110,r);
-        g.addColorStop(0,"rgba(124,58,237,.95)"); g.addColorStop(1,"rgba(124,58,237,0)");
-        c.fillStyle = g; c.beginPath(); c.arc(110,110,r,0,Math.PI*2); c.fill();
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        const r = 32 + (avg / 255) * 40;
+        c.clearRect(0, 0, 220, 220);
+        const g = c.createRadialGradient(110, 110, r * 0.25, 110, 110, r);
+        g.addColorStop(0, "rgba(124,58,237,.95)");
+        g.addColorStop(1, "rgba(124,58,237,0)");
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(110, 110, r, 0, Math.PI * 2);
+        c.fill();
         recRef.current.anim = requestAnimationFrame(draw);
       };
       draw();
 
-      recRef.current = { stream, rec, chunks, mime: mime || "audio/webm", ctx, analyser, anim: recRef.current.anim };
-      setStatus("Recording…");
-    } catch {
-      setListening(false); setStatus("Mic permission denied or unavailable.");
+      recRef.current = {
+        stream,
+        vizStream,
+        rec,
+        chunks,
+        mime: mime || "audio/webm",
+        ctx,
+        analyser,
+        anim: recRef.current.anim,
+      };
+      setStatus("Recording… speak now, click Stop when done.");
+    } catch (err) {
+      setListening(false);
+      setStatus(`Mic permission denied or unavailable: ${String(err?.message || err)}`);
     }
   }
 
@@ -301,35 +281,76 @@ export default function OracleVoice({ path = "Universal" }) {
     setListening(false);
     setStatus("Stopping…");
 
-    const r = recRef.current.rec;
-    try { r?.stop(); } catch {}
-    await new Promise(res => setTimeout(res, 200));
-    try { recRef.current.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
-    try { recRef.current.ctx?.close(); } catch {}
+    const { rec, stream, vizStream, ctx, mime } = recRef.current;
+    if (!rec) {
+      setStatus("Stopped.");
+      return;
+    }
+
+    // Wait for the MediaRecorder to FULLY stop. We explicitly attach a
+    // fresh onstop handler and await it, instead of using a 200ms
+    // setTimeout race. The browser guarantees that all ondataavailable
+    // events fire BEFORE onstop, so by the time this promise resolves,
+    // every audio chunk has been flushed into `chunks`.
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      rec.onstop = finish;
+      try { rec.stop(); } catch { finish(); }
+      // Safety timeout — if the browser never fires onstop, don't hang.
+      setTimeout(finish, 3000);
+    });
+
+    // Tear down the stream, cloned stream, and audio context.
+    try { stream?.getTracks?.().forEach((t) => t.stop()); } catch {}
+    try { vizStream?.getTracks?.().forEach((t) => t.stop()); } catch {}
+    try { ctx?.close(); } catch {}
     cancelAnimationFrame(recRef.current.anim || 0);
-    
-    const { chunks, mime } = recRef.current;
-    recRef.current = { stream:null, rec:null, chunks:[], mime:"", ctx:null, analyser:null, anim:0 };
 
-    if (!chunks.length) { setStatus("Stopped."); return; }
+    const chunks = recRef.current.chunks || [];
+    recRef.current = {
+      stream: null,
+      vizStream: null,
+      rec: null,
+      chunks: [],
+      mime: "",
+      ctx: null,
+      analyser: null,
+      anim: 0,
+    };
 
-    setStatus("Transcribing…");
+    if (!chunks.length) {
+      setStatus("No audio captured. Try again.");
+      return;
+    }
+
+    const blob = new Blob(chunks, { type: mime || "audio/webm" });
+    if (blob.size < 256) {
+      setStatus("Audio too short — speak for at least a second.");
+      return;
+    }
+
+    setStatus(`Transcribing… (${blob.size} bytes)`);
     try {
-      const blob = new Blob(chunks, { type: mime || "audio/webm" });
       const langHint = lastDetectedLangRef.current || undefined;
       const { text, lang } = await sttUpload(blob, mime, undefined, langHint);
-      
+
       if (text) {
         finalTransRef.current = text;
         setLiveText(text);
+        setStatus("Ready.");
+      } else {
+        setStatus("No speech detected. Try again, speak a bit louder.");
       }
       if (lang) {
         lastDetectedLangRef.current = lang;
       }
-      setStatus("Ready.");
-      
     } catch (e) {
-      setStatus(String(e?.message || e));
+      setStatus(`STT failed: ${String(e?.message || e)}`);
     }
   }
 
