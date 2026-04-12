@@ -372,5 +372,10 @@ async function handler(req, res) {
 export default withApi(handler, {
   name: "api.auracode-chat",
   methods: ["POST"],
-  rate: { max: 30, windowMs: 60_000 },
+  // 30/min was too aggressive for active voice conversations: a single
+  // user going back-and-forth can easily trigger that in a minute, and
+  // the rate limiter (correctly) keys by session cookie for logged-in
+  // users so each user has their own bucket. 60/min gives comfortable
+  // headroom while still catching abuse.
+  rate: { max: 60, windowMs: 60_000 },
 });

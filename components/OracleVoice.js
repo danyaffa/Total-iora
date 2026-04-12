@@ -244,9 +244,19 @@ export default function OracleVoice({ path = "Universal" }) {
               // first error to the status bar so the user can see WHY
               // live transcription isn't working. Only show it once per
               // recording session to avoid flicker.
-              if (!livePreviewErrorShown) {
+              //
+              // Exception: 429 rate-limit errors are transient — the
+              // next chunk will go through once the window resets. Don't
+              // alarm the user by writing "rate_limited" into the status
+              // bar while they're mid-sentence; just skip this chunk and
+              // keep going. Real errors (bad API key, network down,
+              // model not found) still surface once.
+              const msg = String(err?.message || err);
+              const isRateLimit =
+                /rate[_\s]?limit|429/i.test(msg);
+              if (!isRateLimit && !livePreviewErrorShown) {
                 livePreviewErrorShown = true;
-                setStatus(`STT failed: ${String(err?.message || err)}`);
+                setStatus(`STT failed: ${msg}`);
               }
             } finally {
               liveInFlight = false;
@@ -359,6 +369,19 @@ export default function OracleVoice({ path = "Universal" }) {
     setShowSrc(false); setShowCites(false);
     setCitations([]); setSources([]);
 
+    // Normalize the faith path casing before sending. The server's
+    // VALID_PATHS check uses exact matches ("Muslim", "Christian",
+    // "Jewish", "Eastern", "Universal"), so if something upstream sets
+    // the prop to lowercase or trims weirdly, the server silently falls
+    // back to "Universal" and the Oracle answers as a generic Sage
+    // regardless of which heritage is selected. This defensive mapping
+    // catches any case/whitespace drift.
+    const VALID_PATHS = ["Muslim", "Christian", "Jewish", "Eastern", "Universal"];
+    const normalizedPath =
+      VALID_PATHS.find(
+        (v) => v.toLowerCase() === String(path || "").trim().toLowerCase()
+      ) || "Universal";
+
     try {
       const isStyle = subject.startsWith("style:");
       const isTopic = subject.startsWith("topic:");
@@ -371,7 +394,7 @@ export default function OracleVoice({ path = "Universal" }) {
         credentials: "include",
         body: JSON.stringify({
           message: clean,
-          path, mode, topic,
+          path: normalizedPath, mode, topic,
           lang: lastDetectedLangRef.current || "en-US",
           polish
         }),
