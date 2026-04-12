@@ -95,26 +95,39 @@ function pickVoice(lang) {
 }
 
 async function sttUpload(blob, mime, signal, lang) {
-  if (!blob || blob.size < 200) return { text: "", lang: lang || "en-US" };
+  if (!blob || blob.size < 256) return { text: "", lang: lang || "en-US" };
   const buf = await blob.arrayBuffer();
   let b64 = ""; const bytes = new Uint8Array(buf);
   for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
-  const payload = { b64: btoa(b64), mime };
-  if (lang && lang !== "auto") payload.lang = lang;
+  // Always send debug: true so the server returns its full diagnostics
+  // block in the response body. Default to "auto" (let the server
+  // detect language) — passing a specific locale hint is optional and
+  // must be a plain 2-letter ISO-639-1 code, NOT BCP47 (Whisper rejects
+  // "en-US" with invalid_language_format).
+  const payload = { b64: btoa(b64), mime, lang: "auto", debug: true };
   const r = await fetch("/api/stt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(payload),
     signal,
   });
   const js = await r.json().catch(() => ({}));
   if (!r.ok) {
-    // Prefer the server's debug_hint (the actual OpenAI / Firestore
-    // error message) over the machine error code. The server now sends
-    // a real, human-readable hint in the 503 response body — throwing
-    // the raw `error` code like "service_unavailable" hides the reason
-    // from the user.
-    throw new Error(js?.debug_hint || js?.error || js?.detail || "STT failed");
+    // Build a rich error that includes every piece of diagnostic info
+    // the server returned. Previously we just threw `js.error` (the
+    // machine code like "service_unavailable") and the user saw that
+    // verbatim with no clue what actually failed. Now we prefer
+    // debug_hint and attach a JSON dump of diagnostics so the root
+    // cause is always visible in the UI.
+    const hint = js?.debug_hint || js?.error || js?.detail || "STT failed";
+    const diag = js?.diagnostics
+      ? " — " + JSON.stringify(js.diagnostics)
+      : "";
+    const err = new Error(`${hint}${diag}`);
+    err.status = r.status;
+    err.body = js;
+    throw err;
   }
   return js;
 }
@@ -142,6 +155,7 @@ export default function OracleVoice({ path = "Universal" }) {
   const [speaking, setSpeaking]     = useState(false);
   const [replying, setReplying]     = useState(false);
   const [status, setStatus]         = useState("");
+  const [sttDebug, setSttDebug]     = useState(null);
   const [liveText, setLiveText]     = useState("");
   const [reply, setReply]           = useState("");
   const [subject, setSubject]       = useState("topic:general");
@@ -335,22 +349,43 @@ export default function OracleVoice({ path = "Universal" }) {
     }
 
     setStatus(`Transcribing… (${blob.size} bytes)`);
+    setSttDebug(null);
     try {
       const langHint = lastDetectedLangRef.current || undefined;
-      const { text, lang } = await sttUpload(blob, mime, undefined, langHint);
+      const result = await sttUpload(blob, mime, undefined, langHint);
+      const { text, lang, diagnostics } = result || {};
 
       if (text) {
         finalTransRef.current = text;
         setLiveText(text);
         setStatus("Ready.");
+        setSttDebug(null);
       } else {
         setStatus("No speech detected. Try again, speak a bit louder.");
+        // Server returned ok:true but empty text — show diagnostics
+        // so we can see why (e.g. "audio_too_small" reason or empty
+        // responses from both providers).
+        setSttDebug({
+          blobSize: blob.size,
+          mime,
+          serverResponse: result,
+        });
       }
       if (lang) {
         lastDetectedLangRef.current = lang;
       }
     } catch (e) {
+      // sttUpload attached the server's debug_hint + diagnostics to the
+      // error message. Also stash the raw response body into sttDebug
+      // so the user can see the full picture below the status bar.
       setStatus(`STT failed: ${String(e?.message || e)}`);
+      setSttDebug({
+        blobSize: blob.size,
+        mime,
+        httpStatus: e?.status || null,
+        serverResponse: e?.body || null,
+        message: String(e?.message || e),
+      });
     }
   }
 

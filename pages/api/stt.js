@@ -42,7 +42,19 @@ async function transcribeWithOpenAI(buf, mime, lang) {
   const file = new File([buf], `recording.${ext}`, { type: mime });
   const modelName = process.env.STT_MODEL || "whisper-1";
   const params = { file, model: modelName };
-  if (lang && lang !== "auto") params.language = lang;
+  // OpenAI Whisper requires ISO-639-1 (2-letter) codes for the `language`
+  // parameter, not BCP47 (`en-US`, `he-IL`, etc.). Passing "en-US"
+  // produces a 400 invalid_language_format error. Strip the region
+  // suffix and lowercase to canonicalize. "auto" means "let Whisper
+  // detect" and skips the parameter entirely.
+  if (lang && lang !== "auto") {
+    const iso = String(lang).split(/[-_]/)[0].toLowerCase();
+    if (iso && /^[a-z]{2}$/.test(iso)) {
+      params.language = iso;
+    }
+    // If the extracted code isn't 2 letters, skip the param and let
+    // Whisper auto-detect rather than send something it will reject.
+  }
   const out = await openai.audio.transcriptions.create(params);
   return (out?.text || "").trim();
 }
