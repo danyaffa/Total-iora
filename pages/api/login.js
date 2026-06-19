@@ -4,6 +4,7 @@ import { getAdminDb, getAdminInitError } from "../../utils/firebaseAdmin";
 import { withApi } from "../../lib/apiSecurity";
 import { logger } from "../../lib/logger";
 import { writeAudit } from "../../lib/audit";
+import { signAuth, AUTH_COOKIE } from "../../lib/sessionToken";
 
 const log = logger.child({ fn: "api.login" });
 
@@ -123,12 +124,24 @@ async function handler(req, res) {
     req.headers["x-forwarded-proto"] === "https";
   const secureFlag = isProd ? "; Secure" : "";
 
+  const maxAge = 30 * 24 * 3600;
   const sessionCookie =
-    `ac_session=1; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax; HttpOnly${secureFlag}`;
+    `ac_session=1; Max-Age=${maxAge}; Path=/; SameSite=Lax; HttpOnly${secureFlag}`;
   const emailCookie =
-    `ac_email=${encodeURIComponent(emailNorm)}; Max-Age=${30 * 24 * 3600}; Path=/; SameSite=Lax${secureFlag}`;
+    `ac_email=${encodeURIComponent(emailNorm)}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secureFlag}`;
 
-  res.setHeader("Set-Cookie", [sessionCookie, emailCookie]);
+  // Tamper-proof identity token used for privileged (admin) authorization.
+  // HttpOnly so client JS can never read or forge it. Only set when a signing
+  // secret is configured (otherwise admin-by-session stays disabled).
+  const cookies = [sessionCookie, emailCookie];
+  const authToken = signAuth(emailNorm);
+  if (authToken) {
+    cookies.push(
+      `${AUTH_COOKIE}=${authToken}; Max-Age=${maxAge}; Path=/; SameSite=Lax; HttpOnly${secureFlag}`
+    );
+  }
+
+  res.setHeader("Set-Cookie", cookies);
 
   // Owner promotion — only if OWNER_EMAILS configured
   const ownerEmails = (process.env.OWNER_EMAILS || "")
