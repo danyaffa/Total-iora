@@ -8,46 +8,46 @@ import InstallAppButton from "../components/InstallAppButton";
 import { useEffect, useRef, useState } from "react";
 
 const FAITH_OPTIONS = [
-  { id: "universal", label: "Universal / Open", symbol: "\u2728" },
-  { id: "christian", label: "Christian", symbol: "\u271D\uFE0F" },
-  { id: "muslim", label: "Muslim", symbol: "\u262A\uFE0F" },
-  { id: "buddhist", label: "Buddhist", symbol: "\u2638\uFE0F" },
-  { id: "hindu", label: "Hindu", symbol: "\uD83D\uDD49\uFE0F" },
-  { id: "jewish", label: "Jewish", symbol: "\u2721\uFE0F" },
-  { id: "tao", label: "Taoist", symbol: "\u262F\uFE0F" },
-  { id: "spiritual", label: "Spiritual (Non-religious)", symbol: "\uD83C\uDF3F" },
+  { id: "universal", label: "Universal / Open", symbol: "✨" },
+  { id: "christian", label: "Christian", symbol: "✝️" },
+  { id: "muslim", label: "Muslim", symbol: "☪️" },
+  { id: "buddhist", label: "Buddhist", symbol: "☸️" },
+  { id: "hindu", label: "Hindu", symbol: "🕉️" },
+  { id: "jewish", label: "Jewish", symbol: "✡️" },
+  { id: "tao", label: "Taoist", symbol: "☯️" },
+  { id: "spiritual", label: "Spiritual (Non-religious)", symbol: "🌿" },
 ];
 
 const CORE_FEATURES = [
   {
     title: "Voice Guidance",
     desc: "Speak privately with a guide aligned to your tradition. Real-time voice conversations powered by advanced AI.",
-    icon: "\uD83C\uDF99\uFE0F",
+    icon: "🎙️",
   },
   {
     title: "Sacred Notes",
     desc: "A private, ephemeral writing space. Light a candle, write your thoughts. Nothing is stored or kept.",
-    icon: "\uD83D\uDD6F\uFE0F",
+    icon: "🕯️",
   },
   {
     title: "Oracle Universe DNA",
     desc: "Your personal spiritual map. Ask questions by voice or text, get grounded answers. Download your report.",
-    icon: "\uD83E\uDDEC",
+    icon: "🧬",
   },
   {
     title: "Beautiful Atmospheres",
-    desc: "Immerse yourself in serene environments \u2014 Beach, Nature, Library, Temple, Mosque, Church, Synagogue.",
-    icon: "\uD83C\uDF05",
+    desc: "Immerse yourself in serene environments — Beach, Nature, Library, Temple, Mosque, Church, Synagogue.",
+    icon: "🌅",
   },
   {
     title: "Multi-Faith Support",
     desc: "Guidance aligned to Christianity, Islam, Judaism, Buddhism, Hinduism, Taoism, or Universal spirituality.",
-    icon: "\uD83C\uDF0D",
+    icon: "🌍",
   },
   {
     title: "Private & Secure",
     desc: "Your notes disappear when you leave. Voice data is never stored. We never sell your personal information.",
-    icon: "\uD83D\uDD12",
+    icon: "🔒",
   },
 ];
 
@@ -66,11 +66,11 @@ const FAQ_DATA = [
   },
   {
     q: "What faiths are supported?",
-    a: "We support Christian, Muslim, Jewish, Buddhist, Hindu, Taoist, Universal, and Spiritual (non-religious) paths. Each path provides guidance aligned to that tradition\u2019s wisdom and texts.",
+    a: "We support Christian, Muslim, Jewish, Buddhist, Hindu, Taoist, Universal, and Spiritual (non-religious) paths. Each path provides guidance aligned to that tradition’s wisdom and texts.",
   },
   {
     q: "How do I cancel or delete my account?",
-    a: "You can stop your account and remove all your data directly from the app \u2014 no email required. Go to \u2018Manage Account\u2019 in the footer and follow the prompts. Data removal is automatic and immediate.",
+    a: "You can stop your account and remove all your data directly from the app — no email required. Go to ‘Manage Account’ in the footer and follow the prompts. Data removal is automatic and immediate.",
   },
   {
     q: "What payment methods do you accept?",
@@ -78,7 +78,7 @@ const FAQ_DATA = [
   },
   {
     q: "Can I use Total-iora on my phone?",
-    a: "Yes! Total-iora is a Progressive Web App (PWA). You can install it on your phone\u2019s home screen for a native app-like experience on both iOS and Android.",
+    a: "Yes! Total-iora is a Progressive Web App (PWA). You can install it on your phone’s home screen for a native app-like experience on both iOS and Android.",
   },
   {
     q: "Is this real spiritual advice?",
@@ -123,14 +123,19 @@ export default function IndexPreview() {
   }, [faith]);
 
   useEffect(() => {
-    function onDocMouseDown(e) {
+    function onOutsideInteraction(e) {
       if (!openFaithMenu) return;
       if (faithMenuRef.current && !faithMenuRef.current.contains(e.target)) {
         setOpenFaithMenu(false);
       }
     }
-    document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("mousedown", onOutsideInteraction);
+    // passive: true lets the browser scroll without waiting for JS
+    document.addEventListener("touchstart", onOutsideInteraction, { passive: true });
+    return () => {
+      document.removeEventListener("mousedown", onOutsideInteraction);
+      document.removeEventListener("touchstart", onOutsideInteraction);
+    };
   }, [openFaithMenu]);
 
   const filteredFaq = faqSearch.trim()
@@ -149,7 +154,7 @@ export default function IndexPreview() {
   return (
     <div className="page">
       <Head>
-        <title>Total-iora \u2014 Spiritual Guidance, Sacred Notes & Voice Oracle</title>
+        <title>Total-iora — Spiritual Guidance, Sacred Notes & Voice Oracle</title>
         <meta
           name="description"
           content="Total-iora: AI-powered spiritual guidance aligned to your faith. Voice oracle, Sacred Notes, and Oracle Universe DNA reports. 14-day free trial. Private, secure, multi-faith."
@@ -164,7 +169,7 @@ export default function IndexPreview() {
         <link rel="canonical" href={siteUrl} />
 
         {/* Open Graph */}
-        <meta property="og:title" content="Total-iora \u2014 Spiritual Guidance & Voice Oracle" />
+        <meta property="og:title" content="Total-iora — Spiritual Guidance & Voice Oracle" />
         <meta
           property="og:description"
           content="AI-powered spiritual guidance aligned to your faith. Voice oracle, Sacred Notes, downloadable reports. 14-day free trial."
@@ -176,7 +181,7 @@ export default function IndexPreview() {
 
         {/* Twitter Card */}
         <meta name="twitter:card" content="summary" />
-        <meta name="twitter:title" content="Total-iora \u2014 Spiritual Guidance & Voice Oracle" />
+        <meta name="twitter:title" content="Total-iora — Spiritual Guidance & Voice Oracle" />
         <meta
           name="twitter:description"
           content="AI-powered spiritual guidance aligned to your faith. 14-day free trial."
@@ -398,7 +403,7 @@ export default function IndexPreview() {
               <h3>Leave a private note &middot; Light a candle</h3>
               <p>
                 Your quiet place. Write, cry, pray, whisper. Light a candle. We
-                don{"'"}t read or judge.{" "}
+                don{"'t"} read or judge.{" "}
                 <strong>Nothing is stored or kept.</strong>
               </p>
             </header>
@@ -505,7 +510,7 @@ export default function IndexPreview() {
                 aria-expanded={openFaq === i}
               >
                 <span>{item.q}</span>
-                <span className="faqArrow">{openFaq === i ? "\u2212" : "+"}</span>
+                <span className="faqArrow">{openFaq === i ? "−" : "+"}</span>
               </button>
               {openFaq === i && (
                 <div className="faqA">{item.a}</div>
@@ -788,8 +793,11 @@ export default function IndexPreview() {
           border: 1px solid #e2e8f0;
           border-radius: 16px;
           box-shadow: 0 20px 40px rgba(0, 0, 0, 0.14);
-          overflow: hidden;
+          overflow-x: hidden;
+          overflow-y: auto;
+          max-height: 60vh;
           min-width: 260px;
+          -webkit-overflow-scrolling: touch;
         }
         .faithItem {
           width: 100%;

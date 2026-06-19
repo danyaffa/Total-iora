@@ -168,18 +168,20 @@ h3 {
 }
 
 /* Prevent horizontal overflow on narrow screens.
-   NOTE: overflow-x: hidden on the <html> element turns <html> into a
-   horizontal scroll container, which on iOS Safari can break vertical
-   touch scrolling (page appears "static"/frozen on mobile). Use
-   overflow-x: clip on <html> (no scroll container, falls back to
-   visible on older iOS) and keep overflow-x: hidden on <body> only. */
+   overflow-x: hidden on <html> or <body> turns the element into a
+   horizontal scroll container — on iOS Safari this can make the page
+   appear frozen (vertical touch scroll stops working). Use
+   overflow-x: clip on BOTH elements: clip does not create a scroll
+   container so the viewport stays in control of scrolling. On Safari
+   < 15.4 clip falls back to visible (minor horizontal bleed possible
+   on very old devices) which is preferable to a broken scroll. */
 html {
   max-width: 100%;
   overflow-x: clip;
 }
 body {
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Respect user dark mode preference (baseline) */
