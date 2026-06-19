@@ -9,7 +9,7 @@ async function handler(req, res) {
   const host = req.headers.host || "";
   const domain = host.endsWith("totaliora.com") ? ".totaliora.com" : undefined;
 
-  const names = ["ac_session", "ac_email"];
+  const names = ["ac_session", "ac_email", "ac_auth"];
   const attrs = [
     "Path=/",
     "SameSite=Lax",
